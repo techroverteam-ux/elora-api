@@ -7,6 +7,7 @@ import userRoutes from "./modules/user/user.routes";
 import storeRoutes from "./modules/store/store.route";
 import analyticsRoutes from "./modules/analytics/analytics.route";
 import notificationRoutes from "./modules/notification/notification.route";
+import { setupSwagger } from "./config/swagger";
 import path from "path";
 
 const app = express();
@@ -35,6 +36,9 @@ app.use("/api/v1/stores", storeRoutes);
 app.use("/api/v1/analytics", analyticsRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+
+// Setup Swagger documentation
+setupSwagger(app);
 
 // Error handling middleware
 app.use(
