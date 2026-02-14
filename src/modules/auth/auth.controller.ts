@@ -26,8 +26,8 @@ export const login = async (req: Request, res: Response) => {
     
     res.cookie("access_token", token, {
       httpOnly: true,
-      sameSite: "lax",
-      secure: false,
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      secure: process.env.NODE_ENV === 'production',
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       path: "/",
     });
@@ -35,8 +35,8 @@ export const login = async (req: Request, res: Response) => {
     // Store session identifier
     res.cookie("session_id", sessionId, {
       httpOnly: false, // Allow JS access for logout
-      sameSite: "lax",
-      secure: false,
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      secure: process.env.NODE_ENV === 'production',
       maxAge: 24 * 60 * 60 * 1000,
       path: "/",
     });
