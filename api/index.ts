@@ -5,7 +5,7 @@ import { seedSuperAdmin } from "../src/config/seedSuperAdmin";
 
 dotenv.config();
 
-const MONGO_URI = process.env.MONGO_URI as string;
+const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
 
 let isConnected = false;
 
@@ -14,12 +14,18 @@ const connectDB = async () => {
   
   try {
     if (!MONGO_URI) {
-      throw new Error("MONGO_URI is not defined");
+      console.error("Environment variables:", {
+        MONGO_URI: process.env.MONGO_URI,
+        MONGODB_URI: process.env.MONGODB_URI,
+        NODE_ENV: process.env.NODE_ENV
+      });
+      throw new Error("MONGO_URI is not defined in environment variables");
     }
 
+    console.log("Connecting to MongoDB...");
     await mongoose.connect(MONGO_URI);
     isConnected = true;
-    console.log("✅ MongoDB connected");
+    console.log("✅ MongoDB connected successfully");
     
     await seedSuperAdmin();
   } catch (error) {
