@@ -14,7 +14,7 @@ const options = {
     servers: [
       {
         url: process.env.NODE_ENV === 'production' 
-          ? 'https://elora-api.vercel.app' 
+          ? 'https://elora-api-smoky.vercel.app' 
           : 'http://localhost:5000',
         description: process.env.NODE_ENV === 'production' ? 'Production' : 'Development',
       },
@@ -51,17 +51,30 @@ export const setupSwagger = (app: Express) => {
 
   // Apply auth to swagger routes
   app.use('/api-docs', swaggerAuth);
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
-    customCss: `
-      .swagger-ui .topbar { display: none }
-      .swagger-ui { font-family: 'Inter', sans-serif }
-      .swagger-ui .info .title { color: #1f2937 }
-    `,
-    customSiteTitle: 'Elora API Documentation',
-    swaggerOptions: {
-      persistAuthorization: true,
-    },
-  }));
+  
+  // Serve swagger with proper asset configuration for Vercel
+  app.use('/api-docs', swaggerUi.serve);
+  app.get('/api-docs', (req, res) => {
+    res.send(
+      swaggerUi.generateHTML(specs, {
+        customCss: `
+          .swagger-ui .topbar { display: none }
+          .swagger-ui { font-family: 'Inter', sans-serif }
+          .swagger-ui .info .title { color: #1f2937 }
+        `,
+        customSiteTitle: 'Elora API Documentation',
+        swaggerOptions: {
+          persistAuthorization: true,
+        },
+        customfavIcon: '/favicon.ico',
+        customCssUrl: 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.min.css',
+        customJs: [
+          'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-bundle.min.js',
+          'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-standalone-preset.min.js'
+        ]
+      })
+    );
+  });
 
   console.log('📚 Swagger docs available at /api-docs');
   console.log(`🔐 Username: ${process.env.SWAGGER_USERNAME || 'admin'}`);
