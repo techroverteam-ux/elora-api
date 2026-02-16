@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import User from "../modules/user/user.model";
 
+
 interface JwtPayload {
   userId: string;
   roles: any[]; // UPDATED: Array of roles
