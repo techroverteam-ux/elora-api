@@ -9,6 +9,7 @@ import {
   deleteStore,
   uploadStoresBulk,
   assignStoresBulk,
+  unassignStoresBulk,
   submitRecce,
   generateReccePPT,
   reviewRecce,
@@ -59,6 +60,7 @@ router
   .delete(checkPermission("stores", "delete"), deleteStore);
 
 router.post("/assign", checkPermission("stores", "edit"), assignStoresBulk);
+router.post("/unassign", checkPermission("stores", "edit"), unassignStoresBulk);
 
 router.post(
   "/:id/recce",

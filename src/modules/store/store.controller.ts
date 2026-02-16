@@ -355,14 +355,14 @@ export const assignStoresBulk = async (req: Request | any, res: Response) => {
       updateData = {
         "workflow.recceAssignedTo": userId,
         "workflow.recceAssignedBy": assignedBy,
-        "recce.assignedDate": new Date(),
+        "workflow.recceAssignedDate": new Date(),
         currentStatus: StoreStatus.RECCE_ASSIGNED,
       };
     } else if (stage === "INSTALLATION") {
       updateData = {
         "workflow.installationAssignedTo": userId,
         "workflow.installationAssignedBy": assignedBy,
-        "installation.assignedDate": new Date(),
+        "workflow.installationAssignedDate": new Date(),
         currentStatus: StoreStatus.INSTALLATION_ASSIGNED,
       };
     } else {
@@ -383,6 +383,48 @@ export const assignStoresBulk = async (req: Request | any, res: Response) => {
     res
       .status(500)
       .json({ message: "Assignment failed", error: error.message });
+  }
+};
+
+export const unassignStoresBulk = async (req: Request | any, res: Response) => {
+  try {
+    const { storeIds, stage } = req.body;
+
+    if (!storeIds || !Array.isArray(storeIds) || storeIds.length === 0) {
+      return res.status(400).json({ message: "No stores selected" });
+    }
+
+    let updateData = {};
+
+    if (stage === "RECCE") {
+      updateData = {
+        "workflow.recceAssignedTo": null,
+        "workflow.recceAssignedBy": null,
+        "workflow.recceAssignedDate": null,
+        currentStatus: StoreStatus.UPLOADED,
+      };
+    } else if (stage === "INSTALLATION") {
+      updateData = {
+        "workflow.installationAssignedTo": null,
+        "workflow.installationAssignedBy": null,
+        "workflow.installationAssignedDate": null,
+        currentStatus: StoreStatus.RECCE_APPROVED,
+      };
+    } else {
+      return res.status(400).json({ message: "Invalid stage" });
+    }
+
+    const result = await Store.updateMany(
+      { _id: { $in: storeIds } },
+      { $set: updateData },
+    );
+
+    res.status(200).json({
+      message: `Successfully unassigned ${result.modifiedCount} stores.`,
+      result,
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: "Unassignment failed", error: error.message });
   }
 };
 
