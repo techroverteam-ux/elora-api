@@ -35,6 +35,21 @@ const connectDB = async () => {
 };
 
 export default async (req: any, res: any) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', 'https://elora-web.vercel.app');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    return res.status(200).end();
+  }
+
+  // Set CORS headers for all requests
+  res.setHeader('Access-Control-Allow-Origin', 'https://elora-web.vercel.app');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie');
+
   try {
     await connectDB();
     return app(req, res);
