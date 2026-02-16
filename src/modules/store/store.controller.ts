@@ -48,7 +48,8 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
 
     for (const file of files) {
       try {
-        const workbook = XLSX.readFile(file.path);
+        // Use buffer instead of file path for memory storage
+        const workbook = XLSX.read(file.buffer, { type: 'buffer' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const rawData: any[] = XLSX.utils.sheet_to_json(sheet);
 
@@ -122,9 +123,8 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
           file: file.originalname,
           error: "Parsing Error: " + err.message,
         });
-      } finally {
-        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
       }
+      // No need to delete files with memory storage
     }
 
     // 3. Batch Insert
@@ -392,7 +392,8 @@ export const submitRecce = async (req: Request | any, res: Response) => {
     const { width, height, notes, unit } = req.body;
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
 
-    // ... (Your existing Store finding and Security Checks remain here) ...
+    const store = await Store.findById(id);
+    if (!store) return res.status(404).json({ message: "Store not found" });
 
     // 3. Prepare Recce Data
     const recceUpdate: any = {
@@ -406,25 +407,16 @@ export const submitRecce = async (req: Request | any, res: Response) => {
       currentStatus: StoreStatus.RECCE_SUBMITTED,
     };
 
-    // 4. Handle Image Paths (FIX: Normalize slashes)
-    // We replace all backslashes '\' with forward slashes '/' so browsers can read them
+    // 4. Handle Image Data (Store as base64 for now since Vercel doesn't support file storage)
     if (files.front) {
-      recceUpdate["recce.photos.front"] = files.front[0].path.replace(
-        /\\/g,
-        "/",
-      );
+      recceUpdate["recce.photos.front"] = `data:${files.front[0].mimetype};base64,${files.front[0].buffer.toString('base64')}`;
     }
     if (files.side) {
-      recceUpdate["recce.photos.side"] = files.side[0].path.replace(/\\/g, "/");
+      recceUpdate["recce.photos.side"] = `data:${files.side[0].mimetype};base64,${files.side[0].buffer.toString('base64')}`;
     }
     if (files.closeUp) {
-      recceUpdate["recce.photos.closeUp"] = files.closeUp[0].path.replace(
-        /\\/g,
-        "/",
-      );
+      recceUpdate["recce.photos.closeUp"] = `data:${files.closeUp[0].mimetype};base64,${files.closeUp[0].buffer.toString('base64')}`;
     }
-
-    // ... (Rest of the save logic remains the same) ...
 
     const updatedStore = await Store.findByIdAndUpdate(
       id,
@@ -602,22 +594,17 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
     const store = await Store.findById(id);
     if (!store) return res.status(404).json({ message: "Store not found" });
 
-    // ... (Security checks remain the same) ...
-
     const installUpdate: any = {
       "installation.submittedDate": new Date(),
       currentStatus: StoreStatus.INSTALLATION_SUBMITTED,
     };
 
-    // FIX: Normalize paths to use forward slashes for ALL operating systems
+    // Store images as base64 data URLs
     if (files.after1) {
-      // Replace all backslashes with forward slashes
-      installUpdate["installation.photos.after1"] =
-        files.after1[0].path.replace(/\\/g, "/");
+      installUpdate["installation.photos.after1"] = `data:${files.after1[0].mimetype};base64,${files.after1[0].buffer.toString('base64')}`;
     }
     if (files.after2) {
-      installUpdate["installation.photos.after2"] =
-        files.after2[0].path.replace(/\\/g, "/");
+      installUpdate["installation.photos.after2"] = `data:${files.after2[0].mimetype};base64,${files.after2[0].buffer.toString('base64')}`;
     }
 
     await Store.findByIdAndUpdate(id, { $set: installUpdate });

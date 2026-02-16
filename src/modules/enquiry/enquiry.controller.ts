@@ -3,8 +3,8 @@ import Enquiry from "./enquiry.model";
 
 export const createEnquiry = async (req: Request, res: Response) => {
   try {
-    const { name, email, phone, message } = req.body;
-    const enquiry = await Enquiry.create({ name, email, phone, message });
+    const { name, email, phone, service, message } = req.body;
+    const enquiry = await Enquiry.create({ name, email, phone, service, message });
     res.status(201).json({ message: "Enquiry submitted successfully", enquiry });
   } catch (error) {
     res.status(500).json({ message: "Failed to submit enquiry", error });

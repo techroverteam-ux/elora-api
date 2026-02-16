@@ -4,6 +4,7 @@ export interface EnquiryDocument extends Document {
   name: string;
   email: string;
   phone: string;
+  service?: string;
   message: string;
   status: "NEW" | "READ" | "CONTACTED" | "RESOLVED";
   remark?: string;
@@ -14,6 +15,7 @@ const EnquirySchema = new Schema<EnquiryDocument>(
     name: { type: String, required: true },
     email: { type: String, required: true },
     phone: { type: String, required: true },
+    service: { type: String },
     message: { type: String, required: true },
     status: {
       type: String,

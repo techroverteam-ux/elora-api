@@ -8,6 +8,7 @@ import storeRoutes from "./modules/store/store.route";
 import analyticsRoutes from "./modules/analytics/analytics.route";
 import notificationRoutes from "./modules/notification/notification.route";
 import dashboardRoutes from "./modules/dashboard/dashboard.routes";
+import enquiryRoutes from "./modules/enquiry/enquiry.routes";
 import { setupSwagger } from "./config/swagger";
 import path from "path";
 
@@ -313,6 +314,7 @@ app.use("/api/v1/stores", storeRoutes);
 app.use("/api/v1/analytics", analyticsRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
 app.use("/api/v1/dashboard", dashboardRoutes);
+app.use("/api/v1/enquiries", enquiryRoutes);
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 // Setup Swagger documentation

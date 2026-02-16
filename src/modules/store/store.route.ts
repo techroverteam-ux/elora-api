@@ -24,19 +24,14 @@ import { checkPermission } from "../../middlewares/rbac.middleware";
 
 const router = express.Router();
 
-// --- FIX: USE DISK STORAGE TO KEEP EXTENSIONS ---
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, "uploads/");
-  },
-  filename: function (req, file, cb) {
-    // Create unique filename + Append original extension (e.g., .jpg)
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+// --- FIX: USE MEMORY STORAGE FOR VERCEL COMPATIBILITY ---
+const storage = multer.memoryStorage();
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
   },
 });
-
-const upload = multer({ storage: storage });
 // ------------------------------------------------
 
 router.use(protect);
