@@ -510,16 +510,17 @@ export const generateReccePPT = async (req: Request, res: Response) => {
       slide.addImage({ path: logoPath, x: 0.5, y: 0.3, w: 2, h: 0.6 });
     }
 
-    // Header
+    // Header with border
+    slide.addShape("rect", { x: 0.5, y: 0.9, w: 9, h: 0.6, line: { color: colors.primary, width: 2 }, fill: { color: colors.white } });
     slide.addText("RECCE INSPECTION REPORT", { 
-      x: 0.5, y: 1.1, w: 9, h: 0.5, 
-      fontSize: 28, bold: true, color: colors.primary, align: "center"
+      x: 0.5, y: 0.9, w: 9, h: 0.6, 
+      fontSize: 28, bold: true, color: colors.primary, align: "center", valign: "middle"
     });
 
-    // Store Details Section
+    // Store Details Section with border
     slide.addShape("rect", { 
-      x: 0.5, y: 1.8, w: 9, h: 0.05, 
-      fill: { color: colors.primary } 
+      x: 0.5, y: 1.6, w: 9, h: 1.8, 
+      line: { color: colors.primary, width: 2 }, fill: { color: colors.white } 
     });
 
     const detailsData = [
@@ -534,46 +535,45 @@ export const generateReccePPT = async (req: Request, res: Response) => {
     ];
 
     slide.addTable(detailsData as any, {
-      x: 0.5, y: 2.0, w: 9, h: 1.5,
+      x: 0.5, y: 1.6, w: 9, h: 1.8,
       colW: [1.8, 2.4, 1.8, 3.0],
       fontSize: 11,
-      border: { pt: 1, color: "CCCCCC" },
+      border: { pt: 2, color: colors.primary },
       valign: "middle",
       color: colors.text
     });
 
-    // Images Section Title
+    // Images Section Title with border
+    slide.addShape("rect", { x: 0.5, y: 3.5, w: 9, h: 0.4, line: { color: colors.primary, width: 2 }, fill: { color: colors.lightBg } });
     slide.addText("SITE INSPECTION PHOTOS", { 
-      x: 0.5, y: 3.7, w: 9, h: 0.4, 
-      fontSize: 16, bold: true, color: colors.secondary, align: "center"
+      x: 0.5, y: 3.5, w: 9, h: 0.4, 
+      fontSize: 16, bold: true, color: colors.secondary, align: "center", valign: "middle"
     });
 
-    // Images
+    // Images with borders
     const addImage = (relativePath: string | undefined, label: string, x: number, y: number) => {
+      slide.addShape("rect", { x, y, w: 2.8, h: 2.5, line: { color: colors.primary, width: 2 }, fill: { color: "F5F5F5" } });
       if (relativePath) {
         try {
           const absolutePath = path.join(process.cwd(), relativePath);
           if (fs.existsSync(absolutePath)) {
-            slide.addImage({ path: absolutePath, x, y, w: 2.8, h: 2.1 });
-            slide.addShape("rect", { x, y: y + 2.15, w: 2.8, h: 0.35, fill: { color: colors.primary } });
-            slide.addText(label, { x, y: y + 2.15, w: 2.8, h: 0.35, fontSize: 12, bold: true, align: "center", color: colors.white });
+            slide.addImage({ path: absolutePath, x: x + 0.05, y: y + 0.05, w: 2.7, h: 2.0 });
           } else {
-            slide.addShape("rect", { x, y, w: 2.8, h: 2.1, line: { color: "CCCCCC", dashType: "dash" }, fill: { color: "F5F5F5" } });
             slide.addText(`Image Not Found`, { x, y: y + 1, w: 2.8, fontSize: 10, align: "center", color: "999999" });
           }
         } catch (err) {
-          slide.addShape("rect", { x, y, w: 2.8, h: 2.1, line: { color: "FF0000" }, fill: { color: "FFE5E5" } });
           slide.addText("Error Loading Image", { x, y: y + 1, w: 2.8, fontSize: 10, align: "center", color: "FF0000" });
         }
       } else {
-        slide.addShape("rect", { x, y, w: 2.8, h: 2.1, line: { color: "CCCCCC", dashType: "dash" }, fill: { color: "F5F5F5" } });
         slide.addText(`No ${label}`, { x, y: y + 1, w: 2.8, fontSize: 10, align: "center", color: "999999" });
       }
+      slide.addShape("rect", { x, y: y + 2.05, w: 2.8, h: 0.45, fill: { color: colors.primary }, line: { color: colors.primary, width: 2 } });
+      slide.addText(label, { x, y: y + 2.05, w: 2.8, h: 0.45, fontSize: 12, bold: true, align: "center", valign: "middle", color: colors.white });
     };
 
-    addImage(store.recce.photos?.front, "FRONT VIEW", 0.8, 4.2);
-    addImage(store.recce.photos?.side, "SIDE VIEW", 3.8, 4.2);
-    addImage(store.recce.photos?.closeUp, "CLOSE UP VIEW", 6.8, 4.2);
+    addImage(store.recce.photos?.front, "FRONT VIEW", 0.8, 4.0);
+    addImage(store.recce.photos?.side, "SIDE VIEW", 3.8, 4.0);
+    addImage(store.recce.photos?.closeUp, "CLOSE UP VIEW", 6.8, 4.0);
 
     const buffer = await pres.write({ outputType: "nodebuffer" });
     res.writeHead(200, {
@@ -694,16 +694,17 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
       slide.addImage({ path: logoPath, x: 0.5, y: 0.3, w: 2, h: 0.6 });
     }
 
-    // Header
+    // Header with border
+    slide.addShape("rect", { x: 0.5, y: 0.9, w: 9, h: 0.6, line: { color: colors.success, width: 2 }, fill: { color: colors.white } });
     slide.addText("INSTALLATION COMPLETION REPORT", { 
-      x: 0.5, y: 1.1, w: 9, h: 0.5, 
-      fontSize: 28, bold: true, color: colors.success, align: "center"
+      x: 0.5, y: 0.9, w: 9, h: 0.6, 
+      fontSize: 28, bold: true, color: colors.success, align: "center", valign: "middle"
     });
 
-    // Store Details Section
+    // Store Details Section with border
     slide.addShape("rect", { 
-      x: 0.5, y: 1.8, w: 9, h: 0.05, 
-      fill: { color: colors.primary } 
+      x: 0.5, y: 1.6, w: 9, h: 1.8, 
+      line: { color: colors.primary, width: 2 }, fill: { color: colors.white } 
     });
 
     const detailsData = [
@@ -718,49 +719,48 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
     ];
 
     slide.addTable(detailsData as any, {
-      x: 0.5, y: 2.0, w: 9, h: 1.5,
+      x: 0.5, y: 1.6, w: 9, h: 1.8,
       colW: [1.8, 2.4, 1.8, 3.0],
       fontSize: 11,
-      border: { pt: 1, color: "CCCCCC" },
+      border: { pt: 2, color: colors.primary },
       valign: "middle",
       color: colors.text
     });
 
-    // Before & After Section Title
+    // Before & After Section Title with border
+    slide.addShape("rect", { x: 0.5, y: 3.5, w: 9, h: 0.4, line: { color: colors.success, width: 2 }, fill: { color: colors.afterBg } });
     slide.addText("BEFORE & AFTER COMPARISON", { 
-      x: 0.5, y: 3.7, w: 9, h: 0.4, 
-      fontSize: 16, bold: true, color: colors.secondary, align: "center"
+      x: 0.5, y: 3.5, w: 9, h: 0.4, 
+      fontSize: 16, bold: true, color: colors.secondary, align: "center", valign: "middle"
     });
 
-    // Images with Before/After Labels
+    // Images with Before/After Labels and borders
     const addImage = (relativePath: string | undefined, label: string, x: number, y: number, bgColor: string, labelColor: string) => {
+      slide.addShape("rect", { x, y, w: 2.8, h: 2.5, line: { color: bgColor, width: 2 }, fill: { color: "F5F5F5" } });
       if (relativePath) {
         try {
           const absolutePath = path.join(process.cwd(), relativePath);
           if (fs.existsSync(absolutePath)) {
-            slide.addImage({ path: absolutePath, x, y, w: 2.8, h: 2.1 });
-            slide.addShape("rect", { x, y: y + 2.15, w: 2.8, h: 0.35, fill: { color: bgColor } });
-            slide.addText(label, { x, y: y + 2.15, w: 2.8, h: 0.35, fontSize: 12, bold: true, align: "center", color: labelColor });
+            slide.addImage({ path: absolutePath, x: x + 0.05, y: y + 0.05, w: 2.7, h: 2.0 });
           } else {
-            slide.addShape("rect", { x, y, w: 2.8, h: 2.1, line: { color: "CCCCCC", dashType: "dash" }, fill: { color: "F5F5F5" } });
             slide.addText(`Image Not Found`, { x, y: y + 1, w: 2.8, fontSize: 10, align: "center", color: "999999" });
           }
         } catch (err) {
-          slide.addShape("rect", { x, y, w: 2.8, h: 2.1, line: { color: "FF0000" }, fill: { color: "FFE5E5" } });
           slide.addText("Error Loading Image", { x, y: y + 1, w: 2.8, fontSize: 10, align: "center", color: "FF0000" });
         }
       } else {
-        slide.addShape("rect", { x, y, w: 2.8, h: 2.1, line: { color: "CCCCCC", dashType: "dash" }, fill: { color: "F5F5F5" } });
         slide.addText(`No ${label}`, { x, y: y + 1, w: 2.8, fontSize: 10, align: "center", color: "999999" });
       }
+      slide.addShape("rect", { x, y: y + 2.05, w: 2.8, h: 0.45, fill: { color: bgColor }, line: { color: bgColor, width: 2 } });
+      slide.addText(label, { x, y: y + 2.05, w: 2.8, h: 0.45, fontSize: 12, bold: true, align: "center", valign: "middle", color: labelColor });
     };
 
     // BEFORE (Recce Front Photo)
-    addImage(store.recce?.photos?.front, "BEFORE", 0.8, 4.2, "EF4444", colors.white);
+    addImage(store.recce?.photos?.front, "BEFORE", 0.8, 4.0, "EF4444", colors.white);
     
     // AFTER (Installation Photos)
-    addImage(store.installation.photos?.after1, "AFTER - VIEW 1", 3.8, 4.2, colors.success, colors.white);
-    addImage(store.installation.photos?.after2, "AFTER - VIEW 2", 6.8, 4.2, colors.success, colors.white);
+    addImage(store.installation.photos?.after1, "AFTER - VIEW 1", 3.8, 4.0, colors.success, colors.white);
+    addImage(store.installation.photos?.after2, "AFTER - VIEW 2", 6.8, 4.0, colors.success, colors.white);
 
     const buffer = await pres.write({ outputType: "nodebuffer" });
     res.writeHead(200, {
