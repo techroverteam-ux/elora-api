@@ -21,6 +21,7 @@
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "express-basic-auth": "^1.2.1",
+    "googleapis": "^171.4.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.1.5",
     "multer": "^2.0.2",

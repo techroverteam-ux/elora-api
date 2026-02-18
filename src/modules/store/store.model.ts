@@ -84,17 +84,19 @@ export interface StoreDocument extends Document {
     assignedDate?: Date;
     submittedDate?: Date;
     sizes?: { width: number; height: number; unit?: string };
-    photos?: { front: string; side: string; closeUp: string };
+    photos?: { front: string; side: string; closeUp: string }; // Google Drive links
     notes?: string;
+    submittedBy?: string; // User name who submitted
   };
 
   installation?: {
     assignedDate?: Date;
     submittedDate?: Date;
     photos?: {
-      after1?: string;
-      after2?: string;
+      after1?: string; // Google Drive link
+      after2?: string; // Google Drive link
     };
+    submittedBy?: string; // User name who submitted
   };
 }
 
@@ -182,17 +184,19 @@ const StoreSchema = new Schema<StoreDocument>(
       assignedDate: Date,
       submittedDate: Date,
       sizes: { width: Number, height: Number, unit: { type: String, default: "ft" } },
-      photos: { front: String, side: String, closeUp: String },
+      photos: { front: String, side: String, closeUp: String }, // Google Drive links
       notes: String,
+      submittedBy: String, // User name
     },
 
     installation: {
       assignedDate: Date,
       submittedDate: Date,
       photos: {
-        after1: String,
-        after2: String,
+        after1: String, // Google Drive link
+        after2: String, // Google Drive link
       },
+      submittedBy: String, // User name
     },
   },
   { timestamps: true },

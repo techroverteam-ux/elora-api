@@ -7,7 +7,15 @@ export const login = async (req: Request, res: Response) => {
     const { email, password } = req.body;
 
     const user = await User.findOne({ email }).populate("roles");
-    if (!user || !user.isActive) {
+    if (!user) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    // Allow super admins to login even if inactive
+    const isSuperAdmin = Array.isArray(user.roles) && (user.roles as any[]).some(
+      (role: any) => role.code === "SUPER_ADMIN"
+    );
+    if (!user.isActive && !isSuperAdmin) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 

@@ -13,6 +13,9 @@ build/
 .env.local
 .env.*.local
 
+# Google Drive Credentials (NEVER COMMIT)
+google-drive-credentials.json
+
 # Uploads directory
 uploads/
 

@@ -5,6 +5,7 @@ import fs from "fs";
 import PptxGenJS from "pptxgenjs";
 import path from "path";
 import { Row, Cell } from "exceljs";
+import googleDriveService from "../../utils/googleDrive";
 
 // Helper: fuzzy search for column headers
 const findKey = (row: any, keywords: string[]): string | undefined => {
@@ -92,17 +93,27 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
           }
 
           // C. Build Object
+          const city = row["City"] || "";
+          const district = row["District"] || "";
+          const dealerCode = dCode;
+          
+          // Generate storeId manually since insertMany doesn't trigger pre-save hooks
+          const cityPrefix = city.trim().substring(0, 3).toUpperCase();
+          const districtPrefix = district.trim().substring(0, 3).toUpperCase();
+          const storeId = `${cityPrefix}${districtPrefix}${dealerCode.toUpperCase()}`;
+
           const newStore = {
             projectID: row["Sr. No."] ? String(row["Sr. No."]) : "",
             dealerCode: dCode,
+            storeId: storeId, // Add generated storeId
             // Now this can repeat "ELORA CREATIVE ART" without crashing!
             storeCode: row["Vendor Code & Name"] || "",
             storeName: row["Dealer's Name"] || "Unknown Name",
 
             location: {
-              city: row["City"] || "",
-              area: row["District"] || "",
-              district: row["District"] || "", // NEW: Added district for storeId generation
+              city: city,
+              area: district,
+              district: district, // NEW: Added district for storeId generation
               address: row["Dealer's Address"] || "",
             },
             contact: {
@@ -437,7 +448,47 @@ export const submitRecce = async (req: Request | any, res: Response) => {
     const store = await Store.findById(id);
     if (!store) return res.status(404).json({ message: "Store not found" });
 
-    // 3. Prepare Recce Data
+    if (!store.storeId) {
+      return res.status(400).json({ message: "Store ID not generated. Cannot upload to Google Drive." });
+    }
+
+    const userName = req.user?.name || "Unknown";
+
+    // Upload images to Google Drive
+    const driveLinks: { front?: string; side?: string; closeUp?: string } = {};
+
+    if (files.front) {
+      driveLinks.front = await googleDriveService.uploadFile(
+        files.front[0].buffer,
+        'front.jpg',
+        files.front[0].mimetype,
+        store.storeId,
+        'Recce',
+        userName
+      );
+    }
+    if (files.side) {
+      driveLinks.side = await googleDriveService.uploadFile(
+        files.side[0].buffer,
+        'side.jpg',
+        files.side[0].mimetype,
+        store.storeId,
+        'Recce',
+        userName
+      );
+    }
+    if (files.closeUp) {
+      driveLinks.closeUp = await googleDriveService.uploadFile(
+        files.closeUp[0].buffer,
+        'closeup.jpg',
+        files.closeUp[0].mimetype,
+        store.storeId,
+        'Recce',
+        userName
+      );
+    }
+
+    // Prepare Recce Data
     const recceUpdate: any = {
       "recce.submittedDate": new Date(),
       "recce.notes": notes,
@@ -446,19 +497,10 @@ export const submitRecce = async (req: Request | any, res: Response) => {
         height: Number(height),
         unit: unit || "ft"
       },
+      "recce.submittedBy": userName,
+      "recce.photos": driveLinks,
       currentStatus: StoreStatus.RECCE_SUBMITTED,
     };
-
-    // 4. Handle Image Data (Store as base64 for now since Vercel doesn't support file storage)
-    if (files.front) {
-      recceUpdate["recce.photos.front"] = `data:${files.front[0].mimetype};base64,${files.front[0].buffer.toString('base64')}`;
-    }
-    if (files.side) {
-      recceUpdate["recce.photos.side"] = `data:${files.side[0].mimetype};base64,${files.side[0].buffer.toString('base64')}`;
-    }
-    if (files.closeUp) {
-      recceUpdate["recce.photos.closeUp"] = `data:${files.closeUp[0].mimetype};base64,${files.closeUp[0].buffer.toString('base64')}`;
-    }
 
     const updatedStore = await Store.findByIdAndUpdate(
       id,
@@ -636,18 +678,42 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
     const store = await Store.findById(id);
     if (!store) return res.status(404).json({ message: "Store not found" });
 
-    const installUpdate: any = {
-      "installation.submittedDate": new Date(),
-      currentStatus: StoreStatus.INSTALLATION_SUBMITTED,
-    };
+    if (!store.storeId) {
+      return res.status(400).json({ message: "Store ID not generated. Cannot upload to Google Drive." });
+    }
 
-    // Store images as base64 data URLs
+    const userName = req.user?.name || "Unknown";
+
+    // Upload images to Google Drive
+    const driveLinks: { after1?: string; after2?: string } = {};
+
     if (files.after1) {
-      installUpdate["installation.photos.after1"] = `data:${files.after1[0].mimetype};base64,${files.after1[0].buffer.toString('base64')}`;
+      driveLinks.after1 = await googleDriveService.uploadFile(
+        files.after1[0].buffer,
+        'after1.jpg',
+        files.after1[0].mimetype,
+        store.storeId,
+        'Installation',
+        userName
+      );
     }
     if (files.after2) {
-      installUpdate["installation.photos.after2"] = `data:${files.after2[0].mimetype};base64,${files.after2[0].buffer.toString('base64')}`;
+      driveLinks.after2 = await googleDriveService.uploadFile(
+        files.after2[0].buffer,
+        'after2.jpg',
+        files.after2[0].mimetype,
+        store.storeId,
+        'Installation',
+        userName
+      );
     }
+
+    const installUpdate: any = {
+      "installation.submittedDate": new Date(),
+      "installation.submittedBy": userName,
+      "installation.photos": driveLinks,
+      currentStatus: StoreStatus.INSTALLATION_SUBMITTED,
+    };
 
     await Store.findByIdAndUpdate(id, { $set: installUpdate });
 

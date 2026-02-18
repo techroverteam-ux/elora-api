@@ -47,7 +47,12 @@ export const protect = async (
       return;
     }
 
-    if (!user.isActive) {
+    // Allow inactive super admins to perform any action
+    const isSuperAdmin = Array.isArray(user.roles) && (user.roles as any[]).some(
+      (role: any) => role.code === "SUPER_ADMIN"
+    );
+    
+    if (!user.isActive && !isSuperAdmin) {
       res.status(403).json({ message: "User account is inactive" });
       return;
     }
