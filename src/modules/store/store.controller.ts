@@ -5,7 +5,7 @@ import fs from "fs";
 import PptxGenJS from "pptxgenjs";
 import path from "path";
 import { Row, Cell } from "exceljs";
-import googleDriveService from "../../utils/googleDrive";
+import uploadService from "../../utils/uploadService";
 
 // Helper: fuzzy search for column headers
 const findKey = (row: any, keywords: string[]): string | undefined => {
@@ -467,7 +467,7 @@ export const submitRecce = async (req: Request | any, res: Response) => {
     const driveLinks: { front?: string; side?: string; closeUp?: string } = {};
 
     if (files.front) {
-      driveLinks.front = await googleDriveService.uploadFile(
+      driveLinks.front = await uploadService.uploadFile(
         files.front[0].buffer,
         'front.jpg',
         files.front[0].mimetype,
@@ -477,7 +477,7 @@ export const submitRecce = async (req: Request | any, res: Response) => {
       );
     }
     if (files.side) {
-      driveLinks.side = await googleDriveService.uploadFile(
+      driveLinks.side = await uploadService.uploadFile(
         files.side[0].buffer,
         'side.jpg',
         files.side[0].mimetype,
@@ -487,7 +487,7 @@ export const submitRecce = async (req: Request | any, res: Response) => {
       );
     }
     if (files.closeUp) {
-      driveLinks.closeUp = await googleDriveService.uploadFile(
+      driveLinks.closeUp = await uploadService.uploadFile(
         files.closeUp[0].buffer,
         'closeup.jpg',
         files.closeUp[0].mimetype,
@@ -706,7 +706,7 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
     const driveLinks: { after1?: string; after2?: string } = {};
 
     if (files.after1) {
-      driveLinks.after1 = await googleDriveService.uploadFile(
+      driveLinks.after1 = await uploadService.uploadFile(
         files.after1[0].buffer,
         'after1.jpg',
         files.after1[0].mimetype,
@@ -716,7 +716,7 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
       );
     }
     if (files.after2) {
-      driveLinks.after2 = await googleDriveService.uploadFile(
+      driveLinks.after2 = await uploadService.uploadFile(
         files.after2[0].buffer,
         'after2.jpg',
         files.after2[0].mimetype,
@@ -1512,3 +1512,128 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
   }
 };
 
+
+// --- PDF Generation Functions ---
+export const generateReccePDF = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const store = await Store.findById(id);
+
+    if (!store || !store.recce) {
+      return res.status(404).json({ message: "Store or Recce data not found" });
+    }
+
+    const PDFDocument = require('pdfkit');
+    const doc = new PDFDocument({ margin: 50 });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Recce_${store.dealerCode}.pdf"`);
+    doc.pipe(res);
+
+    // Header
+    doc.fontSize(24).fillColor('#EAB308').text('RECCE INSPECTION REPORT', { align: 'center' });
+    doc.moveDown();
+    doc.strokeColor('#EAB308').lineWidth(2).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+    doc.moveDown();
+
+    // Store Details
+    doc.fontSize(12).fillColor('#000000');
+    doc.text(`Dealer Code: ${store.dealerCode || 'N/A'}`, { continued: true }).text(`    Store Name: ${store.storeName || 'N/A'}`);
+    doc.text(`City: ${store.location.city || 'N/A'}`, { continued: true }).text(`    State: ${store.location.state || 'N/A'}`);
+    doc.text(`Address: ${store.location.address || 'N/A'}`);
+    doc.text(`Board Size: ${store.recce.sizes?.width || 0} x ${store.recce.sizes?.height || 0} ft`, { continued: true });
+    doc.text(`    Recce Date: ${store.recce.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A'}`);
+    doc.text(`Notes: ${store.recce.notes || 'None'}`);
+    doc.moveDown();
+
+    // Images Section
+    doc.fontSize(16).fillColor('#EAB308').text('SITE INSPECTION PHOTOS', { align: 'center' });
+    doc.moveDown();
+
+    const addImage = (relativePath: string | undefined, label: string) => {
+      if (relativePath) {
+        try {
+          const absolutePath = path.join(process.cwd(), relativePath);
+          if (fs.existsSync(absolutePath)) {
+            doc.fontSize(12).fillColor('#000000').text(label, { underline: true });
+            doc.image(absolutePath, { fit: [450, 300], align: 'center' });
+            doc.moveDown();
+          }
+        } catch (err) {
+          doc.text(`${label}: Image not available`);
+        }
+      }
+    };
+
+    addImage(store.recce.photos?.front, 'FRONT VIEW');
+    addImage(store.recce.photos?.side, 'SIDE VIEW');
+    addImage(store.recce.photos?.closeUp, 'CLOSE UP VIEW');
+
+    doc.end();
+  } catch (error: any) {
+    console.error("PDF Gen Error:", error);
+    if (!res.headersSent) res.status(500).json({ message: "Error generating PDF" });
+  }
+};
+
+export const generateInstallationPDF = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const store = await Store.findById(id);
+
+    if (!store || !store.installation) {
+      return res.status(404).json({ message: "Store or Installation data not found" });
+    }
+
+    const PDFDocument = require('pdfkit');
+    const doc = new PDFDocument({ margin: 50 });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Installation_${store.dealerCode}.pdf"`);
+    doc.pipe(res);
+
+    // Header
+    doc.fontSize(24).fillColor('#22C55E').text('INSTALLATION COMPLETION REPORT', { align: 'center' });
+    doc.moveDown();
+    doc.strokeColor('#22C55E').lineWidth(2).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+    doc.moveDown();
+
+    // Store Details
+    doc.fontSize(12).fillColor('#000000');
+    doc.text(`Dealer Code: ${store.dealerCode || 'N/A'}`, { continued: true }).text(`    Store Name: ${store.storeName || 'N/A'}`);
+    doc.text(`City: ${store.location.city || 'N/A'}`, { continued: true }).text(`    State: ${store.location.state || 'N/A'}`);
+    doc.text(`Address: ${store.location.address || 'N/A'}`);
+    doc.text(`Board Size: ${store.recce?.sizes?.width || 0} x ${store.recce?.sizes?.height || 0} ft`, { continued: true });
+    doc.text(`    Completion Date: ${store.installation.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A'}`);
+    doc.fontSize(14).fillColor('#22C55E').text('Status: ✓ COMPLETED', { bold: true });
+    doc.moveDown();
+
+    // Images Section
+    doc.fontSize(16).fillColor('#22C55E').text('BEFORE & AFTER COMPARISON', { align: 'center' });
+    doc.moveDown();
+
+    const addImage = (relativePath: string | undefined, label: string, color: string) => {
+      if (relativePath) {
+        try {
+          const absolutePath = path.join(process.cwd(), relativePath);
+          if (fs.existsSync(absolutePath)) {
+            doc.fontSize(12).fillColor(color).text(label, { underline: true });
+            doc.image(absolutePath, { fit: [450, 300], align: 'center' });
+            doc.moveDown();
+          }
+        } catch (err) {
+          doc.fillColor('#000000').text(`${label}: Image not available`);
+        }
+      }
+    };
+
+    addImage(store.recce?.photos?.front, 'BEFORE', '#EF4444');
+    addImage(store.installation.photos?.after1, 'AFTER - VIEW 1', '#22C55E');
+    addImage(store.installation.photos?.after2, 'AFTER - VIEW 2', '#22C55E');
+
+    doc.end();
+  } catch (error: any) {
+    console.error("PDF Gen Error:", error);
+    if (!res.headersSent) res.status(500).json({ message: "Error generating PDF" });
+  }
+};

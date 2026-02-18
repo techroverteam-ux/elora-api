@@ -54,6 +54,8 @@ class GoogleDriveService {
         q: `name='${folderName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
         fields: 'files(id, name)',
         spaces: 'drive',
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
       });
 
       if (response.data.files && response.data.files.length > 0) {
@@ -70,6 +72,7 @@ class GoogleDriveService {
       const folder = await this.drive.files.create({
         requestBody: folderMetadata,
         fields: 'id',
+        supportsAllDrives: true,
       });
 
       return folder.data.id;
@@ -123,6 +126,7 @@ class GoogleDriveService {
         requestBody: fileMetadata,
         media: media,
         fields: 'id, webViewLink, webContentLink',
+        supportsAllDrives: true,
       });
 
       // Make file accessible (optional - for viewing without auth)
@@ -132,6 +136,7 @@ class GoogleDriveService {
           role: 'reader',
           type: 'anyone',
         },
+        supportsAllDrives: true,
       });
 
       console.log(`✅ Uploaded: ${finalFileName} to ${folderType}`);
@@ -162,6 +167,7 @@ class GoogleDriveService {
       const folder = await this.drive.files.get({
         fileId: storeFolderId,
         fields: 'webViewLink',
+        supportsAllDrives: true,
       });
       return folder.data.webViewLink;
     } catch (error) {
