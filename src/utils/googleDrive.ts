@@ -17,12 +17,23 @@ class GoogleDriveService {
 
   private initializeDrive() {
     try {
-      if (!fs.existsSync(CREDENTIALS_PATH)) {
-        console.error('Google Drive credentials file not found');
+      let credentials;
+
+      // Try to get credentials from environment variable first (for Vercel)
+      if (process.env.GOOGLE_CREDENTIALS) {
+        credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+        console.log('✅ Using Google credentials from environment variable');
+      } 
+      // Fallback to file (for local development)
+      else if (fs.existsSync(CREDENTIALS_PATH)) {
+        credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, 'utf-8'));
+        console.log('✅ Using Google credentials from file');
+      } 
+      else {
+        console.error('❌ Google Drive credentials not found in environment or file');
         return;
       }
 
-      const credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, 'utf-8'));
       const auth = new google.auth.GoogleAuth({
         credentials,
         scopes: SCOPES,
