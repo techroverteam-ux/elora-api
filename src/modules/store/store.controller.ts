@@ -448,8 +448,17 @@ export const submitRecce = async (req: Request | any, res: Response) => {
     const store = await Store.findById(id);
     if (!store) return res.status(404).json({ message: "Store not found" });
 
+    // Generate storeId if missing
     if (!store.storeId) {
-      return res.status(400).json({ message: "Store ID not generated. Cannot upload to Google Drive." });
+      if (store.location?.city && store.location?.district && store.dealerCode) {
+        const cityPrefix = store.location.city.trim().substring(0, 3).toUpperCase();
+        const districtPrefix = store.location.district.trim().substring(0, 3).toUpperCase();
+        const storeId = `${cityPrefix}${districtPrefix}${store.dealerCode.toUpperCase()}`;
+        store.storeId = storeId;
+        await store.save();
+      } else {
+        return res.status(400).json({ message: "Cannot generate Store ID. Missing city or district information." });
+      }
     }
 
     const userName = req.user?.name || "Unknown";
@@ -678,8 +687,17 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
     const store = await Store.findById(id);
     if (!store) return res.status(404).json({ message: "Store not found" });
 
+    // Generate storeId if missing
     if (!store.storeId) {
-      return res.status(400).json({ message: "Store ID not generated. Cannot upload to Google Drive." });
+      if (store.location?.city && store.location?.district && store.dealerCode) {
+        const cityPrefix = store.location.city.trim().substring(0, 3).toUpperCase();
+        const districtPrefix = store.location.district.trim().substring(0, 3).toUpperCase();
+        const storeId = `${cityPrefix}${districtPrefix}${store.dealerCode.toUpperCase()}`;
+        store.storeId = storeId;
+        await store.save();
+      } else {
+        return res.status(400).json({ message: "Cannot generate Store ID. Missing city or district information." });
+      }
     }
 
     const userName = req.user?.name || "Unknown";
