@@ -18,8 +18,11 @@ export const createUser = async (
     // 1. Accept 'roles' array instead of single 'roleId'
     const { name, email, password, roles } = req.body;
 
-    // 2. Check if user exists
-    const userExists = await User.findOne({ email });
+    // 2. Check if user exists (case-insensitive)
+    const normalizedEmail = email?.trim().toLowerCase();
+    const userExists = await User.findOne({ 
+      email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') } 
+    });
     if (userExists) {
       res.status(400).json({ message: "User with this email already exists" });
       return;
@@ -42,7 +45,7 @@ export const createUser = async (
     // 4. Create User
     const user = await User.create({
       name,
-      email,
+      email: normalizedEmail,
       password,
       roles: roles, // Save array of IDs
     });
@@ -457,7 +460,7 @@ export const uploadUsersBulk = async (req: Request, res: Response) => {
         totalProcessed += rawData.length;
         for (const [index, row] of rawData.entries()) {
           const rowNum = index + 2;
-          const email = row['Email'];
+          const email = row['Email']?.trim().toLowerCase();
           if (!email) {
             allErrors.push({ file: file.originalname, row: rowNum, error: 'Email is missing' });
             continue;

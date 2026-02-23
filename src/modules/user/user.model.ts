@@ -13,7 +13,13 @@ export interface UserDocument extends Document {
 const UserSchema = new Schema<UserDocument>(
   {
     name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
+    email: { 
+      type: String, 
+      required: true, 
+      unique: true,
+      lowercase: true,
+      trim: true
+    },
     password: { type: String, required: true },
     roles: [{ type: Schema.Types.ObjectId, ref: "Role", required: true }],
     isActive: { type: Boolean, default: true },

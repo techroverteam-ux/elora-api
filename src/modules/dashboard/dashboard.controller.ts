@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import Store, { StoreStatus } from "../store/store.model";
 import User from "../user/user.model";
 
-export const getDashboardStats = async (req: Request, res: Response) => {
+export const getDashboardStats = async (req: Request | any, res: Response) => {
   try {
     const { startDate, endDate, status, zone, state } = req.query;
     
@@ -11,6 +11,19 @@ export const getDashboardStats = async (req: Request, res: Response) => {
 
     // Build filter
     const filter: any = {};
+    
+    // Role-based Access Control
+    const userRoles = req.user.roles || [];
+    const isSuperAdmin = userRoles.some((r: any) => r.code === "SUPER_ADMIN");
+    const isAdmin = userRoles.some((r: any) => r.code === "ADMIN");
+
+    if (!isSuperAdmin && !isAdmin) {
+      filter.$or = [
+        { "workflow.recceAssignedTo": req.user._id },
+        { "workflow.installationAssignedTo": req.user._id },
+      ];
+    }
+    
     if (startDate && endDate) {
       filter.createdAt = { $gte: new Date(startDate as string), $lte: new Date(endDate as string) };
     }

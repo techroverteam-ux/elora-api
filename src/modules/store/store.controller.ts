@@ -50,7 +50,7 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
     for (const file of files) {
       try {
         // Use buffer instead of file path for memory storage
-        const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+        const workbook = XLSX.read(file.buffer, { type: "buffer" });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const rawData: any[] = XLSX.utils.sheet_to_json(sheet);
 
@@ -96,7 +96,7 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
           const city = row["City"] || "";
           const district = row["District"] || "";
           const dealerCode = dCode;
-          
+
           // Generate storeId manually since insertMany doesn't trigger pre-save hooks
           const cityPrefix = city.trim().substring(0, 3).toUpperCase();
           const districtPrefix = district.trim().substring(0, 3).toUpperCase();
@@ -254,8 +254,8 @@ export const getAllStores = async (req: Request | any, res: Response) => {
     // 2. Status Filter
     if (status && status !== "ALL") {
       // Handle comma-separated statuses
-      if (status.includes(',')) {
-        const statuses = status.split(',').map((s: string) => s.trim());
+      if (status.includes(",")) {
+        const statuses = status.split(",").map((s: string) => s.trim());
         query.currentStatus = { $in: statuses };
       } else {
         query.currentStatus = status;
@@ -435,7 +435,9 @@ export const unassignStoresBulk = async (req: Request | any, res: Response) => {
       result,
     });
   } catch (error: any) {
-    res.status(500).json({ message: "Unassignment failed", error: error.message });
+    res
+      .status(500)
+      .json({ message: "Unassignment failed", error: error.message });
   }
 };
 
@@ -450,14 +452,27 @@ export const submitRecce = async (req: Request | any, res: Response) => {
 
     // Generate storeId if missing
     if (!store.storeId) {
-      if (store.location?.city && store.location?.district && store.dealerCode) {
-        const cityPrefix = store.location.city.trim().substring(0, 3).toUpperCase();
-        const districtPrefix = store.location.district.trim().substring(0, 3).toUpperCase();
+      if (
+        store.location?.city &&
+        store.location?.district &&
+        store.dealerCode
+      ) {
+        const cityPrefix = store.location.city
+          .trim()
+          .substring(0, 3)
+          .toUpperCase();
+        const districtPrefix = store.location.district
+          .trim()
+          .substring(0, 3)
+          .toUpperCase();
         const storeId = `${cityPrefix}${districtPrefix}${store.dealerCode.toUpperCase()}`;
         store.storeId = storeId;
         await store.save();
       } else {
-        return res.status(400).json({ message: "Cannot generate Store ID. Missing city or district information." });
+        return res.status(400).json({
+          message:
+            "Cannot generate Store ID. Missing city or district information.",
+        });
       }
     }
 
@@ -469,31 +484,31 @@ export const submitRecce = async (req: Request | any, res: Response) => {
     if (files.front) {
       driveLinks.front = await uploadService.uploadFile(
         files.front[0].buffer,
-        'front.jpg',
+        "front.jpg",
         files.front[0].mimetype,
         store.storeId,
-        'Recce',
-        userName
+        "Recce",
+        userName,
       );
     }
     if (files.side) {
       driveLinks.side = await uploadService.uploadFile(
         files.side[0].buffer,
-        'side.jpg',
+        "side.jpg",
         files.side[0].mimetype,
         store.storeId,
-        'Recce',
-        userName
+        "Recce",
+        userName,
       );
     }
     if (files.closeUp) {
       driveLinks.closeUp = await uploadService.uploadFile(
         files.closeUp[0].buffer,
-        'closeup.jpg',
+        "closeup.jpg",
         files.closeUp[0].mimetype,
         store.storeId,
-        'Recce',
-        userName
+        "Recce",
+        userName,
       );
     }
 
@@ -504,7 +519,7 @@ export const submitRecce = async (req: Request | any, res: Response) => {
       "recce.sizes": {
         width: Number(width),
         height: Number(height),
-        unit: unit || "ft"
+        unit: unit || "ft",
       },
       "recce.submittedBy": userName,
       "recce.photos": driveLinks,
@@ -529,7 +544,7 @@ export const submitRecce = async (req: Request | any, res: Response) => {
   }
 };
 
-// --- NEW: Generate Recce PPT ---
+// --- NEW UPDATED: Generate Recce PPT ---
 export const generateReccePPT = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -542,99 +557,286 @@ export const generateReccePPT = async (req: Request, res: Response) => {
     const pres = new PptxGenJS();
     pres.layout = "LAYOUT_WIDE";
     pres.title = `Recce Report - ${store.storeName}`;
-    
-    // Define theme colors (Yellow & Black)
+
     const colors = {
       primary: "EAB308",
       secondary: "000000",
       text: "1F2937",
       lightBg: "FEF3C7",
-      white: "FFFFFF"
+      white: "FFFFFF",
+      borderDark: "B45309",
     };
 
-    const slide = pres.addSlide();
-    slide.background = { color: colors.white };
+    const logoPath = path.join(process.cwd(), "public", "logo.png");
 
-    // Add Logo
-    const logoPath = path.join(process.cwd(), "../elora-web/public/elora-logo-excel.png");
-    if (fs.existsSync(logoPath)) {
-      slide.addImage({ path: logoPath, x: 0.5, y: 0.3, w: 2, h: 0.6 });
-    }
-
-    // Header with border
-    slide.addShape("rect", { x: 0.5, y: 0.9, w: 9, h: 0.6, line: { color: colors.primary, width: 2 }, fill: { color: colors.white } });
-    slide.addText("RECCE INSPECTION REPORT", { 
-      x: 0.5, y: 0.9, w: 9, h: 0.6, 
-      fontSize: 28, bold: true, color: colors.primary, align: "center", valign: "middle"
+    // COVER SLIDE
+    const coverSlide = pres.addSlide();
+    coverSlide.background = { fill: "FFFEF5" };
+    coverSlide.addShape("rect", {
+      x: 0,
+      y: 0,
+      w: "100%",
+      h: "100%",
+      fill: { type: "solid", color: "FFFEF5", transparency: 10 },
     });
 
-    // Store Details Section with border
-    slide.addShape("rect", { 
-      x: 0.5, y: 1.6, w: 9, h: 1.8, 
-      line: { color: colors.primary, width: 2 }, fill: { color: colors.white } 
+    coverSlide.addText(
+      "WE DON'T JUST PRINT.\nWE INSTALL YOUR BRAND\nINTO THE REAL WORLD.",
+      {
+        x: 0.5,
+        y: 0.5,
+        w: 5,
+        h: 2,
+        fontSize: 32,
+        bold: true,
+        color: colors.primary,
+        align: "left",
+        valign: "top",
+      },
+    );
+
+    if (fs.existsSync(logoPath)) {
+      coverSlide.addImage({ path: logoPath, x: 3.3, y: 3, w: 4.2, h: 1.26 });
+    } else {
+      console.log("Logo not found at:", logoPath);
+    }
+
+    coverSlide.addText(
+      "We help businesses stand out with custom branding,\nhigh-quality banner printing, and professional on-site installation.",
+      {
+        x: 6.5,
+        y: 5.8,
+        w: 3,
+        h: 1.2,
+        fontSize: 16,
+        color: colors.text,
+        align: "right",
+        valign: "bottom",
+      },
+    );
+
+    // DATA SLIDE
+    const slide = pres.addSlide();
+    slide.background = { fill: "FFFEF5" };
+    slide.addShape("rect", {
+      x: 0,
+      y: 0,
+      w: "100%",
+      h: "100%",
+      fill: { type: "solid", color: "FEF3C7", transparency: 50 },
+    });
+
+    if (fs.existsSync(logoPath)) {
+      slide.addImage({ path: logoPath, x: 0.3, y: 0.15, w: 1.5, h: 0.45 });
+    }
+
+    slide.addShape("rect", {
+      x: 0.2,
+      y: 0.8,
+      w: 9.6,
+      h: 0.7,
+      line: { color: colors.borderDark, width: 2 },
+      fill: { color: colors.white },
+    });
+    slide.addText("RECCE INSPECTION REPORT", {
+      x: 0.2,
+      y: 0.8,
+      w: 9.6,
+      h: 0.7,
+      fontSize: 32,
+      bold: true,
+      color: colors.primary,
+      align: "center",
+      valign: "middle",
+    });
+
+    slide.addShape("rect", {
+      x: 0.2,
+      y: 1.7,
+      w: 9.6,
+      h: 2.4,
+      line: { color: colors.borderDark, width: 2 },
+      fill: { color: colors.white },
     });
 
     const detailsData = [
-      [{ text: "Dealer Code", options: { bold: true, fill: { color: colors.lightBg } } }, store.dealerCode || "", 
-       { text: "Store Name", options: { bold: true, fill: { color: colors.lightBg } } }, store.storeName || ""],
-      [{ text: "City", options: { bold: true, fill: { color: colors.lightBg } } }, store.location.city || "", 
-       { text: "State", options: { bold: true, fill: { color: colors.lightBg } } }, store.location.state || ""],
-      [{ text: "Address", options: { bold: true, fill: { color: colors.lightBg } } }, { text: store.location.address || "N/A", options: { colspan: 3 } }],
-      [{ text: "Board Size", options: { bold: true, fill: { color: colors.lightBg } } }, `${store.recce.sizes?.width || 0} x ${store.recce.sizes?.height || 0} ft`, 
-       { text: "Recce Date", options: { bold: true, fill: { color: colors.lightBg } } }, store.recce.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : "N/A"],
-      [{ text: "Notes", options: { bold: true, fill: { color: colors.lightBg } } }, { text: store.recce.notes || "None", options: { colspan: 3 } }]
+      [
+        {
+          text: "Dealer Code",
+          options: { bold: true, fill: { color: colors.lightBg } },
+        },
+        store.dealerCode || "",
+        {
+          text: "Store Name",
+          options: { bold: true, fill: { color: colors.lightBg } },
+        },
+        store.storeName || "",
+      ],
+      [
+        {
+          text: "City",
+          options: { bold: true, fill: { color: colors.lightBg } },
+        },
+        store.location.city || "",
+        {
+          text: "State",
+          options: { bold: true, fill: { color: colors.lightBg } },
+        },
+        store.location.state || "",
+      ],
+      [
+        {
+          text: "Address",
+          options: { bold: true, fill: { color: colors.lightBg } },
+        },
+        { text: store.location.address || "N/A", options: { colspan: 3 } },
+      ],
+      [
+        {
+          text: "Board Size",
+          options: { bold: true, fill: { color: colors.lightBg } },
+        },
+        `${store.recce.sizes?.width || 0} x ${store.recce.sizes?.height || 0} ft`,
+        {
+          text: "Recce Date",
+          options: { bold: true, fill: { color: colors.lightBg } },
+        },
+        store.recce.submittedDate
+          ? new Date(store.recce.submittedDate).toLocaleDateString()
+          : "N/A",
+      ],
+      [
+        {
+          text: "Notes",
+          options: { bold: true, fill: { color: colors.lightBg } },
+        },
+        { text: store.recce.notes || "None", options: { colspan: 3 } },
+      ],
     ];
 
     slide.addTable(detailsData as any, {
-      x: 0.5, y: 1.6, w: 9, h: 1.8,
-      colW: [1.8, 2.4, 1.8, 3.0],
-      fontSize: 11,
-      border: { pt: 2, color: colors.primary },
+      x: 0.2,
+      y: 1.7,
+      w: 9.6,
+      h: 2.4,
+      colW: [2.1, 2.5, 2.1, 2.9],
+      fontSize: 14,
+      border: { pt: 2, color: colors.borderDark },
       valign: "middle",
-      color: colors.text
+      color: colors.text,
     });
 
-    // Images Section Title with border
-    slide.addShape("rect", { x: 0.5, y: 3.5, w: 9, h: 0.4, line: { color: colors.primary, width: 2 }, fill: { color: colors.lightBg } });
-    slide.addText("SITE INSPECTION PHOTOS", { 
-      x: 0.5, y: 3.5, w: 9, h: 0.4, 
-      fontSize: 16, bold: true, color: colors.secondary, align: "center", valign: "middle"
+    slide.addShape("rect", {
+      x: 0.2,
+      y: 4.3,
+      w: 9.6,
+      h: 0.5,
+      line: { color: colors.borderDark, width: 2 },
+      fill: { color: colors.white },
+    });
+    slide.addText("SITE INSPECTION PHOTOS", {
+      x: 0.2,
+      y: 4.3,
+      w: 9.6,
+      h: 0.5,
+      fontSize: 18,
+      bold: true,
+      color: colors.secondary,
+      align: "center",
+      valign: "middle",
     });
 
-    // Images with borders
-    const addImage = (relativePath: string | undefined, label: string, x: number, y: number) => {
-      slide.addShape("rect", { x, y, w: 2.8, h: 2.5, line: { color: colors.primary, width: 2 }, fill: { color: "F5F5F5" } });
+    const addImage = (
+      relativePath: string | undefined,
+      label: string,
+      x: number,
+      y: number,
+    ) => {
+      slide.addShape("rect", {
+        x,
+        y,
+        w: 3,
+        h: 2.5,
+        line: { color: colors.borderDark, width: 2 },
+        fill: { color: colors.white },
+      });
       if (relativePath) {
         try {
           const absolutePath = path.join(process.cwd(), relativePath);
           if (fs.existsSync(absolutePath)) {
-            slide.addImage({ path: absolutePath, x: x + 0.05, y: y + 0.05, w: 2.7, h: 2.0 });
+            slide.addImage({
+              path: absolutePath,
+              x: x + 0.05,
+              y: y + 0.05,
+              w: 2.9,
+              h: 2.0,
+            });
           } else {
-            slide.addText(`Image Not Found`, { x, y: y + 1, w: 2.8, fontSize: 10, align: "center", color: "999999" });
+            slide.addText("Image Not Found", {
+              x,
+              y: y + 1,
+              w: 3,
+              fontSize: 10,
+              align: "center",
+              color: "999999",
+            });
           }
         } catch (err) {
-          slide.addText("Error Loading Image", { x, y: y + 1, w: 2.8, fontSize: 10, align: "center", color: "FF0000" });
+          slide.addText("Error Loading Image", {
+            x,
+            y: y + 1,
+            w: 3,
+            fontSize: 10,
+            align: "center",
+            color: "FF0000",
+          });
         }
       } else {
-        slide.addText(`No ${label}`, { x, y: y + 1, w: 2.8, fontSize: 10, align: "center", color: "999999" });
+        slide.addText(`No ${label}`, {
+          x,
+          y: y + 1,
+          w: 3,
+          fontSize: 10,
+          align: "center",
+          color: "999999",
+        });
       }
-      slide.addShape("rect", { x, y: y + 2.05, w: 2.8, h: 0.45, fill: { color: colors.primary }, line: { color: colors.primary, width: 2 } });
-      slide.addText(label, { x, y: y + 2.05, w: 2.8, h: 0.45, fontSize: 12, bold: true, align: "center", valign: "middle", color: colors.white });
+      slide.addShape("rect", {
+        x,
+        y: y + 2.05,
+        w: 3,
+        h: 0.45,
+        fill: { color: colors.primary },
+        line: { color: colors.borderDark, width: 2 },
+      });
+      slide.addText(label, {
+        x,
+        y: y + 2.05,
+        w: 3,
+        h: 0.45,
+        fontSize: 12,
+        bold: true,
+        align: "center",
+        valign: "middle",
+        color: colors.white,
+      });
     };
 
-    addImage(store.recce.photos?.front, "FRONT VIEW", 0.8, 4.0);
-    addImage(store.recce.photos?.side, "SIDE VIEW", 3.8, 4.0);
-    addImage(store.recce.photos?.closeUp, "CLOSE UP VIEW", 6.8, 4.0);
+    addImage(store.recce.photos?.front, "FRONT VIEW", 0.5, 4.9);
+    addImage(store.recce.photos?.side, "SIDE VIEW", 3.7, 4.9);
+    addImage(store.recce.photos?.closeUp, "CLOSE UP VIEW", 6.9, 4.9);
 
     const buffer = await pres.write({ outputType: "nodebuffer" });
     res.writeHead(200, {
-      "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "Content-Type":
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       "Content-Disposition": `attachment; filename="Recce_${store.dealerCode}.pptx"`,
     });
     res.end(buffer);
   } catch (error: any) {
     console.error("PPT Gen Error:", error);
-    if (!res.headersSent) res.status(500).json({ message: "Error generating PPT" });
+    if (!res.headersSent)
+      res.status(500).json({ message: "Error generating PPT" });
   }
 };
 
@@ -689,14 +891,27 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
 
     // Generate storeId if missing
     if (!store.storeId) {
-      if (store.location?.city && store.location?.district && store.dealerCode) {
-        const cityPrefix = store.location.city.trim().substring(0, 3).toUpperCase();
-        const districtPrefix = store.location.district.trim().substring(0, 3).toUpperCase();
+      if (
+        store.location?.city &&
+        store.location?.district &&
+        store.dealerCode
+      ) {
+        const cityPrefix = store.location.city
+          .trim()
+          .substring(0, 3)
+          .toUpperCase();
+        const districtPrefix = store.location.district
+          .trim()
+          .substring(0, 3)
+          .toUpperCase();
         const storeId = `${cityPrefix}${districtPrefix}${store.dealerCode.toUpperCase()}`;
         store.storeId = storeId;
         await store.save();
       } else {
-        return res.status(400).json({ message: "Cannot generate Store ID. Missing city or district information." });
+        return res.status(400).json({
+          message:
+            "Cannot generate Store ID. Missing city or district information.",
+        });
       }
     }
 
@@ -708,21 +923,21 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
     if (files.after1) {
       driveLinks.after1 = await uploadService.uploadFile(
         files.after1[0].buffer,
-        'after1.jpg',
+        "after1.jpg",
         files.after1[0].mimetype,
         store.storeId,
-        'Installation',
-        userName
+        "Installation",
+        userName,
       );
     }
     if (files.after2) {
       driveLinks.after2 = await uploadService.uploadFile(
         files.after2[0].buffer,
-        'after2.jpg',
+        "after2.jpg",
         files.after2[0].mimetype,
         store.storeId,
-        'Installation',
-        userName
+        "Installation",
+        userName,
       );
     }
 
@@ -750,14 +965,15 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
     const store = await Store.findById(id);
 
     if (!store || !store.installation) {
-      return res.status(404).json({ message: "Store or Installation data not found" });
+      return res
+        .status(404)
+        .json({ message: "Store or Installation data not found" });
     }
 
     const pres = new PptxGenJS();
     pres.layout = "LAYOUT_WIDE";
     pres.title = `Installation Report - ${store.storeName}`;
-    
-    // Define theme colors (Yellow & Black)
+
     const colors = {
       primary: "EAB308",
       secondary: "000000",
@@ -765,114 +981,311 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
       text: "1F2937",
       lightBg: "FEF3C7",
       white: "FFFFFF",
-      beforeBg: "FEE2E2",
-      afterBg: "D1FAE5"
+      borderDark: "B45309",
     };
 
-    const slide = pres.addSlide();
-    slide.background = { color: colors.white };
+    const logoPath = path.join(process.cwd(), "public", "logo.png");
 
-    // Add Logo
-    const logoPath = path.join(process.cwd(), "../elora-web/public/elora-logo-excel.png");
-    if (fs.existsSync(logoPath)) {
-      slide.addImage({ path: logoPath, x: 0.5, y: 0.3, w: 2, h: 0.6 });
-    }
-
-    // Header with border
-    slide.addShape("rect", { x: 0.5, y: 0.9, w: 9, h: 0.6, line: { color: colors.success, width: 2 }, fill: { color: colors.white } });
-    slide.addText("INSTALLATION COMPLETION REPORT", { 
-      x: 0.5, y: 0.9, w: 9, h: 0.6, 
-      fontSize: 28, bold: true, color: colors.success, align: "center", valign: "middle"
+    // COVER SLIDE
+    const coverSlide = pres.addSlide();
+    coverSlide.background = { fill: "FFFEF5" };
+    coverSlide.addShape("rect", {
+      x: 0,
+      y: 0,
+      w: "100%",
+      h: "100%",
+      fill: { type: "solid", color: "FFFEF5", transparency: 10 },
     });
 
-    // Store Details Section with border
-    slide.addShape("rect", { 
-      x: 0.5, y: 1.6, w: 9, h: 1.8, 
-      line: { color: colors.primary, width: 2 }, fill: { color: colors.white } 
+    coverSlide.addText(
+      "WE DON'T JUST PRINT.\nWE INSTALL YOUR BRAND\nINTO THE REAL WORLD.",
+      {
+        x: 0.5,
+        y: 0.5,
+        w: 5,
+        h: 2,
+        fontSize: 32,
+        bold: true,
+        color: colors.primary,
+        align: "left",
+        valign: "top",
+      },
+    );
+
+    if (fs.existsSync(logoPath)) {
+      coverSlide.addImage({ path: logoPath, x: 3.3, y: 3, w: 4.2, h: 1.26 });
+    }
+
+    coverSlide.addText(
+      "We help businesses stand out with custom branding,\nhigh-quality banner printing, and professional on-site installation.",
+      {
+        x: 6.5,
+        y: 5.8,
+        w: 3,
+        h: 1.2,
+        fontSize: 16,
+        color: colors.text,
+        align: "right",
+        valign: "bottom",
+      },
+    );
+
+    // DATA SLIDE
+    const slide = pres.addSlide();
+    slide.background = { fill: "FFFEF5" };
+    slide.addShape("rect", {
+      x: 0,
+      y: 0,
+      w: "100%",
+      h: "100%",
+      fill: { type: "solid", color: "FEF3C7", transparency: 50 },
+    });
+
+    if (fs.existsSync(logoPath)) {
+      slide.addImage({ path: logoPath, x: 0.3, y: 0.15, w: 1.5, h: 0.45 });
+    }
+
+    slide.addShape("rect", {
+      x: 0.2,
+      y: 0.8,
+      w: 9.6,
+      h: 0.7,
+      line: { color: colors.borderDark, width: 2 },
+      fill: { color: colors.white },
+    });
+    slide.addText("INSTALLATION COMPLETION REPORT", {
+      x: 0.2,
+      y: 0.8,
+      w: 9.6,
+      h: 0.7,
+      fontSize: 32,
+      bold: true,
+      color: colors.success,
+      align: "center",
+      valign: "middle",
+    });
+
+    slide.addShape("rect", {
+      x: 0.2,
+      y: 1.7,
+      w: 9.6,
+      h: 2.4,
+      line: { color: colors.borderDark, width: 2 },
+      fill: { color: colors.white },
     });
 
     const detailsData = [
-      [{ text: "Dealer Code", options: { bold: true, fill: { color: colors.lightBg } } }, store.dealerCode || "", 
-       { text: "Store Name", options: { bold: true, fill: { color: colors.lightBg } } }, store.storeName || ""],
-      [{ text: "City", options: { bold: true, fill: { color: colors.lightBg } } }, store.location.city || "", 
-       { text: "State", options: { bold: true, fill: { color: colors.lightBg } } }, store.location.state || ""],
-      [{ text: "Address", options: { bold: true, fill: { color: colors.lightBg } } }, { text: store.location.address || "N/A", options: { colspan: 3 } }],
-      [{ text: "Board Size", options: { bold: true, fill: { color: colors.lightBg } } }, `${store.recce?.sizes?.width || 0} x ${store.recce?.sizes?.height || 0} ft`, 
-       { text: "Completion Date", options: { bold: true, fill: { color: colors.lightBg } } }, store.installation.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : "N/A"],
-      [{ text: "Status", options: { bold: true, fill: { color: colors.lightBg } } }, { text: "✓ COMPLETED", options: { colspan: 3, bold: true, color: colors.success } }]
+      [
+        {
+          text: "Dealer Code",
+          options: { bold: true, fill: { color: colors.lightBg } },
+        },
+        store.dealerCode || "",
+        {
+          text: "Store Name",
+          options: { bold: true, fill: { color: colors.lightBg } },
+        },
+        store.storeName || "",
+      ],
+      [
+        {
+          text: "City",
+          options: { bold: true, fill: { color: colors.lightBg } },
+        },
+        store.location.city || "",
+        {
+          text: "State",
+          options: { bold: true, fill: { color: colors.lightBg } },
+        },
+        store.location.state || "",
+      ],
+      [
+        {
+          text: "Address",
+          options: { bold: true, fill: { color: colors.lightBg } },
+        },
+        { text: store.location.address || "N/A", options: { colspan: 3 } },
+      ],
+      [
+        {
+          text: "Board Size",
+          options: { bold: true, fill: { color: colors.lightBg } },
+        },
+        `${store.recce?.sizes?.width || 0} x ${store.recce?.sizes?.height || 0} ft`,
+        {
+          text: "Completion Date",
+          options: { bold: true, fill: { color: colors.lightBg } },
+        },
+        store.installation.submittedDate
+          ? new Date(store.installation.submittedDate).toLocaleDateString()
+          : "N/A",
+      ],
+      [
+        {
+          text: "Status",
+          options: { bold: true, fill: { color: colors.lightBg } },
+        },
+        {
+          text: "✓ COMPLETED",
+          options: { colspan: 3, bold: true, color: colors.success },
+        },
+      ],
     ];
 
     slide.addTable(detailsData as any, {
-      x: 0.5, y: 1.6, w: 9, h: 1.8,
-      colW: [1.8, 2.4, 1.8, 3.0],
-      fontSize: 11,
-      border: { pt: 2, color: colors.primary },
+      x: 0.2,
+      y: 1.7,
+      w: 9.6,
+      h: 2.4,
+      colW: [2.1, 2.5, 2.1, 2.9],
+      fontSize: 14,
+      border: { pt: 2, color: colors.borderDark },
       valign: "middle",
-      color: colors.text
+      color: colors.text,
     });
 
-    // Before & After Section Title with border
-    slide.addShape("rect", { x: 0.5, y: 3.5, w: 9, h: 0.4, line: { color: colors.success, width: 2 }, fill: { color: colors.afterBg } });
-    slide.addText("BEFORE & AFTER COMPARISON", { 
-      x: 0.5, y: 3.5, w: 9, h: 0.4, 
-      fontSize: 16, bold: true, color: colors.secondary, align: "center", valign: "middle"
+    slide.addShape("rect", {
+      x: 0.2,
+      y: 4.3,
+      w: 9.6,
+      h: 0.5,
+      line: { color: colors.borderDark, width: 2 },
+      fill: { color: colors.white },
+    });
+    slide.addText("BEFORE & AFTER COMPARISON", {
+      x: 0.2,
+      y: 4.3,
+      w: 9.6,
+      h: 0.5,
+      fontSize: 18,
+      bold: true,
+      color: colors.secondary,
+      align: "center",
+      valign: "middle",
     });
 
-    // Images with Before/After Labels and borders
-    const addImage = (relativePath: string | undefined, label: string, x: number, y: number, bgColor: string, labelColor: string) => {
-      slide.addShape("rect", { x, y, w: 2.8, h: 2.5, line: { color: bgColor, width: 2 }, fill: { color: "F5F5F5" } });
+    const addImage = (
+      relativePath: string | undefined,
+      label: string,
+      x: number,
+      y: number,
+      bgColor: string,
+    ) => {
+      slide.addShape("rect", {
+        x,
+        y,
+        w: 3,
+        h: 2.5,
+        line: { color: colors.borderDark, width: 2 },
+        fill: { color: colors.white },
+      });
       if (relativePath) {
         try {
           const absolutePath = path.join(process.cwd(), relativePath);
           if (fs.existsSync(absolutePath)) {
-            slide.addImage({ path: absolutePath, x: x + 0.05, y: y + 0.05, w: 2.7, h: 2.0 });
+            slide.addImage({
+              path: absolutePath,
+              x: x + 0.05,
+              y: y + 0.05,
+              w: 2.9,
+              h: 2.0,
+            });
           } else {
-            slide.addText(`Image Not Found`, { x, y: y + 1, w: 2.8, fontSize: 10, align: "center", color: "999999" });
+            slide.addText("Image Not Found", {
+              x,
+              y: y + 1,
+              w: 3,
+              fontSize: 10,
+              align: "center",
+              color: "999999",
+            });
           }
         } catch (err) {
-          slide.addText("Error Loading Image", { x, y: y + 1, w: 2.8, fontSize: 10, align: "center", color: "FF0000" });
+          slide.addText("Error Loading Image", {
+            x,
+            y: y + 1,
+            w: 3,
+            fontSize: 10,
+            align: "center",
+            color: "FF0000",
+          });
         }
       } else {
-        slide.addText(`No ${label}`, { x, y: y + 1, w: 2.8, fontSize: 10, align: "center", color: "999999" });
+        slide.addText(`No ${label}`, {
+          x,
+          y: y + 1,
+          w: 3,
+          fontSize: 10,
+          align: "center",
+          color: "999999",
+        });
       }
-      slide.addShape("rect", { x, y: y + 2.05, w: 2.8, h: 0.45, fill: { color: bgColor }, line: { color: bgColor, width: 2 } });
-      slide.addText(label, { x, y: y + 2.05, w: 2.8, h: 0.45, fontSize: 12, bold: true, align: "center", valign: "middle", color: labelColor });
+      slide.addShape("rect", {
+        x,
+        y: y + 2.05,
+        w: 3,
+        h: 0.45,
+        fill: { color: bgColor },
+        line: { color: colors.borderDark, width: 2 },
+      });
+      slide.addText(label, {
+        x,
+        y: y + 2.05,
+        w: 3,
+        h: 0.45,
+        fontSize: 12,
+        bold: true,
+        align: "center",
+        valign: "middle",
+        color: colors.white,
+      });
     };
 
-    // BEFORE (Recce Front Photo)
-    addImage(store.recce?.photos?.front, "BEFORE", 0.8, 4.0, "EF4444", colors.white);
-    
-    // AFTER (Installation Photos)
-    addImage(store.installation.photos?.after1, "AFTER - VIEW 1", 3.8, 4.0, colors.success, colors.white);
-    addImage(store.installation.photos?.after2, "AFTER - VIEW 2", 6.8, 4.0, colors.success, colors.white);
+    addImage(store.recce?.photos?.front, "BEFORE", 0.5, 4.9, "EF4444");
+    addImage(
+      store.installation.photos?.after1,
+      "AFTER - VIEW 1",
+      3.7,
+      4.9,
+      colors.success,
+    );
+    addImage(
+      store.installation.photos?.after2,
+      "AFTER - VIEW 2",
+      6.9,
+      4.9,
+      colors.success,
+    );
 
     const buffer = await pres.write({ outputType: "nodebuffer" });
     res.writeHead(200, {
-      "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "Content-Type":
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       "Content-Disposition": `attachment; filename="Installation_${store.dealerCode}.pptx"`,
     });
     res.end(buffer);
   } catch (error: any) {
     console.error("PPT Gen Error:", error);
-    if (!res.headersSent) res.status(500).json({ message: "Error generating PPT" });
+    if (!res.headersSent)
+      res.status(500).json({ message: "Error generating PPT" });
   }
 };
 
 // --- NEW: Bulk PPT Generation (Single PPT with Multiple Slides) ---
 export const generateBulkPPT = async (req: Request, res: Response) => {
   try {
-    const { storeIds, type } = req.body; // type: "recce" or "installation"
-    
+    const { storeIds, type } = req.body;
+
     if (!storeIds || !Array.isArray(storeIds) || storeIds.length === 0) {
       return res.status(400).json({ message: "No stores selected" });
     }
-    
+
     if (type !== "recce" && type !== "installation") {
       return res.status(400).json({ message: "Invalid type" });
     }
 
     const stores = await Store.find({ _id: { $in: storeIds } });
-    
+
     if (stores.length === 0) {
       return res.status(404).json({ message: "No stores found" });
     }
@@ -889,101 +1302,369 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
       success: "22C55E",
       text: "1F2937",
       lightBg: "FEF3C7",
-      white: "FFFFFF"
+      white: "FFFFFF",
+      borderDark: "B45309",
     };
 
-    const logoPath = path.join(process.cwd(), "../elora-web/public/elora-logo-excel.png");
+    const logoPath = path.join(process.cwd(), "public", "logo.png");
+
+    // COVER SLIDE
+    const coverSlide = pres.addSlide();
+    coverSlide.background = { fill: "FFFEF5" };
+    coverSlide.addShape("rect", {
+      x: 0,
+      y: 0,
+      w: "100%",
+      h: "100%",
+      fill: { type: "solid", color: "FFFEF5", transparency: 10 },
+    });
+
+    coverSlide.addText(
+      "WE DON'T JUST PRINT.\nWE INSTALL YOUR BRAND\nINTO THE REAL WORLD.",
+      {
+        x: 0.5,
+        y: 0.5,
+        w: 5,
+        h: 2,
+        fontSize: 32,
+        bold: true,
+        color: colors.primary,
+        align: "left",
+        valign: "top",
+      },
+    );
+
+    if (fs.existsSync(logoPath)) {
+      coverSlide.addImage({ path: logoPath, x: 3.3, y: 3, w: 4.2, h: 1.26 });
+    }
+
+    coverSlide.addText(
+      "We help businesses stand out with custom branding,\nhigh-quality banner printing, and professional on-site installation.",
+      {
+        x: 6.5,
+        y: 5.8,
+        w: 3,
+        h: 1.2,
+        fontSize: 16,
+        color: colors.text,
+        align: "right",
+        valign: "bottom",
+      },
+    );
 
     for (const store of stores) {
-      // Skip if data not available
       if (type === "recce" && !store.recce) continue;
       if (type === "installation" && !store.installation) continue;
 
       const slide = pres.addSlide();
-      slide.background = { color: colors.white };
+      slide.background = { fill: "FFFEF5" };
+      slide.addShape("rect", {
+        x: 0,
+        y: 0,
+        w: "100%",
+        h: "100%",
+        fill: { type: "solid", color: "FEF3C7", transparency: 50 },
+      });
 
-      // Add Logo
       if (fs.existsSync(logoPath)) {
-        slide.addImage({ path: logoPath, x: 0.5, y: 0.3, w: 2, h: 0.6 });
+        slide.addImage({ path: logoPath, x: 0.3, y: 0.15, w: 1.5, h: 0.45 });
       }
 
-      // Header
-      slide.addText(type === "recce" ? "RECCE INSPECTION REPORT" : "INSTALLATION COMPLETION REPORT", { 
-        x: 0.5, y: 1.1, w: 9, h: 0.5, 
-        fontSize: 28, bold: true, color: type === "recce" ? colors.primary : colors.success, align: "center"
+      slide.addShape("rect", {
+        x: 0.2,
+        y: 0.8,
+        w: 9.6,
+        h: 0.7,
+        line: { color: colors.borderDark, width: 2 },
+        fill: { color: colors.white },
+      });
+      slide.addText(
+        type === "recce"
+          ? "RECCE INSPECTION REPORT"
+          : "INSTALLATION COMPLETION REPORT",
+        {
+          x: 0.2,
+          y: 0.8,
+          w: 9.6,
+          h: 0.7,
+          fontSize: 32,
+          bold: true,
+          color: type === "recce" ? colors.primary : colors.success,
+          align: "center",
+          valign: "middle",
+        },
+      );
+
+      slide.addShape("rect", {
+        x: 0.2,
+        y: 1.7,
+        w: 9.6,
+        h: 2.4,
+        line: { color: colors.borderDark, width: 2 },
+        fill: { color: colors.white },
       });
 
-      slide.addShape("rect", { x: 0.5, y: 1.8, w: 9, h: 0.05, fill: { color: colors.primary } });
-
-      // Details Table
-      const detailsData = type === "recce" ? [
-        [{ text: "Dealer Code", options: { bold: true, fill: { color: colors.lightBg } } }, store.dealerCode || "", 
-         { text: "Store Name", options: { bold: true, fill: { color: colors.lightBg } } }, store.storeName || ""],
-        [{ text: "City", options: { bold: true, fill: { color: colors.lightBg } } }, store.location.city || "", 
-         { text: "State", options: { bold: true, fill: { color: colors.lightBg } } }, store.location.state || ""],
-        [{ text: "Address", options: { bold: true, fill: { color: colors.lightBg } } }, { text: store.location.address || "N/A", options: { colspan: 3 } }],
-        [{ text: "Board Size", options: { bold: true, fill: { color: colors.lightBg } } }, `${store.recce?.sizes?.width || 0} x ${store.recce?.sizes?.height || 0} ft`, 
-         { text: "Recce Date", options: { bold: true, fill: { color: colors.lightBg } } }, store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : "N/A"],
-        [{ text: "Notes", options: { bold: true, fill: { color: colors.lightBg } } }, { text: store.recce?.notes || "None", options: { colspan: 3 } }]
-      ] : [
-        [{ text: "Dealer Code", options: { bold: true, fill: { color: colors.lightBg } } }, store.dealerCode || "", 
-         { text: "Store Name", options: { bold: true, fill: { color: colors.lightBg } } }, store.storeName || ""],
-        [{ text: "City", options: { bold: true, fill: { color: colors.lightBg } } }, store.location.city || "", 
-         { text: "State", options: { bold: true, fill: { color: colors.lightBg } } }, store.location.state || ""],
-        [{ text: "Address", options: { bold: true, fill: { color: colors.lightBg } } }, { text: store.location.address || "N/A", options: { colspan: 3 } }],
-        [{ text: "Board Size", options: { bold: true, fill: { color: colors.lightBg } } }, `${store.recce?.sizes?.width || 0} x ${store.recce?.sizes?.height || 0} ft`, 
-         { text: "Completion Date", options: { bold: true, fill: { color: colors.lightBg } } }, store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : "N/A"],
-        [{ text: "Status", options: { bold: true, fill: { color: colors.lightBg } } }, { text: "✓ COMPLETED", options: { colspan: 3, bold: true, color: colors.success } }]
-      ];
+      const detailsData =
+        type === "recce"
+          ? [
+              [
+                {
+                  text: "Dealer Code",
+                  options: { bold: true, fill: { color: colors.lightBg } },
+                },
+                store.dealerCode || "",
+                {
+                  text: "Store Name",
+                  options: { bold: true, fill: { color: colors.lightBg } },
+                },
+                store.storeName || "",
+              ],
+              [
+                {
+                  text: "City",
+                  options: { bold: true, fill: { color: colors.lightBg } },
+                },
+                store.location.city || "",
+                {
+                  text: "State",
+                  options: { bold: true, fill: { color: colors.lightBg } },
+                },
+                store.location.state || "",
+              ],
+              [
+                {
+                  text: "Address",
+                  options: { bold: true, fill: { color: colors.lightBg } },
+                },
+                {
+                  text: store.location.address || "N/A",
+                  options: { colspan: 3 },
+                },
+              ],
+              [
+                {
+                  text: "Board Size",
+                  options: { bold: true, fill: { color: colors.lightBg } },
+                },
+                `${store.recce?.sizes?.width || 0} x ${store.recce?.sizes?.height || 0} ft`,
+                {
+                  text: "Recce Date",
+                  options: { bold: true, fill: { color: colors.lightBg } },
+                },
+                store.recce?.submittedDate
+                  ? new Date(store.recce.submittedDate).toLocaleDateString()
+                  : "N/A",
+              ],
+              [
+                {
+                  text: "Notes",
+                  options: { bold: true, fill: { color: colors.lightBg } },
+                },
+                { text: store.recce?.notes || "None", options: { colspan: 3 } },
+              ],
+            ]
+          : [
+              [
+                {
+                  text: "Dealer Code",
+                  options: { bold: true, fill: { color: colors.lightBg } },
+                },
+                store.dealerCode || "",
+                {
+                  text: "Store Name",
+                  options: { bold: true, fill: { color: colors.lightBg } },
+                },
+                store.storeName || "",
+              ],
+              [
+                {
+                  text: "City",
+                  options: { bold: true, fill: { color: colors.lightBg } },
+                },
+                store.location.city || "",
+                {
+                  text: "State",
+                  options: { bold: true, fill: { color: colors.lightBg } },
+                },
+                store.location.state || "",
+              ],
+              [
+                {
+                  text: "Address",
+                  options: { bold: true, fill: { color: colors.lightBg } },
+                },
+                {
+                  text: store.location.address || "N/A",
+                  options: { colspan: 3 },
+                },
+              ],
+              [
+                {
+                  text: "Board Size",
+                  options: { bold: true, fill: { color: colors.lightBg } },
+                },
+                `${store.recce?.sizes?.width || 0} x ${store.recce?.sizes?.height || 0} ft`,
+                {
+                  text: "Completion Date",
+                  options: { bold: true, fill: { color: colors.lightBg } },
+                },
+                store.installation?.submittedDate
+                  ? new Date(
+                      store.installation.submittedDate,
+                    ).toLocaleDateString()
+                  : "N/A",
+              ],
+              [
+                {
+                  text: "Status",
+                  options: { bold: true, fill: { color: colors.lightBg } },
+                },
+                {
+                  text: "✓ COMPLETED",
+                  options: { colspan: 3, bold: true, color: colors.success },
+                },
+              ],
+            ];
 
       slide.addTable(detailsData as any, {
-        x: 0.5, y: 2.0, w: 9, h: 1.5,
-        colW: [1.8, 2.4, 1.8, 3.0],
-        fontSize: 11,
-        border: { pt: 1, color: "CCCCCC" },
+        x: 0.2,
+        y: 1.7,
+        w: 9.6,
+        h: 2.4,
+        colW: [2.1, 2.5, 2.1, 2.9],
+        fontSize: 14,
+        border: { pt: 2, color: colors.borderDark },
         valign: "middle",
-        color: colors.text
+        color: colors.text,
       });
 
-      // Images Section
-      slide.addText(type === "recce" ? "SITE INSPECTION PHOTOS" : "BEFORE & AFTER COMPARISON", { 
-        x: 0.5, y: 3.7, w: 9, h: 0.4, 
-        fontSize: 16, bold: true, color: colors.secondary, align: "center"
+      slide.addShape("rect", {
+        x: 0.2,
+        y: 4.3,
+        w: 9.6,
+        h: 0.5,
+        line: { color: colors.borderDark, width: 2 },
+        fill: { color: colors.white },
       });
+      slide.addText(
+        type === "recce"
+          ? "SITE INSPECTION PHOTOS"
+          : "BEFORE & AFTER COMPARISON",
+        {
+          x: 0.2,
+          y: 4.3,
+          w: 9.6,
+          h: 0.5,
+          fontSize: 18,
+          bold: true,
+          color: colors.secondary,
+          align: "center",
+          valign: "middle",
+        },
+      );
 
-      const addImage = (relativePath: string | undefined, label: string, x: number, y: number, bgColor: string) => {
+      const addImage = (
+        relativePath: string | undefined,
+        label: string,
+        x: number,
+        y: number,
+        bgColor: string,
+      ) => {
+        slide.addShape("rect", {
+          x,
+          y,
+          w: 3,
+          h: 2.5,
+          line: { color: colors.borderDark, width: 2 },
+          fill: { color: colors.white },
+        });
         if (relativePath) {
           try {
             const absolutePath = path.join(process.cwd(), relativePath);
             if (fs.existsSync(absolutePath)) {
-              slide.addImage({ path: absolutePath, x, y, w: 2.8, h: 2.1 });
-              slide.addShape("rect", { x, y: y + 2.15, w: 2.8, h: 0.35, fill: { color: bgColor } });
-              slide.addText(label, { x, y: y + 2.15, w: 2.8, h: 0.35, fontSize: 12, bold: true, align: "center", color: colors.white });
+              slide.addImage({
+                path: absolutePath,
+                x: x + 0.05,
+                y: y + 0.05,
+                w: 2.9,
+                h: 2.0,
+              });
             }
           } catch (err) {}
         }
+        slide.addShape("rect", {
+          x,
+          y: y + 2.05,
+          w: 3,
+          h: 0.45,
+          fill: { color: bgColor },
+          line: { color: colors.borderDark, width: 2 },
+        });
+        slide.addText(label, {
+          x,
+          y: y + 2.05,
+          w: 3,
+          h: 0.45,
+          fontSize: 12,
+          bold: true,
+          align: "center",
+          valign: "middle",
+          color: colors.white,
+        });
       };
 
       if (type === "recce") {
-        addImage(store.recce?.photos?.front, "FRONT VIEW", 0.8, 4.2, colors.primary);
-        addImage(store.recce?.photos?.side, "SIDE VIEW", 3.8, 4.2, colors.primary);
-        addImage(store.recce?.photos?.closeUp, "CLOSE UP VIEW", 6.8, 4.2, colors.primary);
+        addImage(
+          store.recce?.photos?.front,
+          "FRONT VIEW",
+          0.5,
+          4.9,
+          colors.primary,
+        );
+        addImage(
+          store.recce?.photos?.side,
+          "SIDE VIEW",
+          3.7,
+          4.9,
+          colors.primary,
+        );
+        addImage(
+          store.recce?.photos?.closeUp,
+          "CLOSE UP VIEW",
+          6.9,
+          4.9,
+          colors.primary,
+        );
       } else {
-        addImage(store.recce?.photos?.front, "BEFORE", 0.8, 4.2, "EF4444");
-        addImage(store.installation?.photos?.after1, "AFTER - VIEW 1", 3.8, 4.2, colors.success);
-        addImage(store.installation?.photos?.after2, "AFTER - VIEW 2", 6.8, 4.2, colors.success);
+        addImage(store.recce?.photos?.front, "BEFORE", 0.5, 4.9, "EF4444");
+        addImage(
+          store.installation?.photos?.after1,
+          "AFTER - VIEW 1",
+          3.7,
+          4.9,
+          colors.success,
+        );
+        addImage(
+          store.installation?.photos?.after2,
+          "AFTER - VIEW 2",
+          6.9,
+          4.9,
+          colors.success,
+        );
       }
     }
 
     const buffer = await pres.write({ outputType: "nodebuffer" });
     res.writeHead(200, {
-      "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      "Content-Disposition": `attachment; filename="${type === "recce" ? "Recce" : "Installation"}_Report_${stores.length}_Stores_${new Date().toISOString().split('T')[0]}.pptx"`,
+      "Content-Type":
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "Content-Disposition": `attachment; filename="${type === "recce" ? "Recce" : "Installation"}_Report_${stores.length}_Stores_${new Date().toISOString().split("T")[0]}.pptx"`,
     });
     res.end(buffer);
   } catch (error: any) {
     console.error("Bulk PPT Error:", error);
-    if (!res.headersSent) res.status(500).json({ message: "Error generating bulk PPT" });
+    if (!res.headersSent)
+      res.status(500).json({ message: "Error generating bulk PPT" });
   }
 };
 
@@ -1512,128 +2193,127 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
   }
 };
 
-
 // --- PDF Generation Functions ---
-export const generateReccePDF = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const store = await Store.findById(id);
+// export const generateReccePDF = async (req: Request, res: Response) => {
+//   try {
+//     const { id } = req.params;
+//     const store = await Store.findById(id);
 
-    if (!store || !store.recce) {
-      return res.status(404).json({ message: "Store or Recce data not found" });
-    }
+//     if (!store || !store.recce) {
+//       return res.status(404).json({ message: "Store or Recce data not found" });
+//     }
 
-    const PDFDocument = require('pdfkit');
-    const doc = new PDFDocument({ margin: 50 });
+//     const PDFDocument = require('pdfkit');
+//     const doc = new PDFDocument({ margin: 50 });
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="Recce_${store.dealerCode}.pdf"`);
-    doc.pipe(res);
+//     res.setHeader('Content-Type', 'application/pdf');
+//     res.setHeader('Content-Disposition', `attachment; filename="Recce_${store.dealerCode}.pdf"`);
+//     doc.pipe(res);
 
-    // Header
-    doc.fontSize(24).fillColor('#EAB308').text('RECCE INSPECTION REPORT', { align: 'center' });
-    doc.moveDown();
-    doc.strokeColor('#EAB308').lineWidth(2).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-    doc.moveDown();
+//     // Header
+//     doc.fontSize(24).fillColor('#EAB308').text('RECCE INSPECTION REPORT', { align: 'center' });
+//     doc.moveDown();
+//     doc.strokeColor('#EAB308').lineWidth(2).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+//     doc.moveDown();
 
-    // Store Details
-    doc.fontSize(12).fillColor('#000000');
-    doc.text(`Dealer Code: ${store.dealerCode || 'N/A'}`, { continued: true }).text(`    Store Name: ${store.storeName || 'N/A'}`);
-    doc.text(`City: ${store.location.city || 'N/A'}`, { continued: true }).text(`    State: ${store.location.state || 'N/A'}`);
-    doc.text(`Address: ${store.location.address || 'N/A'}`);
-    doc.text(`Board Size: ${store.recce.sizes?.width || 0} x ${store.recce.sizes?.height || 0} ft`, { continued: true });
-    doc.text(`    Recce Date: ${store.recce.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A'}`);
-    doc.text(`Notes: ${store.recce.notes || 'None'}`);
-    doc.moveDown();
+//     // Store Details
+//     doc.fontSize(12).fillColor('#000000');
+//     doc.text(`Dealer Code: ${store.dealerCode || 'N/A'}`, { continued: true }).text(`    Store Name: ${store.storeName || 'N/A'}`);
+//     doc.text(`City: ${store.location.city || 'N/A'}`, { continued: true }).text(`    State: ${store.location.state || 'N/A'}`);
+//     doc.text(`Address: ${store.location.address || 'N/A'}`);
+//     doc.text(`Board Size: ${store.recce.sizes?.width || 0} x ${store.recce.sizes?.height || 0} ft`, { continued: true });
+//     doc.text(`    Recce Date: ${store.recce.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A'}`);
+//     doc.text(`Notes: ${store.recce.notes || 'None'}`);
+//     doc.moveDown();
 
-    // Images Section
-    doc.fontSize(16).fillColor('#EAB308').text('SITE INSPECTION PHOTOS', { align: 'center' });
-    doc.moveDown();
+//     // Images Section
+//     doc.fontSize(16).fillColor('#EAB308').text('SITE INSPECTION PHOTOS', { align: 'center' });
+//     doc.moveDown();
 
-    const addImage = (relativePath: string | undefined, label: string) => {
-      if (relativePath) {
-        try {
-          const absolutePath = path.join(process.cwd(), relativePath);
-          if (fs.existsSync(absolutePath)) {
-            doc.fontSize(12).fillColor('#000000').text(label, { underline: true });
-            doc.image(absolutePath, { fit: [450, 300], align: 'center' });
-            doc.moveDown();
-          }
-        } catch (err) {
-          doc.text(`${label}: Image not available`);
-        }
-      }
-    };
+//     const addImage = (relativePath: string | undefined, label: string) => {
+//       if (relativePath) {
+//         try {
+//           const absolutePath = path.join(process.cwd(), relativePath);
+//           if (fs.existsSync(absolutePath)) {
+//             doc.fontSize(12).fillColor('#000000').text(label, { underline: true });
+//             doc.image(absolutePath, { fit: [450, 300], align: 'center' });
+//             doc.moveDown();
+//           }
+//         } catch (err) {
+//           doc.text(`${label}: Image not available`);
+//         }
+//       }
+//     };
 
-    addImage(store.recce.photos?.front, 'FRONT VIEW');
-    addImage(store.recce.photos?.side, 'SIDE VIEW');
-    addImage(store.recce.photos?.closeUp, 'CLOSE UP VIEW');
+//     addImage(store.recce.photos?.front, 'FRONT VIEW');
+//     addImage(store.recce.photos?.side, 'SIDE VIEW');
+//     addImage(store.recce.photos?.closeUp, 'CLOSE UP VIEW');
 
-    doc.end();
-  } catch (error: any) {
-    console.error("PDF Gen Error:", error);
-    if (!res.headersSent) res.status(500).json({ message: "Error generating PDF" });
-  }
-};
+//     doc.end();
+//   } catch (error: any) {
+//     console.error("PDF Gen Error:", error);
+//     if (!res.headersSent) res.status(500).json({ message: "Error generating PDF" });
+//   }
+// };
 
-export const generateInstallationPDF = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const store = await Store.findById(id);
+// export const generateInstallationPDF = async (req: Request, res: Response) => {
+//   try {
+//     const { id } = req.params;
+//     const store = await Store.findById(id);
 
-    if (!store || !store.installation) {
-      return res.status(404).json({ message: "Store or Installation data not found" });
-    }
+//     if (!store || !store.installation) {
+//       return res.status(404).json({ message: "Store or Installation data not found" });
+//     }
 
-    const PDFDocument = require('pdfkit');
-    const doc = new PDFDocument({ margin: 50 });
+//     const PDFDocument = require('pdfkit');
+//     const doc = new PDFDocument({ margin: 50 });
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="Installation_${store.dealerCode}.pdf"`);
-    doc.pipe(res);
+//     res.setHeader('Content-Type', 'application/pdf');
+//     res.setHeader('Content-Disposition', `attachment; filename="Installation_${store.dealerCode}.pdf"`);
+//     doc.pipe(res);
 
-    // Header
-    doc.fontSize(24).fillColor('#22C55E').text('INSTALLATION COMPLETION REPORT', { align: 'center' });
-    doc.moveDown();
-    doc.strokeColor('#22C55E').lineWidth(2).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-    doc.moveDown();
+//     // Header
+//     doc.fontSize(24).fillColor('#22C55E').text('INSTALLATION COMPLETION REPORT', { align: 'center' });
+//     doc.moveDown();
+//     doc.strokeColor('#22C55E').lineWidth(2).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+//     doc.moveDown();
 
-    // Store Details
-    doc.fontSize(12).fillColor('#000000');
-    doc.text(`Dealer Code: ${store.dealerCode || 'N/A'}`, { continued: true }).text(`    Store Name: ${store.storeName || 'N/A'}`);
-    doc.text(`City: ${store.location.city || 'N/A'}`, { continued: true }).text(`    State: ${store.location.state || 'N/A'}`);
-    doc.text(`Address: ${store.location.address || 'N/A'}`);
-    doc.text(`Board Size: ${store.recce?.sizes?.width || 0} x ${store.recce?.sizes?.height || 0} ft`, { continued: true });
-    doc.text(`    Completion Date: ${store.installation.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A'}`);
-    doc.fontSize(14).fillColor('#22C55E').text('Status: ✓ COMPLETED', { bold: true });
-    doc.moveDown();
+//     // Store Details
+//     doc.fontSize(12).fillColor('#000000');
+//     doc.text(`Dealer Code: ${store.dealerCode || 'N/A'}`, { continued: true }).text(`    Store Name: ${store.storeName || 'N/A'}`);
+//     doc.text(`City: ${store.location.city || 'N/A'}`, { continued: true }).text(`    State: ${store.location.state || 'N/A'}`);
+//     doc.text(`Address: ${store.location.address || 'N/A'}`);
+//     doc.text(`Board Size: ${store.recce?.sizes?.width || 0} x ${store.recce?.sizes?.height || 0} ft`, { continued: true });
+//     doc.text(`    Completion Date: ${store.installation.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A'}`);
+//     doc.fontSize(14).fillColor('#22C55E').text('Status: ✓ COMPLETED', { bold: true });
+//     doc.moveDown();
 
-    // Images Section
-    doc.fontSize(16).fillColor('#22C55E').text('BEFORE & AFTER COMPARISON', { align: 'center' });
-    doc.moveDown();
+//     // Images Section
+//     doc.fontSize(16).fillColor('#22C55E').text('BEFORE & AFTER COMPARISON', { align: 'center' });
+//     doc.moveDown();
 
-    const addImage = (relativePath: string | undefined, label: string, color: string) => {
-      if (relativePath) {
-        try {
-          const absolutePath = path.join(process.cwd(), relativePath);
-          if (fs.existsSync(absolutePath)) {
-            doc.fontSize(12).fillColor(color).text(label, { underline: true });
-            doc.image(absolutePath, { fit: [450, 300], align: 'center' });
-            doc.moveDown();
-          }
-        } catch (err) {
-          doc.fillColor('#000000').text(`${label}: Image not available`);
-        }
-      }
-    };
+//     const addImage = (relativePath: string | undefined, label: string, color: string) => {
+//       if (relativePath) {
+//         try {
+//           const absolutePath = path.join(process.cwd(), relativePath);
+//           if (fs.existsSync(absolutePath)) {
+//             doc.fontSize(12).fillColor(color).text(label, { underline: true });
+//             doc.image(absolutePath, { fit: [450, 300], align: 'center' });
+//             doc.moveDown();
+//           }
+//         } catch (err) {
+//           doc.fillColor('#000000').text(`${label}: Image not available`);
+//         }
+//       }
+//     };
 
-    addImage(store.recce?.photos?.front, 'BEFORE', '#EF4444');
-    addImage(store.installation.photos?.after1, 'AFTER - VIEW 1', '#22C55E');
-    addImage(store.installation.photos?.after2, 'AFTER - VIEW 2', '#22C55E');
+//     addImage(store.recce?.photos?.front, 'BEFORE', '#EF4444');
+//     addImage(store.installation.photos?.after1, 'AFTER - VIEW 1', '#22C55E');
+//     addImage(store.installation.photos?.after2, 'AFTER - VIEW 2', '#22C55E');
 
-    doc.end();
-  } catch (error: any) {
-    console.error("PDF Gen Error:", error);
-    if (!res.headersSent) res.status(500).json({ message: "Error generating PDF" });
-  }
-};
+//     doc.end();
+//   } catch (error: any) {
+//     console.error("PDF Gen Error:", error);
+//     if (!res.headersSent) res.status(500).json({ message: "Error generating PDF" });
+//   }
+// };
