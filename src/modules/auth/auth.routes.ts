@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { login, getMe, logout } from "./auth.controller";
+import { login, getMe, logout, refreshAccessToken } from "./auth.controller";
 import { protect } from "../../middlewares/auth.middleware";
 
 const router = Router();
@@ -78,5 +78,19 @@ router.post("/logout", logout);
  *         description: Unauthorized
  */
 router.get("/me", protect, getMe);
+
+/**
+ * @swagger
+ * /api/v1/auth/refresh:
+ *   post:
+ *     summary: Refresh access token
+ *     tags: [Authentication]
+ *     responses:
+ *       200:
+ *         description: Token refreshed successfully
+ *       401:
+ *         description: Invalid refresh token
+ */
+router.post("/refresh", refreshAccessToken);
 
 export default router;

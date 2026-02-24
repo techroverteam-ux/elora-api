@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import Store, { StoreStatus } from "./store.model";
+import Client from "../client/client.model";
 import * as XLSX from "xlsx";
 import fs from "fs";
 import PptxGenJS from "pptxgenjs";
@@ -42,10 +43,12 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
     let allErrors: any[] = [];
     const toInsert: any[] = [];
 
-    // 1. Get existing codes
+    // 1. Get existing codes and client codes
     const existingCodes = new Set(
       (await Store.find().select("dealerCode")).map((s) => s.dealerCode),
     );
+    const clientCodes = await Client.find().select("clientCode _id");
+    const clientCodeMap = new Map(clientCodes.map(c => [c.clientCode, c._id]));
 
     for (const file of files) {
       try {
@@ -59,7 +62,23 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
         for (const [index, row] of rawData.entries()) {
           const rowNum = index + 2;
 
-          // A. Dealer Code Check
+          // A. Client Code Check
+          const clientCodeRaw = row["Client Code"];
+          let clientId = null;
+          if (clientCodeRaw) {
+            const clientCode = String(clientCodeRaw).trim();
+            clientId = clientCodeMap.get(clientCode);
+            if (!clientId) {
+              allErrors.push({
+                file: file.originalname,
+                row: rowNum,
+                error: `Invalid Client Code: ${clientCode}`,
+              });
+              continue;
+            }
+          }
+
+          // B. Dealer Code Check
           const dCodeRaw = row["Dealer Code"];
 
           if (!dCodeRaw) {
@@ -74,7 +93,7 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
 
           const dCode = String(dCodeRaw).trim();
 
-          // B. Duplicates
+          // C. Duplicates
           if (existingCodes.has(dCode)) {
             allErrors.push({
               file: file.originalname,
@@ -92,7 +111,7 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
             continue;
           }
 
-          // C. Build Object
+          // D. Build Object
           const city = row["City"] || "";
           const district = row["District"] || "";
           const dealerCode = dCode;
@@ -130,6 +149,8 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
             storeCode: row["Vendor Code & Name"] || "",
             storeName: row["Dealer's Name"] || "Unknown Name",
             vendorCode: row["Vendor Code & Name"] || "",
+            clientCode: clientCodeRaw ? String(clientCodeRaw).trim() : "",
+            clientId: clientId,
 
             location: {
               zone: row["Zone"] || "",
@@ -1980,6 +2001,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
     const sheet = workbook.addWorksheet("Stores");
     const headers = [
       "Sr. No.",
+      "Client Code",
       "Dealer Code",
       "Vendor Code & Name",
       "Dealer's Name",
@@ -2011,6 +2033,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
     sheet.columns = [
       { width: 10 },
       { width: 15 },
+      { width: 15 },
       { width: 25 },
       { width: 30 },
       { width: 15 },
@@ -2023,6 +2046,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
     const samples = [
       [
         1,
+        "RELBAN240101",
         "DLR001",
         "ELORA CREATIVE ART",
         "Rajesh Kumar",
@@ -2035,6 +2059,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
       ],
       [
         2,
+        "RELBAN240101",
         "DLR002",
         "ELORA CREATIVE ART",
         "Amit Sharma",
@@ -2047,6 +2072,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
       ],
       [
         3,
+        "RELBAN240101",
         "DLR003",
         "ELORA CREATIVE ART",
         "Priya Singh",
@@ -2059,6 +2085,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
       ],
       [
         4,
+        "RELBAN240101",
         "DLR004",
         "ELORA CREATIVE ART",
         "Suresh Patel",
@@ -2071,6 +2098,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
       ],
       [
         5,
+        "RELBAN240101",
         "DLR005",
         "ELORA CREATIVE ART",
         "Neha Gupta",
@@ -2083,6 +2111,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
       ],
       [
         6,
+        "RELBAN240101",
         "DLR006",
         "ELORA CREATIVE ART",
         "Vikram Reddy",
@@ -2095,6 +2124,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
       ],
       [
         7,
+        "RELBAN240101",
         "DLR007",
         "ELORA CREATIVE ART",
         "Anjali Verma",
@@ -2107,6 +2137,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
       ],
       [
         8,
+        "RELBAN240101",
         "DLR008",
         "ELORA CREATIVE ART",
         "Rahul Joshi",
@@ -2119,6 +2150,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
       ],
       [
         9,
+        "RELBAN240101",
         "DLR009",
         "ELORA CREATIVE ART",
         "Kavita Desai",
@@ -2131,6 +2163,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
       ],
       [
         10,
+        "RELBAN240101",
         "DLR010",
         "ELORA CREATIVE ART",
         "Manoj Yadav",
@@ -2215,10 +2248,11 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
     };
     const instructions = [
       "1. Fill all required fields in the Stores sheet",
-      "2. Dealer Code must be unique for each store",
-      "3. Width and Height should be in feet (numbers only)",
-      "4. Refer to Validations sheet for Board Sizes and Types",
-      "5. Delete sample data before uploading your actual data",
+      "2. Client Code must exist in the system (optional field)",
+      "3. Dealer Code must be unique for each store",
+      "4. Width and Height should be in feet (numbers only)",
+      "5. Refer to Validations sheet for Board Sizes and Types",
+      "6. Delete sample data before uploading your actual data",
     ];
     instructions.forEach((text, i) => {
       const cell = instructionsSheet.getCell("A" + (i + 3));

@@ -16,6 +16,8 @@ export enum StoreStatus {
 export interface StoreDocument extends Document {
   projectID: string;
   storeId: string; // NEW: Auto-generated Store ID
+  clientCode?: string; // NEW: Client Code
+  clientId?: mongoose.Types.ObjectId; // NEW: Reference to Client
   dealerCode: string;
   storeCode?: string;
   storeName?: string;
@@ -104,6 +106,8 @@ const StoreSchema = new Schema<StoreDocument>(
   {
     projectID: { type: String },
     storeId: { type: String, unique: true, sparse: true }, // NEW: Auto-generated Store ID
+    clientCode: { type: String }, // NEW: Client Code
+    clientId: { type: Schema.Types.ObjectId, ref: "Client" }, // NEW: Reference to Client
     dealerCode: { type: String, required: true, unique: true, index: true },
     storeCode: { type: String },
     storeName: { type: String },
