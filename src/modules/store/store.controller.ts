@@ -102,28 +102,82 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
           const districtPrefix = district.trim().substring(0, 3).toUpperCase();
           const storeId = `${cityPrefix}${districtPrefix}${dealerCode.toUpperCase()}`;
 
+          // Parse numeric values safely
+          const parseNumber = (val: any): number => {
+            const num = Number(val);
+            return isNaN(num) ? 0 : num;
+          };
+
+          const width = parseNumber(row["Width (Ft.)"]);
+          const height = parseNumber(row["Height (Ft.)"]);
+          const qty = parseNumber(row["Qty"]) || 1;
+          const boardSize = parseNumber(row["Board Size (Sq.Ft.)"]);
+          const boardRate = parseNumber(row["Board Rate/Sq.Ft."]);
+          const totalBoardCost = parseNumber(row["Total Board Cost (w/o taxes)"]);
+          const angleCharges = parseNumber(row["Angle Charges (if any)"]);
+          const scaffoldingCharges = parseNumber(row["Scaffolding Charges (if any)"]);
+          const transportation = parseNumber(row["Transportation (if any)"]);
+          const flanges = parseNumber(row["Flanges per pc (if any)"]);
+          const lollipop = parseNumber(row["Lollipop per pc (if any)"]);
+          const oneWayVision = parseNumber(row["One Way Vision (if any)"]);
+          const sunboard = parseNumber(row["3 mm Sunboard (if any)"]);
+          const totalCost = parseNumber(row["Total Cost w/0 Tax"]);
+
           const newStore = {
             projectID: row["Sr. No."] ? String(row["Sr. No."]) : "",
             dealerCode: dCode,
-            storeId: storeId, // Add generated storeId
-            // Now this can repeat "ELORA CREATIVE ART" without crashing!
+            storeId: storeId,
             storeCode: row["Vendor Code & Name"] || "",
             storeName: row["Dealer's Name"] || "Unknown Name",
+            vendorCode: row["Vendor Code & Name"] || "",
 
             location: {
+              zone: row["Zone"] || "",
+              state: row["State"] || "",
+              district: district,
               city: city,
               area: district,
-              district: district, // NEW: Added district for storeId generation
               address: row["Dealer's Address"] || "",
             },
+            
             contact: {
               personName: "",
               mobile: "",
             },
-            specs: {
-              boardSize: `${row["Width (Ft.)"] || "?"} x ${row["Height (Ft.)"] || "?"}`,
-              type: row["Dealer Board Type"] || "",
+            
+            commercials: {
+              poNumber: row["PO Number"] || "",
+              poMonth: row["PO Month"] || "",
+              invoiceNumber: row["INVOICE NO:"] || row["Invoice No"] || "",
+              invoiceRemarks: row["Invoice Remarks"] || "",
+              totalCost: totalCost,
             },
+            
+            costDetails: {
+              boardRate: boardRate,
+              totalBoardCost: totalBoardCost,
+              angleCharges: angleCharges,
+              scaffoldingCharges: scaffoldingCharges,
+              transportation: transportation,
+              flanges: flanges,
+              lollipop: lollipop,
+              oneWayVision: oneWayVision,
+              sunboard: sunboard,
+            },
+            
+            specs: {
+              type: row["Dealer Board Type"] || "",
+              width: width,
+              height: height,
+              qty: qty,
+              boardSize: boardSize ? String(boardSize) : `${width}x${height}`,
+            },
+            
+            remark: row["Remark"] || "",
+            imagesAttached: row["Images Attached in PPT (yes/no)"] ? 
+              (String(row["Images Attached in PPT (yes/no)"]).toLowerCase().includes("yes") || 
+               String(row["Images Attached in PPT (yes/no)"]).toLowerCase().includes("y")) : false,
+            
             currentStatus: StoreStatus.UPLOADED,
           };
 
@@ -366,14 +420,14 @@ export const assignStoresBulk = async (req: Request | any, res: Response) => {
       updateData = {
         "workflow.recceAssignedTo": userId,
         "workflow.recceAssignedBy": assignedBy,
-        "workflow.recceAssignedDate": new Date(),
+        "recce.assignedDate": new Date(),
         currentStatus: StoreStatus.RECCE_ASSIGNED,
       };
     } else if (stage === "INSTALLATION") {
       updateData = {
         "workflow.installationAssignedTo": userId,
         "workflow.installationAssignedBy": assignedBy,
-        "workflow.installationAssignedDate": new Date(),
+        "installation.assignedDate": new Date(),
         currentStatus: StoreStatus.INSTALLATION_ASSIGNED,
       };
     } else {

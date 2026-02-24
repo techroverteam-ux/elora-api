@@ -7,11 +7,11 @@ import User from "../user/user.model";
 // @access  Private
 export const getDashboardAnalytics = async (req: Request | any, res: Response) => {
   try {
-    const userRoles = req.user.roles || [];
-    const isSuperAdmin = userRoles.some((r: any) => r.code === "SUPER_ADMIN");
-    const isAdmin = userRoles.some((r: any) => r.code === "ADMIN");
-    const isRecceUser = userRoles.some((r: any) => r.code === "RECCE");
-    const isInstallationUser = userRoles.some((r: any) => r.code === "INSTALLATION");
+    const userRoles = req.user?.roles || [];
+    const isSuperAdmin = userRoles.some((r: any) => r?.code === "SUPER_ADMIN" || r?.name === "SUPER_ADMIN");
+    const isAdmin = userRoles.some((r: any) => r?.code === "ADMIN" || r?.name === "ADMIN");
+    const isRecceUser = userRoles.some((r: any) => r?.code === "RECCE" || r?.name === "RECCE");
+    const isInstallationUser = userRoles.some((r: any) => r?.code === "INSTALLATION" || r?.name === "INSTALLATION");
 
     let analytics: any = {};
 
@@ -81,6 +81,87 @@ export const getDashboardAnalytics = async (req: Request | any, res: Response) =
         { $sort: { count: -1 } }
       ]);
 
+      // Get detailed assignments for admin
+      const assignments = await Store.aggregate([
+        {
+          $match: {
+            $or: [
+              { "workflow.recceAssignedTo": { $exists: true, $ne: null } },
+              { "workflow.installationAssignedTo": { $exists: true, $ne: null } }
+            ]
+          }
+        },
+        {
+          $lookup: {
+            from: "users",
+            localField: "workflow.recceAssignedTo",
+            foreignField: "_id",
+            as: "recceUser"
+          }
+        },
+        {
+          $lookup: {
+            from: "users",
+            localField: "workflow.installationAssignedTo",
+            foreignField: "_id",
+            as: "installUser"
+          }
+        },
+        {
+          $project: {
+            storeId: "$_id",
+            storeName: 1,
+            dealerCode: 1,
+            city: "$location.city",
+            state: "$location.state",
+            status: "$currentStatus",
+            recceAssignment: {
+              assignedTo: { $arrayElemAt: ["$recceUser.name", 0] },
+              role: "RECCE",
+              date: "$workflow.recceAssignedDate"
+            },
+            installAssignment: {
+              assignedTo: { $arrayElemAt: ["$installUser.name", 0] },
+              role: "INSTALLATION",
+              date: "$workflow.installationAssignedDate"
+            }
+          }
+        },
+        { $sort: { "workflow.recceAssignedDate": -1, "workflow.installationAssignedDate": -1 } },
+        { $limit: 100 }
+      ]);
+
+      // Flatten assignments
+      const flatAssignments: any[] = [];
+      assignments.forEach((a: any) => {
+        if (a.recceAssignment.assignedTo) {
+          flatAssignments.push({
+            storeId: a.storeId,
+            storeName: a.storeName,
+            dealerCode: a.dealerCode,
+            city: a.city,
+            state: a.state,
+            assignedTo: a.recceAssignment.assignedTo,
+            role: a.recceAssignment.role,
+            date: a.recceAssignment.date,
+            status: a.status
+          });
+        }
+        if (a.installAssignment.assignedTo) {
+          flatAssignments.push({
+            storeId: a.storeId,
+            storeName: a.storeName,
+            dealerCode: a.dealerCode,
+            city: a.city,
+            state: a.state,
+            assignedTo: a.installAssignment.assignedTo,
+            role: a.installAssignment.role,
+            date: a.installAssignment.date,
+            status: a.status
+          });
+        }
+      });
+
       analytics = {
         overview: {
           totalStores,
@@ -116,27 +197,28 @@ export const getDashboardAnalytics = async (req: Request | any, res: Response) =
         distribution: {
           byCity: cityDistribution,
           byStatus: statusDistribution
-        }
+        },
+        assignments: flatAssignments
       };
     } else if (isRecceUser) {
       // RECCE USER ANALYTICS
       const assignedToMe = await Store.countDocuments({ 
-        "workflow.recceAssignedTo": req.user._id 
+        "workflow.recceAssignedTo": req.user?._id 
       });
       const pending = await Store.countDocuments({ 
-        "workflow.recceAssignedTo": req.user._id,
+        "workflow.recceAssignedTo": req.user?._id,
         currentStatus: StoreStatus.RECCE_ASSIGNED 
       });
       const submitted = await Store.countDocuments({ 
-        "workflow.recceAssignedTo": req.user._id,
+        "workflow.recceAssignedTo": req.user?._id,
         currentStatus: StoreStatus.RECCE_SUBMITTED 
       });
       const approved = await Store.countDocuments({ 
-        "workflow.recceAssignedTo": req.user._id,
+        "workflow.recceAssignedTo": req.user?._id,
         currentStatus: StoreStatus.RECCE_APPROVED 
       });
       const rejected = await Store.countDocuments({ 
-        "workflow.recceAssignedTo": req.user._id,
+        "workflow.recceAssignedTo": req.user?._id,
         currentStatus: StoreStatus.RECCE_REJECTED 
       });
       
@@ -144,16 +226,22 @@ export const getDashboardAnalytics = async (req: Request | any, res: Response) =
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
       const recentSubmissions = await Store.countDocuments({ 
-        "workflow.recceAssignedTo": req.user._id,
+        "workflow.recceAssignedTo": req.user?._id,
         "recce.submittedDate": { $gte: sevenDaysAgo } 
       });
       
       // City-wise tasks
       const cityTasks = await Store.aggregate([
-        { $match: { "workflow.recceAssignedTo": req.user._id } },
+        { $match: { "workflow.recceAssignedTo": req.user?._id } },
         { $group: { _id: "$location.city", count: { $sum: 1 } } },
         { $sort: { count: -1 } }
       ]);
+
+      // Get my tasks
+      const myTasks = await Store.find({ "workflow.recceAssignedTo": req.user?._id })
+        .sort({ "recce.assignedDate": -1, createdAt: -1 })
+        .limit(20)
+        .select("storeName dealerCode location.city location.state location.district currentStatus recce.assignedDate createdAt");
 
       analytics = {
         overview: {
@@ -169,23 +257,31 @@ export const getDashboardAnalytics = async (req: Request | any, res: Response) =
         },
         distribution: {
           byCity: cityTasks
-        }
+        },
+        myTasks: myTasks.map((t: any) => ({
+          storeName: t.storeName,
+          city: t.location?.city,
+          state: t.location?.state,
+          district: t.location?.district,
+          status: t.currentStatus,
+          assignedDate: t.recce?.assignedDate || t.createdAt
+        }))
       };
     } else if (isInstallationUser) {
       // INSTALLATION USER ANALYTICS
       const assignedToMe = await Store.countDocuments({ 
-        "workflow.installationAssignedTo": req.user._id 
+        "workflow.installationAssignedTo": req.user?._id 
       });
       const pending = await Store.countDocuments({ 
-        "workflow.installationAssignedTo": req.user._id,
+        "workflow.installationAssignedTo": req.user?._id,
         currentStatus: StoreStatus.INSTALLATION_ASSIGNED 
       });
       const submitted = await Store.countDocuments({ 
-        "workflow.installationAssignedTo": req.user._id,
+        "workflow.installationAssignedTo": req.user?._id,
         currentStatus: StoreStatus.INSTALLATION_SUBMITTED 
       });
       const completed = await Store.countDocuments({ 
-        "workflow.installationAssignedTo": req.user._id,
+        "workflow.installationAssignedTo": req.user?._id,
         currentStatus: StoreStatus.COMPLETED 
       });
       
@@ -193,16 +289,22 @@ export const getDashboardAnalytics = async (req: Request | any, res: Response) =
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
       const recentSubmissions = await Store.countDocuments({ 
-        "workflow.installationAssignedTo": req.user._id,
+        "workflow.installationAssignedTo": req.user?._id,
         "installation.submittedDate": { $gte: sevenDaysAgo } 
       });
       
       // City-wise tasks
       const cityTasks = await Store.aggregate([
-        { $match: { "workflow.installationAssignedTo": req.user._id } },
+        { $match: { "workflow.installationAssignedTo": req.user?._id } },
         { $group: { _id: "$location.city", count: { $sum: 1 } } },
         { $sort: { count: -1 } }
       ]);
+
+      // Get my tasks
+      const myTasks = await Store.find({ "workflow.installationAssignedTo": req.user?._id })
+        .sort({ "installation.assignedDate": -1, createdAt: -1 })
+        .limit(20)
+        .select("storeName dealerCode location.city location.state location.district currentStatus installation.assignedDate createdAt");
 
       analytics = {
         overview: {
@@ -217,7 +319,37 @@ export const getDashboardAnalytics = async (req: Request | any, res: Response) =
         },
         distribution: {
           byCity: cityTasks
-        }
+        },
+        myTasks: myTasks.map((t: any) => ({
+          storeName: t.storeName,
+          city: t.location?.city,
+          state: t.location?.state,
+          district: t.location?.district,
+          status: t.currentStatus,
+          assignedDate: t.installation?.assignedDate || t.createdAt
+        }))
+      };
+    }
+
+    // If no specific role matched, return empty analytics with a message
+    if (Object.keys(analytics).length === 0) {
+      analytics = {
+        overview: {
+          totalAssigned: 0,
+          pending: 0,
+          submitted: 0,
+          approved: 0,
+          completed: 0,
+          completionRate: 0
+        },
+        recentActivity: {
+          submissionsLast7Days: 0
+        },
+        distribution: {
+          byCity: []
+        },
+        myTasks: [],
+        message: "No role assigned or insufficient permissions"
       };
     }
 

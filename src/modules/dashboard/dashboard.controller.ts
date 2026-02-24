@@ -13,11 +13,13 @@ export const getDashboardStats = async (req: Request | any, res: Response) => {
     const filter: any = {};
     
     // Role-based Access Control
-    const userRoles = req.user.roles || [];
-    const isSuperAdmin = userRoles.some((r: any) => r.code === "SUPER_ADMIN");
-    const isAdmin = userRoles.some((r: any) => r.code === "ADMIN");
+    const userRoles = req.user?.roles || [];
+    const isSuperAdmin = userRoles.some((r: any) => r?.code === "SUPER_ADMIN" || r?.name === "SUPER_ADMIN");
+    const isAdmin = userRoles.some((r: any) => r?.code === "ADMIN" || r?.name === "ADMIN");
+    const isRecceUser = userRoles.some((r: any) => r?.code === "RECCE" || r?.name === "RECCE");
+    const isInstallationUser = userRoles.some((r: any) => r?.code === "INSTALLATION" || r?.name === "INSTALLATION");
 
-    if (!isSuperAdmin && !isAdmin) {
+    if (!isSuperAdmin && !isAdmin && req.user?._id) {
       filter.$or = [
         { "workflow.recceAssignedTo": req.user._id },
         { "workflow.installationAssignedTo": req.user._id },
@@ -72,7 +74,7 @@ export const getDashboardStats = async (req: Request | any, res: Response) => {
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
     const monthlyTrend = await Store.aggregate([
-      { $match: { createdAt: { $gte: sixMonthsAgo } } },
+      { $match: { ...filter, createdAt: { $gte: sixMonthsAgo } } },
       { $group: {
         _id: { $dateToString: { format: "%Y-%m", date: "$createdAt" } },
         count: { $sum: 1 }
@@ -80,64 +82,67 @@ export const getDashboardStats = async (req: Request | any, res: Response) => {
       { $sort: { _id: 1 } }
     ]);
 
-    // Personnel stats
-    const personnelStats = await User.aggregate([
-      {
-        $lookup: {
-          from: "roles",
-          localField: "roles",
-          foreignField: "_id",
-          as: "roleDetails",
+    // Personnel stats (only for admin)
+    let personnelStats = [];
+    if (isSuperAdmin || isAdmin) {
+      personnelStats = await User.aggregate([
+        {
+          $lookup: {
+            from: "roles",
+            localField: "roles",
+            foreignField: "_id",
+            as: "roleDetails",
+          },
         },
-      },
-      {
-        $match: {
-          "roleDetails.code": { $in: ["RECCE", "INSTALLATION"] },
-          isActive: true,
+        {
+          $match: {
+            "roleDetails.code": { $in: ["RECCE", "INSTALLATION"] },
+            isActive: true,
+          },
         },
-      },
-      {
-        $lookup: {
-          from: "stores",
-          let: { userId: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $or: [
-                    { $eq: ["$workflow.recceAssignedTo", "$$userId"] },
-                    { $eq: ["$workflow.installationAssignedTo", "$$userId"] },
-                  ],
+        {
+          $lookup: {
+            from: "stores",
+            let: { userId: "$_id" },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $or: [
+                      { $eq: ["$workflow.recceAssignedTo", "$$userId"] },
+                      { $eq: ["$workflow.installationAssignedTo", "$$userId"] },
+                    ],
+                  },
                 },
               },
-            },
-          ],
-          as: "assignedStores",
+            ],
+            as: "assignedStores",
+          },
         },
-      },
-      {
-        $project: {
-          name: 1,
-          email: 1,
-          role: { $arrayElemAt: ["$roleDetails.name", 0] },
-          assignedCount: { $size: "$assignedStores" },
-          completedCount: {
-            $size: {
-              $filter: {
-                input: "$assignedStores",
-                as: "store",
-                cond: {
-                   $or: [
-                       { $and: [ { $eq: ["$$store.workflow.recceAssignedTo", "$_id"] }, { $in: ["$$store.currentStatus", ["RECCE_SUBMITTED", "RECCE_APPROVED", "COMPLETED"]] } ] },
-                       { $and: [ { $eq: ["$$store.workflow.installationAssignedTo", "$_id"] }, { $in: ["$$store.currentStatus", ["INSTALLATION_SUBMITTED", "COMPLETED"]] } ] }
-                   ]
+        {
+          $project: {
+            name: 1,
+            email: 1,
+            role: { $arrayElemAt: ["$roleDetails.name", 0] },
+            assignedCount: { $size: "$assignedStores" },
+            completedCount: {
+              $size: {
+                $filter: {
+                  input: "$assignedStores",
+                  as: "store",
+                  cond: {
+                     $or: [
+                         { $and: [ { $eq: ["$$store.workflow.recceAssignedTo", "$_id"] }, { $in: ["$$store.currentStatus", ["RECCE_SUBMITTED", "RECCE_APPROVED", "COMPLETED"]] } ] },
+                         { $and: [ { $eq: ["$$store.workflow.installationAssignedTo", "$_id"] }, { $in: ["$$store.currentStatus", ["INSTALLATION_SUBMITTED", "COMPLETED"]] } ] }
+                     ]
+                  }
                 }
               }
             }
-          }
+          },
         },
-      },
-    ]);
+      ]);
+    }
 
     // Recent stores
     const recentStores = await Store.find(filter)
@@ -160,6 +165,9 @@ export const getDashboardStats = async (req: Request | any, res: Response) => {
       monthlyTrend,
       personnelStats,
       recentStores,
+      isAdmin: isSuperAdmin || isAdmin,
+      isRecceUser,
+      isInstallationUser
     });
   } catch (error) {
     console.error(error);
