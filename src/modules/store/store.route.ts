@@ -19,6 +19,8 @@ import {
   downloadStoreTemplate,
   exportRecceTasks,
   exportInstallationTasks,
+  exportStores,
+  bulkAssignStoresToUser,
 } from "./store.controller";
 import { generateReccePDF, generateInstallationPDF, generateBulkPDF } from "./pdf.controller";
 import { protect } from "../../middlewares/auth.middleware";
@@ -95,6 +97,8 @@ router.get("/export/recce", exportRecceTasks);
  *               format: binary
  */
 router.get("/export/installation", exportInstallationTasks);
+
+router.get("/export", exportStores);
 
 /**
  * @swagger

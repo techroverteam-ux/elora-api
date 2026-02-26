@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import Store, { StoreStatus } from "./store.model";
 import Client from "../client/client.model";
+import User from "../user/user.model";
 import * as XLSX from "xlsx";
 import fs from "fs";
 import PptxGenJS from "pptxgenjs";
@@ -48,7 +49,9 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
       (await Store.find().select("dealerCode")).map((s) => s.dealerCode),
     );
     const clientCodes = await Client.find().select("clientCode _id");
-    const clientCodeMap = new Map(clientCodes.map(c => [c.clientCode, c._id]));
+    const clientCodeMap = new Map(
+      clientCodes.map((c) => [c.clientCode, c._id]),
+    );
 
     for (const file of files) {
       try {
@@ -132,9 +135,13 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
           const qty = parseNumber(row["Qty"]) || 1;
           const boardSize = parseNumber(row["Board Size (Sq.Ft.)"]);
           const boardRate = parseNumber(row["Board Rate/Sq.Ft."]);
-          const totalBoardCost = parseNumber(row["Total Board Cost (w/o taxes)"]);
+          const totalBoardCost = parseNumber(
+            row["Total Board Cost (w/o taxes)"],
+          );
           const angleCharges = parseNumber(row["Angle Charges (if any)"]);
-          const scaffoldingCharges = parseNumber(row["Scaffolding Charges (if any)"]);
+          const scaffoldingCharges = parseNumber(
+            row["Scaffolding Charges (if any)"],
+          );
           const transportation = parseNumber(row["Transportation (if any)"]);
           const flanges = parseNumber(row["Flanges per pc (if any)"]);
           const lollipop = parseNumber(row["Lollipop per pc (if any)"]);
@@ -160,12 +167,12 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
               area: district,
               address: row["Dealer's Address"] || "",
             },
-            
+
             contact: {
               personName: "",
               mobile: "",
             },
-            
+
             commercials: {
               poNumber: row["PO Number"] || "",
               poMonth: row["PO Month"] || "",
@@ -173,7 +180,7 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
               invoiceRemarks: row["Invoice Remarks"] || "",
               totalCost: totalCost,
             },
-            
+
             costDetails: {
               boardRate: boardRate,
               totalBoardCost: totalBoardCost,
@@ -185,7 +192,7 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
               oneWayVision: oneWayVision,
               sunboard: sunboard,
             },
-            
+
             specs: {
               type: row["Dealer Board Type"] || "",
               width: width,
@@ -193,12 +200,17 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
               qty: qty,
               boardSize: boardSize ? String(boardSize) : `${width}x${height}`,
             },
-            
+
             remark: row["Remark"] || "",
-            imagesAttached: row["Images Attached in PPT (yes/no)"] ? 
-              (String(row["Images Attached in PPT (yes/no)"]).toLowerCase().includes("yes") || 
-               String(row["Images Attached in PPT (yes/no)"]).toLowerCase().includes("y")) : false,
-            
+            imagesAttached: row["Images Attached in PPT (yes/no)"]
+              ? String(row["Images Attached in PPT (yes/no)"])
+                  .toLowerCase()
+                  .includes("yes") ||
+                String(row["Images Attached in PPT (yes/no)"])
+                  .toLowerCase()
+                  .includes("y")
+              : false,
+
             currentStatus: StoreStatus.UPLOADED,
           };
 
@@ -263,6 +275,7 @@ export const createStore = async (req: Request, res: Response) => {
       dealerCode,
       storeName,
       vendorCode,
+      clientCode,
       location,
       commercials,
       costDetails,
@@ -273,10 +286,21 @@ export const createStore = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Dealer Code is required" });
     }
 
+    let clientId = null;
+    if (clientCode) {
+      const client = await Client.findOne({ clientCode });
+      if (!client) {
+        return res.status(400).json({ message: "Invalid Client Code" });
+      }
+      clientId = client._id;
+    }
+
     const store = new Store({
       dealerCode,
       storeName,
       vendorCode,
+      clientCode,
+      clientId,
       location,
       commercials,
       costDetails,
@@ -1994,6 +2018,345 @@ export const exportInstallationTasks = async (
   }
 };
 
+export const exportStores = async (req: Request | any, res: Response) => {
+  try {
+    const ExcelJS = require("exceljs");
+    const {
+      status,
+      search,
+      city,
+      clientCode,
+      clientName,
+      zone,
+      state,
+      district,
+      vendorCode,
+      dealerCode,
+      poNumber,
+      invoiceNo,
+    } = req.query;
+
+    let query: any = {};
+    const userRoles = req.user.roles || [];
+    const isSuperAdmin = userRoles.some((r: any) => r.code === "SUPER_ADMIN");
+    const isAdmin = userRoles.some((r: any) => r.code === "ADMIN");
+
+    if (!isSuperAdmin && !isAdmin) {
+      query.$or = [
+        { "workflow.recceAssignedTo": req.user._id },
+        { "workflow.installationAssignedTo": req.user._id },
+      ];
+    }
+
+    if (status && status !== "ALL") {
+      if (status.includes(",")) {
+        const statuses = status.split(",").map((s: string) => s.trim());
+        query.currentStatus = { $in: statuses };
+      } else {
+        query.currentStatus = status;
+      }
+    }
+
+    if (city) query["location.city"] = city;
+    if (zone) query["location.zone"] = zone;
+    if (state) query["location.state"] = state;
+    if (district) query["location.district"] = district;
+    if (vendorCode) query.vendorCode = vendorCode;
+    if (dealerCode) query.dealerCode = { $regex: dealerCode, $options: "i" };
+    if (poNumber)
+      query["commercials.poNumber"] = { $regex: poNumber, $options: "i" };
+    if (invoiceNo)
+      query["commercials.invoiceNumber"] = { $regex: invoiceNo, $options: "i" };
+    if (clientCode) query.clientCode = { $regex: clientCode, $options: "i" };
+
+    if (clientName) {
+      const clients = await Client.find({
+        clientName: { $regex: clientName, $options: "i" },
+      }).select("_id");
+      if (clients.length > 0) {
+        query.clientId = { $in: clients.map((c) => c._id) };
+      } else {
+        query.clientId = null;
+      }
+    }
+
+    if (search) {
+      const searchRegex = { $regex: search, $options: "i" };
+      query.$and = [
+        ...(query.$and || []),
+        {
+          $or: [
+            { storeName: searchRegex },
+            { dealerCode: searchRegex },
+            { "location.city": searchRegex },
+            { "location.area": searchRegex },
+          ],
+        },
+      ];
+    }
+
+    const stores = await Store.find(query)
+      .populate("workflow.recceAssignedTo", "name")
+      .populate("workflow.installationAssignedTo", "name")
+      .populate("clientId", "clientName")
+      .sort({ updatedAt: -1 });
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Stores");
+
+    worksheet.mergeCells("A1:L3");
+    const titleCell = worksheet.getCell("A1");
+    titleCell.value = "Stores Export";
+    titleCell.font = { size: 18, bold: true, color: { argb: "FF1F2937" } };
+    titleCell.alignment = { vertical: "middle", horizontal: "center" };
+
+    const headers = [
+      "Store ID",
+      "Client Code",
+      "Dealer Code",
+      "Vendor Code",
+      "Zone",
+      "State",
+      "District",
+      "City",
+      "Address",
+      "Status",
+      "Recce User",
+      "Installation User",
+    ];
+
+    const headerRow = worksheet.getRow(5);
+    headers.forEach((header, index) => {
+      const cell = headerRow.getCell(index + 1);
+      cell.value = header;
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 12 };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFEAB308" },
+      };
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+    });
+    headerRow.height = 25;
+
+    stores.forEach((store: any, index) => {
+      const row = worksheet.getRow(6 + index);
+      row.values = [
+        store.storeId || "-",
+        store.clientCode || "-",
+        store.dealerCode || "-",
+        store.vendorCode || "-",
+        store.location.zone || "-",
+        store.location.state || "-",
+        store.location.district || "-",
+        store.location.city || "-",
+        store.location.address || "-",
+        store.currentStatus || "-",
+        store.workflow.recceAssignedTo?.name || "-",
+        store.workflow.installationAssignedTo?.name || "-",
+      ];
+      row.alignment = {
+        vertical: "middle",
+        horizontal: "center",
+        wrapText: true,
+      };
+      row.height = 40;
+      if (index % 2 === 0) {
+        row.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFF9FAFB" },
+        };
+      }
+    });
+
+    worksheet.columns = [
+      { width: 20 },
+      { width: 18 },
+      { width: 18 },
+      { width: 18 },
+      { width: 15 },
+      { width: 18 },
+      { width: 18 },
+      { width: 18 },
+      { width: 45 },
+      { width: 25 },
+      { width: 25 },
+      { width: 25 },
+    ];
+
+    worksheet.eachRow((row: Row, rowNumber: number) => {
+      if (rowNumber >= 5) {
+        row.eachCell((cell: Cell) => {
+          cell.border = {
+            top: { style: "thin", color: { argb: "FFD1D5DB" } },
+            left: { style: "thin", color: { argb: "FFD1D5DB" } },
+            bottom: { style: "thin", color: { argb: "FFD1D5DB" } },
+            right: { style: "thin", color: { argb: "FFD1D5DB" } },
+          };
+        });
+      }
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=Stores_Export.xlsx",
+    );
+    res.send(buffer);
+  } catch (error: any) {
+    console.error("Export Error:", error);
+    res.status(500).json({ message: "Failed to export stores" });
+  }
+};
+
+export const bulkAssignStoresToUser = async (
+  req: Request | any,
+  res: Response,
+) => {
+  try {
+    const { userId } = req.params;
+    const files =
+      (req.files as Express.Multer.File[]) || (req.file ? [req.file] : []);
+
+    if (files.length === 0) {
+      return res.status(400).json({ message: "No files uploaded" });
+    }
+
+    const user = await User.findById(userId).populate("roles");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const userRoles = Array.isArray(user.roles) ? user.roles : [user.roles];
+    const userRoleNames = userRoles.map((r: any) => r?.name).filter(Boolean);
+    const isRecceUser = userRoleNames.includes("RECCE");
+    const isInstallUser = userRoleNames.includes("INSTALLATION");
+
+    if (!isRecceUser && !isInstallUser) {
+      return res
+        .status(400)
+        .json({ message: "User must have RECCE or INSTALLATION role" });
+    }
+
+    let totalProcessed = 0;
+    let totalSuccess = 0;
+    let allErrors: any[] = [];
+
+    for (const file of files) {
+      try {
+        const workbook = XLSX.read(file.buffer, { type: "buffer" });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rawData: any[] = XLSX.utils.sheet_to_json(sheet, { range: 4 });
+
+        totalProcessed += rawData.length;
+
+        for (const [index, row] of rawData.entries()) {
+          const rowNum = index + 2;
+
+          const storeId = row["Store ID"];
+          const clientCode = row["Client Code"];
+          const status = row["Status"];
+
+          if (!storeId) {
+            allErrors.push({ row: rowNum, error: "Store ID is missing" });
+            continue;
+          }
+
+          const store = await Store.findOne({ storeId: storeId });
+          if (!store) {
+            allErrors.push({
+              row: rowNum,
+              error: `Store not found: ${storeId}`,
+            });
+            continue;
+          }
+
+          if (clientCode && store.clientCode !== clientCode) {
+            allErrors.push({
+              row: rowNum,
+              error: `Client Code mismatch for ${storeId}`,
+            });
+            continue;
+          }
+
+          if (isRecceUser) {
+            if (
+              store.currentStatus === StoreStatus.RECCE_APPROVED ||
+              store.currentStatus === StoreStatus.RECCE_SUBMITTED ||
+              store.currentStatus === StoreStatus.INSTALLATION_ASSIGNED ||
+              store.currentStatus === StoreStatus.INSTALLATION_SUBMITTED ||
+              store.currentStatus === StoreStatus.COMPLETED
+            ) {
+              allErrors.push({
+                row: rowNum,
+                error: `Cannot assign recce to ${storeId} - recce already completed`,
+              });
+              continue;
+            }
+
+            await Store.findByIdAndUpdate(store._id, {
+              $set: {
+                "workflow.recceAssignedTo": userId,
+                "workflow.recceAssignedBy": req.user._id,
+                "recce.assignedDate": new Date(),
+                currentStatus: StoreStatus.RECCE_ASSIGNED,
+              },
+            });
+            totalSuccess++;
+          } else if (isInstallUser) {
+            if (
+              store.currentStatus === StoreStatus.INSTALLATION_SUBMITTED ||
+              store.currentStatus === StoreStatus.COMPLETED
+            ) {
+              allErrors.push({
+                row: rowNum,
+                error: `Cannot assign installation to ${storeId} - installation already completed`,
+              });
+              continue;
+            }
+
+            if (store.currentStatus !== StoreStatus.RECCE_APPROVED) {
+              allErrors.push({
+                row: rowNum,
+                error: `Cannot assign installation to ${storeId} - recce not approved`,
+              });
+              continue;
+            }
+
+            await Store.findByIdAndUpdate(store._id, {
+              $set: {
+                "workflow.installationAssignedTo": userId,
+                "workflow.installationAssignedBy": req.user._id,
+                "installation.assignedDate": new Date(),
+                currentStatus: StoreStatus.INSTALLATION_ASSIGNED,
+              },
+            });
+            totalSuccess++;
+          }
+        }
+      } catch (err: any) {
+        allErrors.push({ error: "Parsing Error: " + err.message });
+      }
+    }
+
+    res.status(200).json({
+      message: "Bulk assignment processed",
+      totalProcessed,
+      successCount: totalSuccess,
+      errorCount: allErrors.length,
+      errors: allErrors,
+    });
+  } catch (error: any) {
+    console.error("Bulk Assign Error:", error);
+    res.status(500).json({ message: "Server Error", error: error.message });
+  }
+};
+
 export const downloadStoreTemplate = async (req: Request, res: Response) => {
   try {
     const ExcelJS = require("exceljs");
@@ -2280,128 +2643,3 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Failed to generate template" });
   }
 };
-
-// --- PDF Generation Functions ---
-// export const generateReccePDF = async (req: Request, res: Response) => {
-//   try {
-//     const { id } = req.params;
-//     const store = await Store.findById(id);
-
-//     if (!store || !store.recce) {
-//       return res.status(404).json({ message: "Store or Recce data not found" });
-//     }
-
-//     const PDFDocument = require('pdfkit');
-//     const doc = new PDFDocument({ margin: 50 });
-
-//     res.setHeader('Content-Type', 'application/pdf');
-//     res.setHeader('Content-Disposition', `attachment; filename="Recce_${store.dealerCode}.pdf"`);
-//     doc.pipe(res);
-
-//     // Header
-//     doc.fontSize(24).fillColor('#EAB308').text('RECCE INSPECTION REPORT', { align: 'center' });
-//     doc.moveDown();
-//     doc.strokeColor('#EAB308').lineWidth(2).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-//     doc.moveDown();
-
-//     // Store Details
-//     doc.fontSize(12).fillColor('#000000');
-//     doc.text(`Dealer Code: ${store.dealerCode || 'N/A'}`, { continued: true }).text(`    Store Name: ${store.storeName || 'N/A'}`);
-//     doc.text(`City: ${store.location.city || 'N/A'}`, { continued: true }).text(`    State: ${store.location.state || 'N/A'}`);
-//     doc.text(`Address: ${store.location.address || 'N/A'}`);
-//     doc.text(`Board Size: ${store.recce.sizes?.width || 0} x ${store.recce.sizes?.height || 0} ft`, { continued: true });
-//     doc.text(`    Recce Date: ${store.recce.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A'}`);
-//     doc.text(`Notes: ${store.recce.notes || 'None'}`);
-//     doc.moveDown();
-
-//     // Images Section
-//     doc.fontSize(16).fillColor('#EAB308').text('SITE INSPECTION PHOTOS', { align: 'center' });
-//     doc.moveDown();
-
-//     const addImage = (relativePath: string | undefined, label: string) => {
-//       if (relativePath) {
-//         try {
-//           const absolutePath = path.join(process.cwd(), relativePath);
-//           if (fs.existsSync(absolutePath)) {
-//             doc.fontSize(12).fillColor('#000000').text(label, { underline: true });
-//             doc.image(absolutePath, { fit: [450, 300], align: 'center' });
-//             doc.moveDown();
-//           }
-//         } catch (err) {
-//           doc.text(`${label}: Image not available`);
-//         }
-//       }
-//     };
-
-//     addImage(store.recce.photos?.front, 'FRONT VIEW');
-//     addImage(store.recce.photos?.side, 'SIDE VIEW');
-//     addImage(store.recce.photos?.closeUp, 'CLOSE UP VIEW');
-
-//     doc.end();
-//   } catch (error: any) {
-//     console.error("PDF Gen Error:", error);
-//     if (!res.headersSent) res.status(500).json({ message: "Error generating PDF" });
-//   }
-// };
-
-// export const generateInstallationPDF = async (req: Request, res: Response) => {
-//   try {
-//     const { id } = req.params;
-//     const store = await Store.findById(id);
-
-//     if (!store || !store.installation) {
-//       return res.status(404).json({ message: "Store or Installation data not found" });
-//     }
-
-//     const PDFDocument = require('pdfkit');
-//     const doc = new PDFDocument({ margin: 50 });
-
-//     res.setHeader('Content-Type', 'application/pdf');
-//     res.setHeader('Content-Disposition', `attachment; filename="Installation_${store.dealerCode}.pdf"`);
-//     doc.pipe(res);
-
-//     // Header
-//     doc.fontSize(24).fillColor('#22C55E').text('INSTALLATION COMPLETION REPORT', { align: 'center' });
-//     doc.moveDown();
-//     doc.strokeColor('#22C55E').lineWidth(2).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-//     doc.moveDown();
-
-//     // Store Details
-//     doc.fontSize(12).fillColor('#000000');
-//     doc.text(`Dealer Code: ${store.dealerCode || 'N/A'}`, { continued: true }).text(`    Store Name: ${store.storeName || 'N/A'}`);
-//     doc.text(`City: ${store.location.city || 'N/A'}`, { continued: true }).text(`    State: ${store.location.state || 'N/A'}`);
-//     doc.text(`Address: ${store.location.address || 'N/A'}`);
-//     doc.text(`Board Size: ${store.recce?.sizes?.width || 0} x ${store.recce?.sizes?.height || 0} ft`, { continued: true });
-//     doc.text(`    Completion Date: ${store.installation.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A'}`);
-//     doc.fontSize(14).fillColor('#22C55E').text('Status: ✓ COMPLETED', { bold: true });
-//     doc.moveDown();
-
-//     // Images Section
-//     doc.fontSize(16).fillColor('#22C55E').text('BEFORE & AFTER COMPARISON', { align: 'center' });
-//     doc.moveDown();
-
-//     const addImage = (relativePath: string | undefined, label: string, color: string) => {
-//       if (relativePath) {
-//         try {
-//           const absolutePath = path.join(process.cwd(), relativePath);
-//           if (fs.existsSync(absolutePath)) {
-//             doc.fontSize(12).fillColor(color).text(label, { underline: true });
-//             doc.image(absolutePath, { fit: [450, 300], align: 'center' });
-//             doc.moveDown();
-//           }
-//         } catch (err) {
-//           doc.fillColor('#000000').text(`${label}: Image not available`);
-//         }
-//       }
-//     };
-
-//     addImage(store.recce?.photos?.front, 'BEFORE', '#EF4444');
-//     addImage(store.installation.photos?.after1, 'AFTER - VIEW 1', '#22C55E');
-//     addImage(store.installation.photos?.after2, 'AFTER - VIEW 2', '#22C55E');
-
-//     doc.end();
-//   } catch (error: any) {
-//     console.error("PDF Gen Error:", error);
-//     if (!res.headersSent) res.status(500).json({ message: "Error generating PDF" });
-//   }
-// };

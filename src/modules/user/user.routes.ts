@@ -12,22 +12,20 @@ import {
   downloadUserTemplate,
   uploadUsersBulk
 } from "./user.controller";
+import { bulkAssignStoresToUser } from "../store/store.controller";
 import { protect } from "../../middlewares/auth.middleware";
 import { checkPermission } from "../../middlewares/rbac.middleware";
 
 const router = express.Router();
 
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, "uploads/");
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+const storage = multer.memoryStorage();
+
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024,
   },
 });
-
-const upload = multer({ storage: storage });
 
 router.use(protect);
 
@@ -256,5 +254,7 @@ router
  *                     type: object
  */
 router.get("/role/:roleCode", protect, getUsersByRole);
+
+router.post("/:userId/bulk-assign-stores", checkPermission("stores", "edit"), upload.array("files"), bulkAssignStoresToUser);
 
 export default router;

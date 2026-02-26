@@ -80,6 +80,7 @@ export const getAllUsers = async (
     const limit = Number(req.query.limit) || 10;
     const skip = (page - 1) * limit;
     const search = String(req.query.search || "").trim();
+    const roleId = String(req.query.role || "").trim();
 
     // Build search filter
     const filter: any = {};
@@ -88,6 +89,10 @@ export const getAllUsers = async (
         { name: { $regex: search, $options: "i" } },
         { email: { $regex: search, $options: "i" } },
       ];
+    }
+    
+    if (roleId) {
+      filter.roles = roleId;
     }
 
     const users = await User.find(filter)
