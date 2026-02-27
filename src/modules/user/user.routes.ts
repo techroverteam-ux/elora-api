@@ -5,6 +5,7 @@ import {
   createUser,
   getAllUsers,
   getUserById,
+  getUserStats,
   updateUser,
   deleteUser,
   getUsersByRole,
@@ -160,6 +161,29 @@ router
   .route("/")
   .post(checkPermission("users", "create"), createUser)
   .get(checkPermission("users", "view"), getAllUsers);
+
+/**
+ * @swagger
+ * /api/v1/users/{id}/stats:
+ *   get:
+ *     summary: Get user statistics
+ *     description: Retrieve comprehensive statistics and activity for a specific user
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: User statistics
+ *       404:
+ *         description: User not found
+ */
+router.get("/:id/stats", checkPermission("users", "view"), getUserStats);
 
 /**
  * @swagger

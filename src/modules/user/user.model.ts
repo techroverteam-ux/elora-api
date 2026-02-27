@@ -5,8 +5,12 @@ export interface UserDocument extends Document {
   name: string;
   email: string;
   password: string;
-  roles: mongoose.Types.ObjectId;
+  roles: mongoose.Types.ObjectId[];
   isActive: boolean;
+  loginCount?: number;
+  lastLogin?: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
   comparePassword(password: string): Promise<boolean>;
 }
 
@@ -23,6 +27,8 @@ const UserSchema = new Schema<UserDocument>(
     password: { type: String, required: true },
     roles: [{ type: Schema.Types.ObjectId, ref: "Role", required: true }],
     isActive: { type: Boolean, default: true },
+    loginCount: { type: Number, default: 0 },
+    lastLogin: { type: Date },
   },
   { timestamps: true },
 );

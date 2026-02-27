@@ -27,10 +27,10 @@ export const checkPermission = (
       // 2. Loop through ALL assigned roles
       for (const role of req.user.roles) {
         // Ensure role has permissions property
-        if (!role.permissions) continue;
+        if (!(role as any).permissions) continue;
 
         // Mongoose Map: Use .get() to access the resource
-        const resourcePermission = role.permissions.get(resource);
+        const resourcePermission = (role as any).permissions.get(resource);
 
         // If permission exists for this resource AND the specific action is true
         if (resourcePermission && resourcePermission[action] === true) {

@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
+import mongoose from "mongoose";
 import User from "./user.model";
 import Role from "../role/role.model";
+import Store from "../store/store.model";
 import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
 import fs from "fs";
@@ -116,6 +118,203 @@ export const getAllUsers = async (
     res.status(500).json({ message: "Server Error" });
   }
 };
+// @desc    Get user statistics and activity
+// @route   GET /api/v1/users/:id/stats
+// @access  Private
+export const getUserStats = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = String(req.params.id);
+
+    // Get user with roles
+    const user = await User.findById(userId)
+      .select("-password")
+      .populate("roles", "name code");
+
+    if (!user) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    const userRoleNames = Array.isArray(user.roles) 
+      ? (user.roles as any[]).map((r: any) => r.name)
+      : [];
+    const isRecce = userRoleNames.includes("RECCE");
+    const isInstallation = userRoleNames.includes("INSTALLATION");
+    const isAdmin = userRoleNames.includes("SUPER_ADMIN") || userRoleNames.includes("ADMIN");
+
+    // Initialize stats
+    const stats: any = {
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        roles: user.roles,
+        isActive: user.isActive,
+        createdAt: (user as any).createdAt,
+        lastLogin: user.lastLogin,
+        loginCount: user.loginCount || 0,
+      },
+      workStats: {
+        totalAssigned: 0,
+        completed: 0,
+        pending: 0,
+        inProgress: 0,
+        rejected: 0,
+      },
+      recentActivity: [],
+    };
+
+    // Recce user stats
+    if (isRecce) {
+      const userObjectId = new mongoose.Types.ObjectId(userId);
+      const recceAssigned = await Store.countDocuments({
+        "workflow.recceAssignedTo": userObjectId,
+      });
+      const recceSubmitted = await Store.countDocuments({
+        "workflow.recceAssignedTo": userObjectId,
+        currentStatus: { $in: ["RECCE_SUBMITTED", "RECCE_APPROVED", "RECCE_REJECTED"] },
+      });
+      const recceApproved = await Store.countDocuments({
+        "workflow.recceAssignedTo": userObjectId,
+        currentStatus: "RECCE_APPROVED",
+      });
+      const recceRejected = await Store.countDocuments({
+        "workflow.recceAssignedTo": userObjectId,
+        currentStatus: "RECCE_REJECTED",
+      });
+      const reccePending = await Store.countDocuments({
+        "workflow.recceAssignedTo": userObjectId,
+        currentStatus: "RECCE_ASSIGNED",
+      });
+
+      stats.recceStats = {
+        assigned: recceAssigned,
+        submitted: recceSubmitted,
+        approved: recceApproved,
+        rejected: recceRejected,
+        pending: reccePending,
+      };
+
+      stats.workStats.totalAssigned += recceAssigned;
+      stats.workStats.completed += recceApproved;
+      stats.workStats.pending += reccePending;
+      stats.workStats.inProgress += recceSubmitted - recceApproved - recceRejected;
+      stats.workStats.rejected += recceRejected;
+
+      // Get recent recce activity
+      const recceActivity = await Store.find({
+        "workflow.recceAssignedTo": userObjectId,
+      })
+        .select("storeId storeName dealerCode location.city currentStatus recce.assignedDate recce.submittedDate")
+        .sort({ "recce.assignedDate": -1 })
+        .limit(10);
+
+      stats.recentActivity.push(
+        ...recceActivity.map((s: any) => ({
+          _id: s._id,
+          storeId: s.storeId,
+          storeName: s.storeName,
+          dealerCode: s.dealerCode,
+          city: s.location.city,
+          status: s.currentStatus,
+          assignedDate: s.recce?.assignedDate,
+          submittedDate: s.recce?.submittedDate,
+        }))
+      );
+    }
+
+    // Installation user stats
+    if (isInstallation) {
+      const userObjectId = new mongoose.Types.ObjectId(userId);
+      const installAssigned = await Store.countDocuments({
+        "workflow.installationAssignedTo": userObjectId,
+      });
+      const installSubmitted = await Store.countDocuments({
+        "workflow.installationAssignedTo": userObjectId,
+        currentStatus: { $in: ["INSTALLATION_SUBMITTED", "COMPLETED"] },
+      });
+      const installCompleted = await Store.countDocuments({
+        "workflow.installationAssignedTo": userObjectId,
+        currentStatus: "COMPLETED",
+      });
+      const installPending = await Store.countDocuments({
+        "workflow.installationAssignedTo": userObjectId,
+        currentStatus: "INSTALLATION_ASSIGNED",
+      });
+
+      stats.installationStats = {
+        assigned: installAssigned,
+        submitted: installSubmitted,
+        completed: installCompleted,
+        pending: installPending,
+      };
+
+      stats.workStats.totalAssigned += installAssigned;
+      stats.workStats.completed += installCompleted;
+      stats.workStats.pending += installPending;
+      stats.workStats.inProgress += installSubmitted - installCompleted;
+
+      // Get recent installation activity
+      const installActivity = await Store.find({
+        "workflow.installationAssignedTo": userObjectId,
+      })
+        .select("storeId storeName dealerCode location.city currentStatus installation.assignedDate installation.submittedDate")
+        .sort({ "installation.assignedDate": -1 })
+        .limit(10);
+
+      stats.recentActivity.push(
+        ...installActivity.map((s: any) => ({
+          _id: s._id,
+          storeId: s.storeId,
+          storeName: s.storeName,
+          dealerCode: s.dealerCode,
+          city: s.location.city,
+          status: s.currentStatus,
+          assignedDate: s.installation?.assignedDate,
+          submittedDate: s.installation?.submittedDate,
+        }))
+      );
+    }
+
+    // Admin stats
+    if (isAdmin) {
+      const userObjectId = new mongoose.Types.ObjectId(userId);
+      const totalAssignments = await Store.countDocuments({
+        $or: [
+          { "workflow.recceAssignedBy": userObjectId },
+          { "workflow.installationAssignedBy": userObjectId },
+        ],
+      });
+
+      const usersManaged = await User.countDocuments({ isActive: true });
+      const storesManaged = await Store.countDocuments({});
+
+      stats.adminStats = {
+        totalAssignments,
+        usersManaged,
+        storesManaged,
+      };
+    }
+
+    // Sort and limit recent activity
+    stats.recentActivity = stats.recentActivity
+      .sort((a: any, b: any) => {
+        const dateA = new Date(a.assignedDate || 0).getTime();
+        const dateB = new Date(b.assignedDate || 0).getTime();
+        return dateB - dateA;
+      })
+      .slice(0, 15);
+
+    res.status(200).json(stats);
+  } catch (error) {
+    console.error("Get User Stats Error:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
 // @desc    Get single user by ID
 // @route   GET /api/v1/users/:id
 // @access  Private

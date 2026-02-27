@@ -24,6 +24,11 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
+    // Update login tracking
+    user.loginCount = (user.loginCount || 0) + 1;
+    user.lastLogin = new Date();
+    await user.save();
+
     const token = generateAccessToken({
       userId: user._id,
       role: user.roles,
