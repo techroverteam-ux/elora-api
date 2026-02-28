@@ -14,6 +14,11 @@ export const seedSuperAdmin = async () => {
       stores: { view: true, create: true, edit: true, delete: true },
       recce: { view: true, create: true, edit: true, delete: true },
       installation: { view: true, create: true, edit: true, delete: true },
+      enquiries: { view: true, create: true, edit: true, delete: true },
+      reports: { view: true, create: true, edit: true, delete: true },
+      elements: { view: true, create: true, edit: true, delete: true },
+      clients: { view: true, create: true, edit: true, delete: true },
+      rfq: { view: true, create: true, edit: true, delete: true },
     };
 
     if (!superAdminRole) {
