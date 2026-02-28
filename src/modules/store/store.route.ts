@@ -21,6 +21,7 @@ import {
   exportInstallationTasks,
   exportStores,
   bulkAssignStoresToUser,
+  generateStoreExcel,
 } from "./store.controller";
 import { generateReccePDF, generateInstallationPDF, generateBulkPDF } from "./pdf.controller";
 import { protect } from "../../middlewares/auth.middleware";
@@ -439,11 +440,7 @@ router.post("/unassign", checkPermission("stores", "edit"), unassignStoresBulk);
 router.post(
   "/:id/recce",
   protect,
-  upload.fields([
-    { name: "front", maxCount: 1 },
-    { name: "side", maxCount: 1 },
-    { name: "closeUp", maxCount: 1 },
-  ]),
+  upload.any(),
   submitRecce,
 );
 
@@ -497,6 +494,8 @@ router.get("/:id/ppt/recce", protect, generateReccePPT);
  *               format: binary
  */
 router.get("/:id/pdf/recce", protect, generateReccePDF);
+router.get("/:id/excel/recce", protect, generateStoreExcel);
+router.get("/:id/excel/installation", protect, generateStoreExcel);
 /**
  * @swagger
  * /api/v1/stores/ppt/bulk:
@@ -649,10 +648,7 @@ router.post(
 router.post(
   "/:id/installation",
   protect,
-  upload.fields([
-    { name: "after1", maxCount: 1 },
-    { name: "after2", maxCount: 1 },
-  ]),
+  upload.any(),
   submitInstallation,
 );
 

@@ -85,8 +85,12 @@ export interface StoreDocument extends Document {
   recce?: {
     assignedDate?: Date;
     submittedDate?: Date;
-    sizes?: { width: number; height: number; unit?: string };
-    photos?: { front: string; side: string; closeUp: string }; // Google Drive links
+    initialPhotos?: string[]; // Array of Google Drive links (up to 10) - optional
+    reccePhotos?: Array<{
+      photo: string; // Google Drive link
+      measurements: { width: number; height: number; unit: string };
+      elements?: Array<{ elementId: string; elementName: string; quantity: number }>;
+    }>;
     notes?: string;
     submittedBy?: string; // User name who submitted
   };
@@ -94,10 +98,10 @@ export interface StoreDocument extends Document {
   installation?: {
     assignedDate?: Date;
     submittedDate?: Date;
-    photos?: {
-      after1?: string; // Google Drive link
-      after2?: string; // Google Drive link
-    };
+    photos?: Array<{
+      reccePhotoIndex: number; // Index of corresponding recce photo
+      installationPhoto: string; // Google Drive link
+    }>;
     submittedBy?: string; // User name who submitted
   };
 }
@@ -187,20 +191,38 @@ const StoreSchema = new Schema<StoreDocument>(
     recce: {
       assignedDate: Date,
       submittedDate: Date,
-      sizes: { width: Number, height: Number, unit: { type: String, default: "ft" } },
-      photos: { front: String, side: String, closeUp: String }, // Google Drive links
+      initialPhotos: [String],
+      reccePhotos: [
+        {
+          photo: String,
+          measurements: {
+            width: { type: Number, required: true },
+            height: { type: Number, required: true },
+            unit: { type: String, default: "in" },
+          },
+          elements: [
+            {
+              elementId: { type: String },
+              elementName: { type: String },
+              quantity: { type: Number, default: 1 },
+            },
+          ],
+        },
+      ],
       notes: String,
-      submittedBy: String, // User name
+      submittedBy: String,
     },
 
     installation: {
       assignedDate: Date,
       submittedDate: Date,
-      photos: {
-        after1: String, // Google Drive link
-        after2: String, // Google Drive link
-      },
-      submittedBy: String, // User name
+      photos: [
+        {
+          reccePhotoIndex: { type: Number, required: true },
+          installationPhoto: { type: String, required: true },
+        },
+      ],
+      submittedBy: String,
     },
   },
   { timestamps: true },

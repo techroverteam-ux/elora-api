@@ -115,8 +115,11 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
           }
 
           // D. Build Object
-          const city = row["City"] || "";
-          const district = row["District"] || "";
+          const cityRaw = row["City "] || row["City"] || ""; // Handle both "City " and "City"
+          const districtRaw = row["District"] || "";
+          // If City is empty, use District as City
+          const city = cityRaw || districtRaw;
+          const district = districtRaw;
           const dealerCode = dCode;
 
           // Generate storeId manually since insertMany doesn't trigger pre-save hooks
@@ -334,7 +337,7 @@ export const getAllStores = async (req: Request | any, res: Response) => {
     const limit = Number(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    const { status, search, city } = req.query;
+    const { status, search, city, clientCode, clientName } = req.query;
 
     let query: any = {};
 
@@ -363,10 +366,27 @@ export const getAllStores = async (req: Request | any, res: Response) => {
 
     // 3. City Filter
     if (city) {
-      query["location.city"] = city;
+      query["location.city"] = { $regex: city, $options: "i" };
     }
 
-    // 4. Search (Store Name, Dealer Code, City)
+    // 4. Client Code Filter
+    if (clientCode) {
+      query.clientCode = { $regex: clientCode, $options: "i" };
+    }
+
+    // 5. Client Name Filter
+    if (clientName) {
+      const clients = await Client.find({
+        clientName: { $regex: clientName, $options: "i" },
+      }).select("_id");
+      if (clients.length > 0) {
+        query.clientId = { $in: clients.map((c) => c._id) };
+      } else {
+        query.clientId = null;
+      }
+    }
+
+    // 6. Search (Store Name, Dealer Code, City)
     if (search) {
       const searchRegex = { $regex: search, $options: "i" };
       query.$and = [
@@ -388,6 +408,7 @@ export const getAllStores = async (req: Request | any, res: Response) => {
       .populate("workflow.recceAssignedBy", "name email")
       .populate("workflow.installationAssignedTo", "name email")
       .populate("workflow.installationAssignedBy", "name email")
+      .populate("clientId", "clientName")
       .sort({ updatedAt: -1, createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -543,87 +564,115 @@ export const unassignStoresBulk = async (req: Request | any, res: Response) => {
 export const submitRecce = async (req: Request | any, res: Response) => {
   try {
     const { id } = req.params;
-    const { width, height, notes, unit } = req.body;
-    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    const { notes, initialPhotosCount, reccePhotosData, existingReccePhotos, existingInitialPhotos } = req.body;
+    const filesArray = req.files as Express.Multer.File[];
+
+    console.log("Request body:", { notes, initialPhotosCount, reccePhotosData, existingReccePhotos, existingInitialPhotos });
+    console.log("Files received:", filesArray?.map(f => f.fieldname));
 
     const store = await Store.findById(id);
     if (!store) return res.status(404).json({ message: "Store not found" });
 
     // Generate storeId if missing
     if (!store.storeId) {
-      if (
-        store.location?.city &&
-        store.location?.district &&
-        store.dealerCode
-      ) {
-        const cityPrefix = store.location.city
-          .trim()
-          .substring(0, 3)
-          .toUpperCase();
-        const districtPrefix = store.location.district
-          .trim()
-          .substring(0, 3)
-          .toUpperCase();
+      if (store.location?.city && store.location?.district && store.dealerCode) {
+        const cityPrefix = store.location.city.trim().substring(0, 3).toUpperCase();
+        const districtPrefix = store.location.district.trim().substring(0, 3).toUpperCase();
         const storeId = `${cityPrefix}${districtPrefix}${store.dealerCode.toUpperCase()}`;
         store.storeId = storeId;
         await store.save();
       } else {
         return res.status(400).json({
-          message:
-            "Cannot generate Store ID. Missing city or district information.",
+          message: "Cannot generate Store ID. Missing city or district information.",
         });
       }
     }
 
     const userName = req.user?.name || "Unknown";
 
-    // Upload images to Google Drive
-    const driveLinks: { front?: string; side?: string; closeUp?: string } = {};
+    // Start with existing initial photos if resubmission
+    const initialPhotos: string[] = existingInitialPhotos ? JSON.parse(existingInitialPhotos) : [];
+    
+    // Upload new initial photos (up to 10 total)
+    const initialCount = parseInt(initialPhotosCount || "0");
+    for (let i = 0; i < initialCount; i++) {
+      const fieldName = `initialPhoto${i}`;
+      const file = filesArray?.find(f => f.fieldname === fieldName);
+      if (file) {
+        const link = await uploadService.uploadFile(
+          file.buffer,
+          `initial_${Date.now()}_${i}.jpg`,
+          file.mimetype,
+          store.storeId,
+          "Recce",
+          userName,
+        );
+        initialPhotos.push(link);
+      }
+    }
 
-    if (files.front) {
-      driveLinks.front = await uploadService.uploadFile(
-        files.front[0].buffer,
-        "front.jpg",
-        files.front[0].mimetype,
-        store.storeId,
-        "Recce",
-        userName,
-      );
+    console.log("Initial photos uploaded:", initialPhotos);
+
+    // Start with existing recce photos if resubmission
+    const reccePhotos: any[] = [];
+    if (existingReccePhotos) {
+      const existing = JSON.parse(existingReccePhotos);
+      existing.forEach((ep: any) => {
+        reccePhotos.push({
+          photo: ep.photo,
+          measurements: {
+            width: parseFloat(ep.width),
+            height: parseFloat(ep.height),
+            unit: ep.unit || "in",
+          },
+          elements: ep.elements || [],
+        });
+      });
     }
-    if (files.side) {
-      driveLinks.side = await uploadService.uploadFile(
-        files.side[0].buffer,
-        "side.jpg",
-        files.side[0].mimetype,
-        store.storeId,
-        "Recce",
-        userName,
-      );
+
+    // Parse and upload new recce photos
+    const reccePhotosArray = JSON.parse(reccePhotosData || "[]");
+    console.log("Recce photos array:", reccePhotosArray);
+
+    for (let i = 0; i < reccePhotosArray.length; i++) {
+      const photoData = reccePhotosArray[i];
+      const fieldName = `reccePhoto${i}`;
+      const file = filesArray?.find(f => f.fieldname === fieldName);
+      
+      if (file) {
+        const link = await uploadService.uploadFile(
+          file.buffer,
+          `recce_${Date.now()}_${i}.jpg`,
+          file.mimetype,
+          store.storeId,
+          "Recce",
+          userName,
+        );
+
+        reccePhotos.push({
+          photo: link,
+          measurements: {
+            width: parseFloat(photoData.width),
+            height: parseFloat(photoData.height),
+            unit: photoData.unit || "in",
+          },
+        });
+      }
     }
-    if (files.closeUp) {
-      driveLinks.closeUp = await uploadService.uploadFile(
-        files.closeUp[0].buffer,
-        "closeup.jpg",
-        files.closeUp[0].mimetype,
-        store.storeId,
-        "Recce",
-        userName,
-      );
-    }
+
+    console.log("Recce photos uploaded:", reccePhotos);
 
     // Prepare Recce Data
     const recceUpdate: any = {
       "recce.submittedDate": new Date(),
       "recce.notes": notes,
-      "recce.sizes": {
-        width: Number(width),
-        height: Number(height),
-        unit: unit || "ft",
-      },
+      "recce.initialPhotos": initialPhotos,
+      "recce.reccePhotos": reccePhotos,
       "recce.submittedBy": userName,
-      "recce.photos": driveLinks,
       currentStatus: StoreStatus.RECCE_SUBMITTED,
     };
+
+    console.log("Recce update object:", recceUpdate);
 
     const updatedStore = await Store.findByIdAndUpdate(
       id,
@@ -631,15 +680,15 @@ export const submitRecce = async (req: Request | any, res: Response) => {
       { new: true },
     );
 
+    console.log("Updated store recce:", updatedStore?.recce);
+
     res.status(200).json({
       message: "Recce submitted successfully",
       store: updatedStore,
     });
   } catch (error: any) {
     console.error("Recce Submit Error:", error);
-    res
-      .status(500)
-      .json({ message: "Failed to submit recce", error: error.message });
+    res.status(500).json({ message: "Failed to submit recce", error: error.message });
   }
 };
 
@@ -696,8 +745,6 @@ export const generateReccePPT = async (req: Request, res: Response) => {
 
     if (fs.existsSync(logoPath)) {
       coverSlide.addImage({ path: logoPath, x: 3.3, y: 3, w: 4.2, h: 1.26 });
-    } else {
-      console.log("Logo not found at:", logoPath);
     }
 
     coverSlide.addText(
@@ -714,10 +761,10 @@ export const generateReccePPT = async (req: Request, res: Response) => {
       },
     );
 
-    // DATA SLIDE
-    const slide = pres.addSlide();
-    slide.background = { fill: "FFFEF5" };
-    slide.addShape("rect", {
+    // STORE INFO SLIDE
+    const infoSlide = pres.addSlide();
+    infoSlide.background = { fill: "FFFEF5" };
+    infoSlide.addShape("rect", {
       x: 0,
       y: 0,
       w: "100%",
@@ -726,10 +773,10 @@ export const generateReccePPT = async (req: Request, res: Response) => {
     });
 
     if (fs.existsSync(logoPath)) {
-      slide.addImage({ path: logoPath, x: 0.3, y: 0.15, w: 1.5, h: 0.45 });
+      infoSlide.addImage({ path: logoPath, x: 0.3, y: 0.15, w: 1.5, h: 0.45 });
     }
 
-    slide.addShape("rect", {
+    infoSlide.addShape("rect", {
       x: 0.2,
       y: 0.8,
       w: 9.6,
@@ -737,7 +784,7 @@ export const generateReccePPT = async (req: Request, res: Response) => {
       line: { color: colors.borderDark, width: 2 },
       fill: { color: colors.white },
     });
-    slide.addText("RECCE INSPECTION REPORT", {
+    infoSlide.addText("RECCE INSPECTION REPORT", {
       x: 0.2,
       y: 0.8,
       w: 9.6,
@@ -749,7 +796,7 @@ export const generateReccePPT = async (req: Request, res: Response) => {
       valign: "middle",
     });
 
-    slide.addShape("rect", {
+    infoSlide.addShape("rect", {
       x: 0.2,
       y: 1.7,
       w: 9.6,
@@ -760,60 +807,34 @@ export const generateReccePPT = async (req: Request, res: Response) => {
 
     const detailsData = [
       [
-        {
-          text: "Dealer Code",
-          options: { bold: true, fill: { color: colors.lightBg } },
-        },
+        { text: "Dealer Code", options: { bold: true, fill: { color: colors.lightBg } } },
         store.dealerCode || "",
-        {
-          text: "Store Name",
-          options: { bold: true, fill: { color: colors.lightBg } },
-        },
+        { text: "Store Name", options: { bold: true, fill: { color: colors.lightBg } } },
         store.storeName || "",
       ],
       [
-        {
-          text: "City",
-          options: { bold: true, fill: { color: colors.lightBg } },
-        },
+        { text: "City", options: { bold: true, fill: { color: colors.lightBg } } },
         store.location.city || "",
-        {
-          text: "State",
-          options: { bold: true, fill: { color: colors.lightBg } },
-        },
+        { text: "State", options: { bold: true, fill: { color: colors.lightBg } } },
         store.location.state || "",
       ],
       [
-        {
-          text: "Address",
-          options: { bold: true, fill: { color: colors.lightBg } },
-        },
+        { text: "Address", options: { bold: true, fill: { color: colors.lightBg } } },
         { text: store.location.address || "N/A", options: { colspan: 3 } },
       ],
       [
-        {
-          text: "Board Size",
-          options: { bold: true, fill: { color: colors.lightBg } },
-        },
-        `${store.recce.sizes?.width || 0} x ${store.recce.sizes?.height || 0} ft`,
-        {
-          text: "Recce Date",
-          options: { bold: true, fill: { color: colors.lightBg } },
-        },
-        store.recce.submittedDate
-          ? new Date(store.recce.submittedDate).toLocaleDateString()
-          : "N/A",
+        { text: "Recce Date", options: { bold: true, fill: { color: colors.lightBg } } },
+        store.recce.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : "N/A",
+        { text: "Submitted By", options: { bold: true, fill: { color: colors.lightBg } } },
+        store.recce.submittedBy || "N/A",
       ],
       [
-        {
-          text: "Notes",
-          options: { bold: true, fill: { color: colors.lightBg } },
-        },
+        { text: "Notes", options: { bold: true, fill: { color: colors.lightBg } } },
         { text: store.recce.notes || "None", options: { colspan: 3 } },
       ],
     ];
 
-    slide.addTable(detailsData as any, {
+    infoSlide.addTable(detailsData as any, {
       x: 0.2,
       y: 1.7,
       w: 9.6,
@@ -825,111 +846,172 @@ export const generateReccePPT = async (req: Request, res: Response) => {
       color: colors.text,
     });
 
-    slide.addShape("rect", {
-      x: 0.2,
-      y: 4.3,
-      w: 9.6,
-      h: 0.5,
-      line: { color: colors.borderDark, width: 2 },
-      fill: { color: colors.white },
-    });
-    slide.addText("SITE INSPECTION PHOTOS", {
-      x: 0.2,
-      y: 4.3,
-      w: 9.6,
-      h: 0.5,
-      fontSize: 18,
-      bold: true,
-      color: colors.secondary,
-      align: "center",
-      valign: "middle",
-    });
+    // INITIAL PHOTOS SLIDES
+    if (store.recce.initialPhotos && store.recce.initialPhotos.length > 0) {
+      const initialSlide = pres.addSlide();
+      initialSlide.background = { fill: "FFFEF5" };
+      initialSlide.addShape("rect", {
+        x: 0,
+        y: 0,
+        w: "100%",
+        h: "100%",
+        fill: { type: "solid", color: "FEF3C7", transparency: 50 },
+      });
 
-    const addImage = (
-      relativePath: string | undefined,
-      label: string,
-      x: number,
-      y: number,
-    ) => {
-      slide.addShape("rect", {
-        x,
-        y,
-        w: 3,
-        h: 2.5,
+      if (fs.existsSync(logoPath)) {
+        initialSlide.addImage({ path: logoPath, x: 0.3, y: 0.15, w: 1.5, h: 0.45 });
+      }
+
+      initialSlide.addShape("rect", {
+        x: 0.2,
+        y: 0.8,
+        w: 9.6,
+        h: 0.6,
         line: { color: colors.borderDark, width: 2 },
         fill: { color: colors.white },
       });
-      if (relativePath) {
-        try {
-          const absolutePath = path.join(process.cwd(), relativePath);
-          if (fs.existsSync(absolutePath)) {
-            slide.addImage({
-              path: absolutePath,
-              x: x + 0.05,
-              y: y + 0.05,
-              w: 2.9,
-              h: 2.0,
-            });
-          } else {
-            slide.addText("Image Not Found", {
-              x,
-              y: y + 1,
-              w: 3,
-              fontSize: 10,
-              align: "center",
-              color: "999999",
-            });
-          }
-        } catch (err) {
-          slide.addText("Error Loading Image", {
-            x,
-            y: y + 1,
-            w: 3,
-            fontSize: 10,
-            align: "center",
-            color: "FF0000",
-          });
-        }
-      } else {
-        slide.addText(`No ${label}`, {
-          x,
-          y: y + 1,
-          w: 3,
-          fontSize: 10,
-          align: "center",
-          color: "999999",
-        });
-      }
-      slide.addShape("rect", {
-        x,
-        y: y + 2.05,
-        w: 3,
-        h: 0.45,
-        fill: { color: colors.primary },
-        line: { color: colors.borderDark, width: 2 },
-      });
-      slide.addText(label, {
-        x,
-        y: y + 2.05,
-        w: 3,
-        h: 0.45,
-        fontSize: 12,
+      initialSlide.addText("INITIAL STORE PHOTOS", {
+        x: 0.2,
+        y: 0.8,
+        w: 9.6,
+        h: 0.6,
+        fontSize: 24,
         bold: true,
+        color: colors.primary,
         align: "center",
         valign: "middle",
-        color: colors.white,
       });
-    };
 
-    addImage(store.recce.photos?.front, "FRONT VIEW", 0.5, 4.9);
-    addImage(store.recce.photos?.side, "SIDE VIEW", 3.7, 4.9);
-    addImage(store.recce.photos?.closeUp, "CLOSE UP VIEW", 6.9, 4.9);
+      const photosPerSlide = 4;
+      const photoWidth = 4.5;
+      const photoHeight = 3.0;
+      const positions = [
+        { x: 0.5, y: 1.8 },
+        { x: 5.3, y: 1.8 },
+        { x: 0.5, y: 5.0 },
+        { x: 5.3, y: 5.0 },
+      ];
+
+      let currentSlide = initialSlide;
+      for (let i = 0; i < store.recce.initialPhotos.length; i++) {
+        const posIndex = i % photosPerSlide;
+        if (posIndex === 0 && i > 0) {
+          currentSlide = pres.addSlide();
+          currentSlide.background = { fill: "FFFEF5" };
+          currentSlide.addShape("rect", {
+            x: 0,
+            y: 0,
+            w: "100%",
+            h: "100%",
+            fill: { type: "solid", color: "FEF3C7", transparency: 50 },
+          });
+          if (fs.existsSync(logoPath)) {
+            currentSlide.addImage({ path: logoPath, x: 0.3, y: 0.15, w: 1.5, h: 0.45 });
+          }
+        }
+
+        const pos = positions[posIndex];
+        const photoPath = path.join(process.cwd(), store.recce.initialPhotos[i]);
+
+        if (fs.existsSync(photoPath)) {
+          currentSlide.addImage({
+            path: photoPath,
+            x: pos.x,
+            y: pos.y,
+            w: photoWidth,
+            h: photoHeight,
+          });
+        }
+      }
+    }
+
+    // RECCE PHOTOS SLIDES (Individual slides with measurements and elements)
+    if (store.recce.reccePhotos && store.recce.reccePhotos.length > 0) {
+      for (let i = 0; i < store.recce.reccePhotos.length; i++) {
+        const reccePhoto = store.recce.reccePhotos[i];
+        const photoSlide = pres.addSlide();
+        photoSlide.background = { fill: "FFFEF5" };
+        photoSlide.addShape("rect", {
+          x: 0,
+          y: 0,
+          w: "100%",
+          h: "100%",
+          fill: { type: "solid", color: "FEF3C7", transparency: 50 },
+        });
+
+        if (fs.existsSync(logoPath)) {
+          photoSlide.addImage({ path: logoPath, x: 0.3, y: 0.15, w: 1.5, h: 0.45 });
+        }
+
+        const photoPath = path.join(process.cwd(), reccePhoto.photo);
+        if (fs.existsSync(photoPath)) {
+          photoSlide.addImage({
+            path: photoPath,
+            x: 1.0,
+            y: 0.8,
+            w: 8.0,
+            h: 5.5,
+          });
+        }
+
+        // Measurements box
+        photoSlide.addShape("rect", {
+          x: 1.0,
+          y: 6.4,
+          w: 8.0,
+          h: 0.6,
+          line: { color: colors.borderDark, width: 2 },
+          fill: { color: colors.white },
+        });
+        photoSlide.addText(
+          `Measurements: ${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`,
+          {
+            x: 1.0,
+            y: 6.4,
+            w: 8.0,
+            h: 0.6,
+            fontSize: 18,
+            bold: true,
+            color: colors.text,
+            align: "center",
+            valign: "middle",
+          },
+        );
+
+        // Elements section
+        if (reccePhoto.elements && reccePhoto.elements.length > 0) {
+          const elementsText = reccePhoto.elements
+            .map((el: any) => `${el.elementName} (Qty: ${el.quantity})`)
+            .join(" | ");
+          
+          photoSlide.addShape("rect", {
+            x: 1.0,
+            y: 7.1,
+            w: 8.0,
+            h: 0.5,
+            line: { color: colors.borderDark, width: 2 },
+            fill: { color: colors.lightBg },
+          });
+          photoSlide.addText(`Elements: ${elementsText}`, {
+            x: 1.0,
+            y: 7.1,
+            w: 8.0,
+            h: 0.5,
+            fontSize: 14,
+            bold: true,
+            color: colors.text,
+            align: "center",
+            valign: "middle",
+          });
+        }
+      }
+    }
 
     const buffer = await pres.write({ outputType: "nodebuffer" });
     res.writeHead(200, {
       "Content-Type":
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      "Content-Disposition": `attachment; filename="Recce_${store.dealerCode}.pptx"`,
+      "Content-Disposition": `attachment; filename="RECCE_${store.storeName}_${store.storeId}_PPT.pptx"`,
     });
     res.end(buffer);
   } catch (error: any) {
@@ -979,71 +1061,59 @@ export const reviewRecce = async (req: Request, res: Response) => {
   }
 };
 
-// --- UPDATED: Submit Installation Data (2 Images) ---
+// --- UPDATED: Submit Installation Data (Multiple Images matching Recce Photos) ---
 export const submitInstallation = async (req: Request | any, res: Response) => {
   try {
     const { id } = req.params;
-    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    const { installationPhotosData } = req.body;
+    const filesArray = req.files as Express.Multer.File[];
 
     const store = await Store.findById(id);
     if (!store) return res.status(404).json({ message: "Store not found" });
 
-    // Generate storeId if missing
     if (!store.storeId) {
-      if (
-        store.location?.city &&
-        store.location?.district &&
-        store.dealerCode
-      ) {
-        const cityPrefix = store.location.city
-          .trim()
-          .substring(0, 3)
-          .toUpperCase();
-        const districtPrefix = store.location.district
-          .trim()
-          .substring(0, 3)
-          .toUpperCase();
+      if (store.location?.city && store.location?.district && store.dealerCode) {
+        const cityPrefix = store.location.city.trim().substring(0, 3).toUpperCase();
+        const districtPrefix = store.location.district.trim().substring(0, 3).toUpperCase();
         const storeId = `${cityPrefix}${districtPrefix}${store.dealerCode.toUpperCase()}`;
         store.storeId = storeId;
         await store.save();
       } else {
-        return res.status(400).json({
-          message:
-            "Cannot generate Store ID. Missing city or district information.",
-        });
+        return res.status(400).json({ message: "Cannot generate Store ID. Missing city or district information." });
       }
     }
 
     const userName = req.user?.name || "Unknown";
+    const installationPhotos: Array<{ reccePhotoIndex: number; installationPhoto: string }> = [];
 
-    // Upload images to Google Drive
-    const driveLinks: { after1?: string; after2?: string } = {};
+    const photosArray = JSON.parse(installationPhotosData || "[]");
 
-    if (files.after1) {
-      driveLinks.after1 = await uploadService.uploadFile(
-        files.after1[0].buffer,
-        "after1.jpg",
-        files.after1[0].mimetype,
-        store.storeId,
-        "Installation",
-        userName,
-      );
-    }
-    if (files.after2) {
-      driveLinks.after2 = await uploadService.uploadFile(
-        files.after2[0].buffer,
-        "after2.jpg",
-        files.after2[0].mimetype,
-        store.storeId,
-        "Installation",
-        userName,
-      );
+    for (let i = 0; i < photosArray.length; i++) {
+      const photoData = photosArray[i];
+      const fieldName = `installationPhoto${i}`;
+      const file = filesArray?.find(f => f.fieldname === fieldName);
+
+      if (file) {
+        const link = await uploadService.uploadFile(
+          file.buffer,
+          `installation_${Date.now()}_${i}.jpg`,
+          file.mimetype,
+          store.storeId,
+          "Installation",
+          userName,
+        );
+
+        installationPhotos.push({
+          reccePhotoIndex: photoData.reccePhotoIndex,
+          installationPhoto: link,
+        });
+      }
     }
 
     const installUpdate: any = {
       "installation.submittedDate": new Date(),
       "installation.submittedBy": userName,
-      "installation.photos": driveLinks,
+      "installation.photos": installationPhotos,
       currentStatus: StoreStatus.INSTALLATION_SUBMITTED,
     };
 
@@ -1051,9 +1121,7 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
 
     res.status(200).json({ message: "Installation submitted successfully" });
   } catch (error: any) {
-    res
-      .status(500)
-      .json({ message: "Submission failed", error: error.message });
+    res.status(500).json({ message: "Submission failed", error: error.message });
   }
 };
 
@@ -1064,9 +1132,7 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
     const store = await Store.findById(id);
 
     if (!store || !store.installation) {
-      return res
-        .status(404)
-        .json({ message: "Store or Installation data not found" });
+      return res.status(404).json({ message: "Store or Installation data not found" });
     }
 
     const pres = new PptxGenJS();
@@ -1081,6 +1147,7 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
       lightBg: "FEF3C7",
       white: "FFFFFF",
       borderDark: "B45309",
+      danger: "EF4444",
     };
 
     const logoPath = path.join(process.cwd(), "public", "logo.png");
@@ -1129,10 +1196,10 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
       },
     );
 
-    // DATA SLIDE
-    const slide = pres.addSlide();
-    slide.background = { fill: "FFFEF5" };
-    slide.addShape("rect", {
+    // STORE INFO SLIDE
+    const infoSlide = pres.addSlide();
+    infoSlide.background = { fill: "FFFEF5" };
+    infoSlide.addShape("rect", {
       x: 0,
       y: 0,
       w: "100%",
@@ -1141,10 +1208,10 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
     });
 
     if (fs.existsSync(logoPath)) {
-      slide.addImage({ path: logoPath, x: 0.3, y: 0.15, w: 1.5, h: 0.45 });
+      infoSlide.addImage({ path: logoPath, x: 0.3, y: 0.15, w: 1.5, h: 0.45 });
     }
 
-    slide.addShape("rect", {
+    infoSlide.addShape("rect", {
       x: 0.2,
       y: 0.8,
       w: 9.6,
@@ -1152,7 +1219,7 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
       line: { color: colors.borderDark, width: 2 },
       fill: { color: colors.white },
     });
-    slide.addText("INSTALLATION COMPLETION REPORT", {
+    infoSlide.addText("INSTALLATION COMPLETION REPORT", {
       x: 0.2,
       y: 0.8,
       w: 9.6,
@@ -1164,7 +1231,7 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
       valign: "middle",
     });
 
-    slide.addShape("rect", {
+    infoSlide.addShape("rect", {
       x: 0.2,
       y: 1.7,
       w: 9.6,
@@ -1175,63 +1242,34 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
 
     const detailsData = [
       [
-        {
-          text: "Dealer Code",
-          options: { bold: true, fill: { color: colors.lightBg } },
-        },
+        { text: "Dealer Code", options: { bold: true, fill: { color: colors.lightBg } } },
         store.dealerCode || "",
-        {
-          text: "Store Name",
-          options: { bold: true, fill: { color: colors.lightBg } },
-        },
+        { text: "Store Name", options: { bold: true, fill: { color: colors.lightBg } } },
         store.storeName || "",
       ],
       [
-        {
-          text: "City",
-          options: { bold: true, fill: { color: colors.lightBg } },
-        },
+        { text: "City", options: { bold: true, fill: { color: colors.lightBg } } },
         store.location.city || "",
-        {
-          text: "State",
-          options: { bold: true, fill: { color: colors.lightBg } },
-        },
+        { text: "State", options: { bold: true, fill: { color: colors.lightBg } } },
         store.location.state || "",
       ],
       [
-        {
-          text: "Address",
-          options: { bold: true, fill: { color: colors.lightBg } },
-        },
+        { text: "Address", options: { bold: true, fill: { color: colors.lightBg } } },
         { text: store.location.address || "N/A", options: { colspan: 3 } },
       ],
       [
-        {
-          text: "Board Size",
-          options: { bold: true, fill: { color: colors.lightBg } },
-        },
-        `${store.recce?.sizes?.width || 0} x ${store.recce?.sizes?.height || 0} ft`,
-        {
-          text: "Completion Date",
-          options: { bold: true, fill: { color: colors.lightBg } },
-        },
-        store.installation.submittedDate
-          ? new Date(store.installation.submittedDate).toLocaleDateString()
-          : "N/A",
+        { text: "Completion Date", options: { bold: true, fill: { color: colors.lightBg } } },
+        store.installation.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : "N/A",
+        { text: "Submitted By", options: { bold: true, fill: { color: colors.lightBg } } },
+        store.installation.submittedBy || "N/A",
       ],
       [
-        {
-          text: "Status",
-          options: { bold: true, fill: { color: colors.lightBg } },
-        },
-        {
-          text: "✓ COMPLETED",
-          options: { colspan: 3, bold: true, color: colors.success },
-        },
+        { text: "Status", options: { bold: true, fill: { color: colors.lightBg } } },
+        { text: "✓ COMPLETED", options: { colspan: 3, bold: true, color: colors.success } },
       ],
     ];
 
-    slide.addTable(detailsData as any, {
+    infoSlide.addTable(detailsData as any, {
       x: 0.2,
       y: 1.7,
       w: 9.6,
@@ -1243,124 +1281,246 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
       color: colors.text,
     });
 
-    slide.addShape("rect", {
-      x: 0.2,
-      y: 4.3,
-      w: 9.6,
-      h: 0.5,
-      line: { color: colors.borderDark, width: 2 },
-      fill: { color: colors.white },
-    });
-    slide.addText("BEFORE & AFTER COMPARISON", {
-      x: 0.2,
-      y: 4.3,
-      w: 9.6,
-      h: 0.5,
-      fontSize: 18,
-      bold: true,
-      color: colors.secondary,
-      align: "center",
-      valign: "middle",
-    });
+    // INITIAL PHOTOS SLIDES
+    if (store.recce?.initialPhotos && store.recce.initialPhotos.length > 0) {
+      const initialSlide = pres.addSlide();
+      initialSlide.background = { fill: "FFFEF5" };
+      initialSlide.addShape("rect", {
+        x: 0,
+        y: 0,
+        w: "100%",
+        h: "100%",
+        fill: { type: "solid", color: "FEF3C7", transparency: 50 },
+      });
 
-    const addImage = (
-      relativePath: string | undefined,
-      label: string,
-      x: number,
-      y: number,
-      bgColor: string,
-    ) => {
-      slide.addShape("rect", {
-        x,
-        y,
-        w: 3,
-        h: 2.5,
+      if (fs.existsSync(logoPath)) {
+        initialSlide.addImage({ path: logoPath, x: 0.3, y: 0.15, w: 1.5, h: 0.45 });
+      }
+
+      initialSlide.addShape("rect", {
+        x: 0.2,
+        y: 0.8,
+        w: 9.6,
+        h: 0.6,
         line: { color: colors.borderDark, width: 2 },
         fill: { color: colors.white },
       });
-      if (relativePath) {
-        try {
-          const absolutePath = path.join(process.cwd(), relativePath);
-          if (fs.existsSync(absolutePath)) {
-            slide.addImage({
-              path: absolutePath,
-              x: x + 0.05,
-              y: y + 0.05,
-              w: 2.9,
-              h: 2.0,
-            });
-          } else {
-            slide.addText("Image Not Found", {
-              x,
-              y: y + 1,
-              w: 3,
-              fontSize: 10,
-              align: "center",
-              color: "999999",
-            });
-          }
-        } catch (err) {
-          slide.addText("Error Loading Image", {
-            x,
-            y: y + 1,
-            w: 3,
-            fontSize: 10,
-            align: "center",
-            color: "FF0000",
-          });
-        }
-      } else {
-        slide.addText(`No ${label}`, {
-          x,
-          y: y + 1,
-          w: 3,
-          fontSize: 10,
-          align: "center",
-          color: "999999",
-        });
-      }
-      slide.addShape("rect", {
-        x,
-        y: y + 2.05,
-        w: 3,
-        h: 0.45,
-        fill: { color: bgColor },
-        line: { color: colors.borderDark, width: 2 },
-      });
-      slide.addText(label, {
-        x,
-        y: y + 2.05,
-        w: 3,
-        h: 0.45,
-        fontSize: 12,
+      initialSlide.addText("INITIAL STORE PHOTOS", {
+        x: 0.2,
+        y: 0.8,
+        w: 9.6,
+        h: 0.6,
+        fontSize: 24,
         bold: true,
+        color: colors.primary,
         align: "center",
         valign: "middle",
-        color: colors.white,
       });
-    };
 
-    addImage(store.recce?.photos?.front, "BEFORE", 0.5, 4.9, "EF4444");
-    addImage(
-      store.installation.photos?.after1,
-      "AFTER - VIEW 1",
-      3.7,
-      4.9,
-      colors.success,
-    );
-    addImage(
-      store.installation.photos?.after2,
-      "AFTER - VIEW 2",
-      6.9,
-      4.9,
-      colors.success,
-    );
+      const photosPerSlide = 4;
+      const photoWidth = 4.5;
+      const photoHeight = 3.0;
+      const positions = [
+        { x: 0.5, y: 1.8 },
+        { x: 5.3, y: 1.8 },
+        { x: 0.5, y: 5.0 },
+        { x: 5.3, y: 5.0 },
+      ];
+
+      let currentSlide = initialSlide;
+      for (let i = 0; i < store.recce.initialPhotos.length; i++) {
+        const posIndex = i % photosPerSlide;
+        if (posIndex === 0 && i > 0) {
+          currentSlide = pres.addSlide();
+          currentSlide.background = { fill: "FFFEF5" };
+          currentSlide.addShape("rect", {
+            x: 0,
+            y: 0,
+            w: "100%",
+            h: "100%",
+            fill: { type: "solid", color: "FEF3C7", transparency: 50 },
+          });
+          if (fs.existsSync(logoPath)) {
+            currentSlide.addImage({ path: logoPath, x: 0.3, y: 0.15, w: 1.5, h: 0.45 });
+          }
+        }
+
+        const pos = positions[posIndex];
+        const photoPath = path.join(process.cwd(), store.recce.initialPhotos[i]);
+
+        if (fs.existsSync(photoPath)) {
+          currentSlide.addImage({
+            path: photoPath,
+            x: pos.x,
+            y: pos.y,
+            w: photoWidth,
+            h: photoHeight,
+          });
+        }
+      }
+    }
+
+    // BEFORE & AFTER COMPARISON SLIDES (Side by side for each recce photo)
+    if (store.recce?.reccePhotos && store.recce.reccePhotos.length > 0 && store.installation.photos) {
+      for (let i = 0; i < store.recce.reccePhotos.length; i++) {
+        const reccePhoto = store.recce.reccePhotos[i];
+        const installPhoto = store.installation.photos.find((p: any) => p.reccePhotoIndex === i);
+        
+        const comparisonSlide = pres.addSlide();
+        comparisonSlide.background = { fill: "FFFEF5" };
+        comparisonSlide.addShape("rect", {
+          x: 0,
+          y: 0,
+          w: "100%",
+          h: "100%",
+          fill: { type: "solid", color: "FEF3C7", transparency: 50 },
+        });
+
+        if (fs.existsSync(logoPath)) {
+          comparisonSlide.addImage({ path: logoPath, x: 0.3, y: 0.15, w: 1.5, h: 0.45 });
+        }
+
+        // Title
+        comparisonSlide.addShape("rect", {
+          x: 0.2,
+          y: 0.8,
+          w: 9.6,
+          h: 0.5,
+          line: { color: colors.borderDark, width: 2 },
+          fill: { color: colors.white },
+        });
+        comparisonSlide.addText(`BEFORE & AFTER - Photo ${i + 1}`, {
+          x: 0.2,
+          y: 0.8,
+          w: 9.6,
+          h: 0.5,
+          fontSize: 20,
+          bold: true,
+          color: colors.secondary,
+          align: "center",
+          valign: "middle",
+        });
+
+        // BEFORE (Left side)
+        const reccePhotoPath = path.join(process.cwd(), reccePhoto.photo);
+        if (fs.existsSync(reccePhotoPath)) {
+          comparisonSlide.addImage({
+            path: reccePhotoPath,
+            x: 0.5,
+            y: 1.5,
+            w: 4.5,
+            h: 4.5,
+          });
+        }
+        comparisonSlide.addShape("rect", {
+          x: 0.5,
+          y: 6.1,
+          w: 4.5,
+          h: 0.4,
+          fill: { color: colors.danger },
+          line: { color: colors.borderDark, width: 2 },
+        });
+        comparisonSlide.addText("BEFORE", {
+          x: 0.5,
+          y: 6.1,
+          w: 4.5,
+          h: 0.4,
+          fontSize: 16,
+          bold: true,
+          color: colors.white,
+          align: "center",
+          valign: "middle",
+        });
+
+        // AFTER (Right side)
+        if (installPhoto) {
+          const installPhotoPath = path.join(process.cwd(), installPhoto.installationPhoto);
+          if (fs.existsSync(installPhotoPath)) {
+            comparisonSlide.addImage({
+              path: installPhotoPath,
+              x: 5.3,
+              y: 1.5,
+              w: 4.5,
+              h: 4.5,
+            });
+          }
+        }
+        comparisonSlide.addShape("rect", {
+          x: 5.3,
+          y: 6.1,
+          w: 4.5,
+          h: 0.4,
+          fill: { color: colors.success },
+          line: { color: colors.borderDark, width: 2 },
+        });
+        comparisonSlide.addText("AFTER", {
+          x: 5.3,
+          y: 6.1,
+          w: 4.5,
+          h: 0.4,
+          fontSize: 16,
+          bold: true,
+          color: colors.white,
+          align: "center",
+          valign: "middle",
+        });
+
+        // Measurements and Elements
+        comparisonSlide.addShape("rect", {
+          x: 0.5,
+          y: 6.6,
+          w: 9.3,
+          h: 0.5,
+          line: { color: colors.borderDark, width: 2 },
+          fill: { color: colors.white },
+        });
+        comparisonSlide.addText(
+          `Measurements: ${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`,
+          {
+            x: 0.5,
+            y: 6.6,
+            w: 9.3,
+            h: 0.5,
+            fontSize: 14,
+            bold: true,
+            color: colors.text,
+            align: "center",
+            valign: "middle",
+          },
+        );
+
+        if (reccePhoto.elements && reccePhoto.elements.length > 0) {
+          const elementsText = reccePhoto.elements
+            .map((el: any) => `${el.elementName} (Qty: ${el.quantity})`)
+            .join(" | ");
+          
+          comparisonSlide.addShape("rect", {
+            x: 0.5,
+            y: 7.2,
+            w: 9.3,
+            h: 0.4,
+            line: { color: colors.borderDark, width: 2 },
+            fill: { color: colors.lightBg },
+          });
+          comparisonSlide.addText(`Elements: ${elementsText}`, {
+            x: 0.5,
+            y: 7.2,
+            w: 9.3,
+            h: 0.4,
+            fontSize: 12,
+            bold: true,
+            color: colors.text,
+            align: "center",
+            valign: "middle",
+          });
+        }
+      }
+    }
 
     const buffer = await pres.write({ outputType: "nodebuffer" });
     res.writeHead(200, {
-      "Content-Type":
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      "Content-Disposition": `attachment; filename="Installation_${store.dealerCode}.pptx"`,
+      "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "Content-Disposition": `attachment; filename="INSTALLATION_${store.storeName}_${store.storeId}_PPT.pptx"`,
     });
     res.end(buffer);
   } catch (error: any) {
@@ -1545,7 +1705,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
                   text: "Board Size",
                   options: { bold: true, fill: { color: colors.lightBg } },
                 },
-                `${store.recce?.sizes?.width || 0} x ${store.recce?.sizes?.height || 0} ft`,
+                `${store.specs?.width || 0} x ${store.specs?.height || 0} ft`,
                 {
                   text: "Recce Date",
                   options: { bold: true, fill: { color: colors.lightBg } },
@@ -1602,7 +1762,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
                   text: "Board Size",
                   options: { bold: true, fill: { color: colors.lightBg } },
                 },
-                `${store.recce?.sizes?.width || 0} x ${store.recce?.sizes?.height || 0} ft`,
+                `${store.specs?.width || 0} x ${store.specs?.height || 0} ft`,
                 {
                   text: "Completion Date",
                   options: { bold: true, fill: { color: colors.lightBg } },
@@ -1714,37 +1874,37 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
 
       if (type === "recce") {
         addImage(
-          store.recce?.photos?.front,
-          "FRONT VIEW",
+          store.recce?.reccePhotos?.[0]?.photo,
+          "PHOTO 1",
           0.5,
           4.9,
           colors.primary,
         );
         addImage(
-          store.recce?.photos?.side,
-          "SIDE VIEW",
+          store.recce?.reccePhotos?.[1]?.photo,
+          "PHOTO 2",
           3.7,
           4.9,
           colors.primary,
         );
         addImage(
-          store.recce?.photos?.closeUp,
-          "CLOSE UP VIEW",
+          store.recce?.reccePhotos?.[2]?.photo,
+          "PHOTO 3",
           6.9,
           4.9,
           colors.primary,
         );
       } else {
-        addImage(store.recce?.photos?.front, "BEFORE", 0.5, 4.9, "EF4444");
+        addImage(store.recce?.reccePhotos?.[0]?.photo, "BEFORE", 0.5, 4.9, "EF4444");
         addImage(
-          store.installation?.photos?.after1,
+          store.installation?.photos?.[0]?.installationPhoto,
           "AFTER - VIEW 1",
           3.7,
           4.9,
           colors.success,
         );
         addImage(
-          store.installation?.photos?.after2,
+          store.installation?.photos?.[1]?.installationPhoto,
           "AFTER - VIEW 2",
           6.9,
           4.9,
@@ -2057,7 +2217,7 @@ export const exportStores = async (req: Request | any, res: Response) => {
       }
     }
 
-    if (city) query["location.city"] = city;
+    if (city) query["location.city"] = { $regex: city, $options: "i" };
     if (zone) query["location.zone"] = zone;
     if (state) query["location.state"] = state;
     if (district) query["location.district"] = district;
@@ -2641,5 +2801,120 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("Template Error:", error);
     res.status(500).json({ message: "Failed to generate template" });
+  }
+};
+
+export const generateStoreExcel = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const type = req.url.includes('/installation') ? 'installation' : 'recce';
+    const store = await Store.findById(id).populate("workflow.recceAssignedTo workflow.installationAssignedTo", "name");
+
+    if (!store) {
+      return res.status(404).json({ message: "Store not found" });
+    }
+
+    const ExcelJS = require("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Store Details");
+
+    const headers = [
+      "Client Code", "Store Code", "Store Name", "City", "Address", "Mobile No",
+      "Element", "Width (Inch)", "Height (Inch)", "RECCE Person", "Installation Person"
+    ];
+
+    const headerRow = worksheet.getRow(1);
+    headers.forEach((header, index) => {
+      const cell = headerRow.getCell(index + 1);
+      cell.value = header;
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 12 };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEAB308" } };
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+    });
+    headerRow.height = 25;
+
+    worksheet.columns = [
+      { width: 15 }, { width: 15 }, { width: 30 }, { width: 15 }, { width: 40 },
+      { width: 15 }, { width: 30 }, { width: 15 }, { width: 15 }, { width: 20 }, { width: 20 }
+    ];
+
+    const reccePhotos = store.recce?.reccePhotos || [];
+    const reccePerson = (store.workflow.recceAssignedTo as any)?.name || "-";
+    const installPerson = (store.workflow.installationAssignedTo as any)?.name || "-";
+
+    if (reccePhotos.length > 0) {
+      reccePhotos.forEach((photo: any, index: number) => {
+        const elements = photo.elements || [];
+        if (elements.length > 0) {
+          elements.forEach((el: any) => {
+            const row = worksheet.addRow([
+              store.clientCode || "-",
+              store.storeCode || "-",
+              store.storeName,
+              store.location.city || "-",
+              store.location.address || "-",
+              store.contact?.mobile || "-",
+              el.elementName,
+              photo.measurements.unit === "in" ? photo.measurements.width : (photo.measurements.width * 12).toFixed(2),
+              photo.measurements.unit === "in" ? photo.measurements.height : (photo.measurements.height * 12).toFixed(2),
+              reccePerson,
+              installPerson
+            ]);
+            row.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+            row.height = 30;
+          });
+        } else {
+          const row = worksheet.addRow([
+            store.clientCode || "-",
+            store.storeCode || "-",
+            store.storeName,
+            store.location.city || "-",
+            store.location.address || "-",
+            store.contact?.mobile || "-",
+            "-",
+            photo.measurements.unit === "in" ? photo.measurements.width : (photo.measurements.width * 12).toFixed(2),
+            photo.measurements.unit === "in" ? photo.measurements.height : (photo.measurements.height * 12).toFixed(2),
+            reccePerson,
+            installPerson
+          ]);
+          row.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+          row.height = 30;
+        }
+      });
+    } else {
+      const row = worksheet.addRow([
+        store.clientCode || "-",
+        store.storeCode || "-",
+        store.storeName,
+        store.location.city || "-",
+        store.location.address || "-",
+        store.contact?.mobile || "-",
+        "-", "-", "-",
+        reccePerson,
+        installPerson
+      ]);
+      row.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+      row.height = 30;
+    }
+
+    worksheet.eachRow((row: Row, rowNumber: number) => {
+      row.eachCell((cell: Cell) => {
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFD1D5DB" } },
+          left: { style: "thin", color: { argb: "FFD1D5DB" } },
+          bottom: { style: "thin", color: { argb: "FFD1D5DB" } },
+          right: { style: "thin", color: { argb: "FFD1D5DB" } },
+        };
+      });
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = type === 'installation' ? `INSTALLATION_${store.storeName}_${store.storeId}.xlsx` : `RECCE_${store.storeName}_${store.storeId}.xlsx`;
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(buffer);
+  } catch (error: any) {
+    console.error("Excel Gen Error:", error);
+    res.status(500).json({ message: "Failed to generate Excel" });
   }
 };
