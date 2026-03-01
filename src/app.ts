@@ -12,6 +12,7 @@ import enquiryRoutes from "./modules/enquiry/enquiry.routes";
 import elementRoutes from "./modules/element/element.routes";
 import clientRoutes from "./modules/client/client.routes";
 import rfqRoutes from "./modules/rfq/rfq.routes";
+import uploadRoutes from "./routes/uploadRoutes";
 import { setupSwagger } from "./config/swagger";
 import path from "path";
 
@@ -324,6 +325,7 @@ app.use("/api/v1/enquiries", enquiryRoutes);
 app.use("/api/v1/elements", elementRoutes);
 app.use("/api/v1/clients", clientRoutes);
 app.use("/api/v1/rfq", rfqRoutes);
+app.use("/api/v1/files", uploadRoutes);
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 // Setup Swagger documentation

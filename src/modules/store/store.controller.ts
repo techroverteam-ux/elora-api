@@ -8,6 +8,8 @@ import PptxGenJS from "pptxgenjs";
 import path from "path";
 import { Row, Cell } from "exceljs";
 import uploadService from "../../utils/uploadService";
+import enhancedUploadService from "../../utils/enhancedUploadService";
+import imagePathResolver from "../../utils/imagePathResolver";
 
 // Helper: fuzzy search for column headers
 const findKey = (row: any, keywords: string[]): string | undefined => {
@@ -599,12 +601,13 @@ export const submitRecce = async (req: Request | any, res: Response) => {
       const fieldName = `initialPhoto${i}`;
       const file = filesArray?.find(f => f.fieldname === fieldName);
       if (file) {
-        const link = await uploadService.uploadFile(
+        const link = await enhancedUploadService.uploadFile(
           file.buffer,
           `initial_${Date.now()}_${i}.jpg`,
           file.mimetype,
+          store.clientCode || "DEFAULT",
           store.storeId,
-          "Recce",
+          "initial",
           userName,
         );
         initialPhotos.push(link);
@@ -640,12 +643,13 @@ export const submitRecce = async (req: Request | any, res: Response) => {
       const file = filesArray?.find(f => f.fieldname === fieldName);
       
       if (file) {
-        const link = await uploadService.uploadFile(
+        const link = await enhancedUploadService.uploadFile(
           file.buffer,
           `recce_${Date.now()}_${i}.jpg`,
           file.mimetype,
+          store.clientCode || "DEFAULT",
           store.storeId,
-          "Recce",
+          "recce",
           userName,
         );
 
@@ -893,6 +897,8 @@ export const generateReccePPT = async (req: Request, res: Response) => {
       ];
 
       let currentSlide = initialSlide;
+      const tempFiles: string[] = [];
+      
       for (let i = 0; i < store.recce.initialPhotos.length; i++) {
         const posIndex = i % photosPerSlide;
         if (posIndex === 0 && i > 0) {
@@ -911,18 +917,26 @@ export const generateReccePPT = async (req: Request, res: Response) => {
         }
 
         const pos = positions[posIndex];
-        const photoPath = path.join(process.cwd(), store.recce.initialPhotos[i]);
-
-        if (fs.existsSync(photoPath)) {
-          currentSlide.addImage({
-            path: photoPath,
-            x: pos.x,
-            y: pos.y,
-            w: photoWidth,
-            h: photoHeight,
-          });
+        try {
+          const photoPath = await imagePathResolver.resolveImagePath(store.recce.initialPhotos[i]);
+          tempFiles.push(photoPath);
+          
+          if (fs.existsSync(photoPath)) {
+            currentSlide.addImage({
+              path: photoPath,
+              x: pos.x,
+              y: pos.y,
+              w: photoWidth,
+              h: photoHeight,
+            });
+          }
+        } catch (error) {
+          console.error(`Failed to load image: ${store.recce.initialPhotos[i]}`, error);
         }
       }
+      
+      // Cleanup temp files after slide creation
+      tempFiles.forEach(file => imagePathResolver.cleanupTempFile(file));
     }
 
     // RECCE PHOTOS SLIDES (Individual slides with measurements and elements)
@@ -943,15 +957,20 @@ export const generateReccePPT = async (req: Request, res: Response) => {
           photoSlide.addImage({ path: logoPath, x: 0.3, y: 0.15, w: 1.5, h: 0.45 });
         }
 
-        const photoPath = path.join(process.cwd(), reccePhoto.photo);
-        if (fs.existsSync(photoPath)) {
-          photoSlide.addImage({
-            path: photoPath,
-            x: 1.0,
-            y: 0.8,
-            w: 8.0,
-            h: 5.5,
-          });
+        try {
+          const photoPath = await imagePathResolver.resolveImagePath(reccePhoto.photo);
+          if (fs.existsSync(photoPath)) {
+            photoSlide.addImage({
+              path: photoPath,
+              x: 1.0,
+              y: 0.8,
+              w: 8.0,
+              h: 5.5,
+            });
+          }
+          imagePathResolver.cleanupTempFile(photoPath);
+        } catch (error) {
+          console.error(`Failed to load recce photo: ${reccePhoto.photo}`, error);
         }
 
         // Measurements box
@@ -1094,12 +1113,13 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
       const file = filesArray?.find(f => f.fieldname === fieldName);
 
       if (file) {
-        const link = await uploadService.uploadFile(
+        const link = await enhancedUploadService.uploadFile(
           file.buffer,
           `installation_${Date.now()}_${i}.jpg`,
           file.mimetype,
+          store.clientCode || "DEFAULT",
           store.storeId,
-          "Installation",
+          "installation",
           userName,
         );
 
@@ -1402,15 +1422,20 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
         });
 
         // BEFORE (Left side)
-        const reccePhotoPath = path.join(process.cwd(), reccePhoto.photo);
-        if (fs.existsSync(reccePhotoPath)) {
-          comparisonSlide.addImage({
-            path: reccePhotoPath,
-            x: 0.5,
-            y: 1.5,
-            w: 4.5,
-            h: 4.5,
-          });
+        try {
+          const reccePhotoPath = await imagePathResolver.resolveImagePath(reccePhoto.photo);
+          if (fs.existsSync(reccePhotoPath)) {
+            comparisonSlide.addImage({
+              path: reccePhotoPath,
+              x: 0.5,
+              y: 1.5,
+              w: 4.5,
+              h: 4.5,
+            });
+          }
+          imagePathResolver.cleanupTempFile(reccePhotoPath);
+        } catch (error) {
+          console.error(`Failed to load recce photo: ${reccePhoto.photo}`, error);
         }
         comparisonSlide.addShape("rect", {
           x: 0.5,
@@ -1434,15 +1459,20 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
 
         // AFTER (Right side)
         if (installPhoto) {
-          const installPhotoPath = path.join(process.cwd(), installPhoto.installationPhoto);
-          if (fs.existsSync(installPhotoPath)) {
-            comparisonSlide.addImage({
-              path: installPhotoPath,
-              x: 5.3,
-              y: 1.5,
-              w: 4.5,
-              h: 4.5,
-            });
+          try {
+            const installPhotoPath = await imagePathResolver.resolveImagePath(installPhoto.installationPhoto);
+            if (fs.existsSync(installPhotoPath)) {
+              comparisonSlide.addImage({
+                path: installPhotoPath,
+                x: 5.3,
+                y: 1.5,
+                w: 4.5,
+                h: 4.5,
+              });
+            }
+            imagePathResolver.cleanupTempFile(installPhotoPath);
+          } catch (error) {
+            console.error(`Failed to load installation photo: ${installPhoto.installationPhoto}`, error);
           }
         }
         comparisonSlide.addShape("rect", {
