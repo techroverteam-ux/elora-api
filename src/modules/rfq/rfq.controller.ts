@@ -22,53 +22,25 @@ export const generateRFQ = async (req: Request, res: Response) => {
     const skippedStores: SkippedStore[] = [];
 
     for (const storeId of storeIds) {
+      let store;
       try {
-        const store = await Store.findById(storeId);
+        store = await Store.findById(storeId);
 
         if (!store) {
           skippedStores.push({ storeId, reason: "Store not found" });
           continue;
         }
 
-        if (store.currentStatus !== "RECCE_SUBMITTED" && store.currentStatus !== "RECCE_APPROVED") {
-          skippedStores.push({ storeId, reason: "Invalid status" });
-          continue;
-        }
-
-        if (!store.recce) {
-          skippedStores.push({ storeId, reason: "No recce found" });
-          continue;
-        }
-
-        if (!store.recce.reccePhotos || store.recce.reccePhotos.length === 0) {
-          skippedStores.push({ storeId, reason: "No recce photos" });
-          continue;
-        }
-
-        const elementIds = store.recce.reccePhotos.flatMap(p => p.elements?.map(e => e.elementId) || []);
-        if (elementIds.length === 0) {
-          skippedStores.push({ storeId, reason: "No elements" });
-          continue;
-        }
-
         const client = await Client.findById(store.clientId);
         if (!client) {
-          skippedStores.push({ storeId, reason: "Client not found" });
-          continue;
-        }
-
-        const clientElementIds = client.elements.map(e => e.elementId.toString());
-        const allElementsExist = elementIds.every(id => clientElementIds.includes(id));
-
-        if (!allElementsExist) {
-          skippedStores.push({ storeId, reason: "Invalid element IDs" });
+          skippedStores.push({ storeId: store.storeId || store.storeCode || storeId, reason: "Client not found" });
           continue;
         }
 
         const buffer = await generateSingleRFQ(store, client);
-        validStores.push({ storeId: store.storeId || store._id.toString(), buffer });
+        validStores.push({ storeId: store.storeId || store.storeCode || store._id.toString(), buffer });
       } catch (error) {
-        skippedStores.push({ storeId, reason: (error as Error).message });
+        skippedStores.push({ storeId: store?.storeId || store?.storeCode || storeId, reason: (error as Error).message });
       }
     }
 
@@ -130,10 +102,16 @@ async function generateSingleRFQ(store: any, client: any): Promise<any> {
 }
 
 function calculateLineItems(recce: any, client: any) {
+  if (!recce || !recce.reccePhotos || recce.reccePhotos.length === 0) {
+    return [];
+  }
+
   const elementMap = new Map<string, { quantity: number; area: number; rate: number; name: string }>();
 
   for (const photo of recce.reccePhotos) {
     const { measurements, elements } = photo;
+    if (!measurements || !elements || elements.length === 0) continue;
+
     const { width, height, unit } = measurements;
 
     let areaSqft = 0;
@@ -143,7 +121,7 @@ function calculateLineItems(recce: any, client: any) {
       areaSqft = width * height;
     }
 
-    for (const elem of elements || []) {
+    for (const elem of elements) {
       const clientElement = client.elements.find((e: any) => e.elementId.toString() === elem.elementId);
       if (!clientElement) continue;
 
