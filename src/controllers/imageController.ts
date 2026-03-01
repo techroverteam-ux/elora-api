@@ -4,7 +4,7 @@ import fs from 'fs';
 
 export const serveImage = async (req: Request, res: Response) => {
   try {
-    const { folderType, clientCode, storeId, fileName } = req.params;
+    const { folderType, clientCode, storeId, fileName } = req.params as { folderType: string; clientCode: string; storeId: string; fileName: string };
     
     // Map folderType to match cPanel structure
     const ftpFolderType = folderType === 'installation' ? 'installation-images' : 'recce-images';

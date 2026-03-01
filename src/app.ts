@@ -12,7 +12,8 @@ import enquiryRoutes from "./modules/enquiry/enquiry.routes";
 import elementRoutes from "./modules/element/element.routes";
 import clientRoutes from "./modules/client/client.routes";
 import rfqRoutes from "./modules/rfq/rfq.routes";
-import uploadRoutes from "./routes/uploadRoutes";
+// @ts-ignore
+import uploadRoutes from "./routes/uploadRoutes.js";
 import { setupSwagger } from "./config/swagger";
 import { getConfigStatus } from "./controllers/configController";
 import { serveImage } from "./controllers/imageController";
