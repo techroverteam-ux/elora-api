@@ -88,8 +88,11 @@ class EnhancedUploadService {
       await ftpClient.connect();
       console.log('FTP connected successfully');
 
-      // Create directory structure: /storage/uploads/folderType/clientCode/storeId/
-      const remotePath = `${process.env.BASE_PUBLIC_PATH}/${folderType}/${clientCode}/${storeId}`;
+      // Map folderType to cPanel structure: initial/recce -> recce-images, installation -> installation-images
+      const ftpFolderType = folderType === 'installation' ? 'installation-images' : 'recce-images';
+      
+      // Create directory structure: /eloraftp/uploads/{folderType}-images/{clientCode}{storeId}/
+      const remotePath = `/eloraftp/uploads/${ftpFolderType}/${clientCode}${storeId}`;
       console.log('Creating remote directory:', remotePath);
       await ftpClient.ensureDir(remotePath);
 
@@ -105,9 +108,10 @@ class EnhancedUploadService {
       // Clean up temp file
       fs.unlinkSync(tempFilePath);
 
-      const publicUrl = `${process.env.BASE_PUBLIC_URL}/${folderType}/${clientCode}/${storeId}/${fileName}`;
-      console.log('Generated public URL:', publicUrl);
-      return publicUrl;
+      // Return relative path without domain (domain will be added by frontend/image serving)
+      const relativePath = `uploads/${ftpFolderType}/${clientCode}${storeId}/${fileName}`;
+      console.log('Generated relative path:', relativePath);
+      return relativePath;
 
     } catch (error) {
       console.error('FTPS upload error:', error);
@@ -128,9 +132,12 @@ class EnhancedUploadService {
     userName: string
   ): string {
     try {
+      // Map folderType to match cPanel structure
+      const ftpFolderType = folderType === 'installation' ? 'installation-images' : 'recce-images';
+      
       // In serverless environments, use /tmp directory which is writable
       const baseDir = process.env.NODE_ENV === 'production' ? '/tmp' : process.cwd();
-      const uploadDir = path.join(baseDir, 'uploads', folderType, clientCode, storeId);
+      const uploadDir = path.join(baseDir, 'uploads', ftpFolderType, `${clientCode}${storeId}`);
       
       console.log(`Creating directory: ${uploadDir}`);
       
@@ -144,7 +151,7 @@ class EnhancedUploadService {
       fs.writeFileSync(filePath, fileBuffer);
 
       // Return the relative path for URL construction
-      const relativePath = `uploads/${folderType}/${clientCode}/${storeId}/${fileName}`;
+      const relativePath = `uploads/${ftpFolderType}/${clientCode}${storeId}/${fileName}`;
       console.log(`File uploaded successfully, relative path: ${relativePath}`);
       
       return relativePath;
@@ -160,11 +167,13 @@ class EnhancedUploadService {
     storeId: string,
     fileName: string
   ): Promise<void> {
+    const ftpFolderType = folderType === 'installation' ? 'installation-images' : 'recce-images';
+    
     if (this.storageType === 'ftps') {
       const ftpClient = new FTPClient();
       try {
         await ftpClient.connect();
-        const remoteFilePath = `${process.env.BASE_PUBLIC_PATH}/${folderType}/${clientCode}/${storeId}/${fileName}`;
+        const remoteFilePath = `/eloraftp/uploads/${ftpFolderType}/${clientCode}${storeId}/${fileName}`;
         await ftpClient.deleteFile(remoteFilePath);
         await ftpClient.close();
       } catch (error) {
@@ -173,7 +182,7 @@ class EnhancedUploadService {
       }
     } else {
       const baseDir = process.env.NODE_ENV === 'production' ? '/tmp' : process.cwd();
-      const filePath = path.join(baseDir, 'uploads', folderType, clientCode, storeId, fileName);
+      const filePath = path.join(baseDir, 'uploads', ftpFolderType, `${clientCode}${storeId}`, fileName);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
@@ -187,17 +196,16 @@ class EnhancedUploadService {
     fileName: string
   ): string {
     if (this.storageType === 'ftps') {
-      const url = `${process.env.BASE_PUBLIC_URL}/${folderType}/${clientCode}/${storeId}/${fileName}`;
+      // Map folderType to cPanel structure
+      const ftpFolderType = folderType === 'installation' ? 'installation-images' : 'recce-images';
+      const url = `https://storage.enamorimpex.com/uploads/${ftpFolderType}/${clientCode}${storeId}/${fileName}`;
       console.log('Generated FTPS URL:', url);
       return url;
     } else {
-      // For local storage, use the API's image serving endpoint
-      const apiBaseUrl = process.env.NODE_ENV === 'production' 
-        ? 'https://elora-api-smoky.vercel.app' 
-        : 'http://localhost:3000';
-      const url = `${apiBaseUrl}/uploads/${folderType}/${clientCode}/${storeId}/${fileName}`;
-      console.log('Generated local URL:', url);
-      return url;
+      // For local storage, return relative path
+      const relativePath = `uploads/${folderType}/${clientCode}/${storeId}/${fileName}`;
+      console.log('Generated local path:', relativePath);
+      return relativePath;
     }
   }
 

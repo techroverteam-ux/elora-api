@@ -1,0 +1,316 @@
+{
+  "info": {
+    "name": "Elora - Recce & Installation Upload APIs",
+    "description": "Collection for testing file upload APIs for Recce and Installation",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "storeId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('token', response.token);",
+                  "    console.log('Token saved:', response.token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@elora.com\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Store Management",
+      "item": [
+        {
+          "name": "Get All Stores",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.stores && response.stores.length > 0) {",
+                  "        pm.collectionVariables.set('storeId', response.stores[0]._id);",
+                  "        console.log('Store ID saved:', response.stores[0]._id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stores?limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["stores"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Store by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stores/{{storeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["stores", "{{storeId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Recce Submission",
+      "item": [
+        {
+          "name": "Submit Recce with Photos",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "initialPhotosCount",
+                  "value": "2",
+                  "type": "text",
+                  "description": "Number of initial photos"
+                },
+                {
+                  "key": "initialPhoto0",
+                  "type": "file",
+                  "src": [],
+                  "description": "First initial photo"
+                },
+                {
+                  "key": "initialPhoto1",
+                  "type": "file",
+                  "src": [],
+                  "description": "Second initial photo"
+                },
+                {
+                  "key": "reccePhotosData",
+                  "value": "[{\"width\":10,\"height\":8,\"unit\":\"ft\",\"elements\":[\"Banner\",\"Signage\"]},{\"width\":12,\"height\":10,\"unit\":\"ft\",\"elements\":[\"Display\"]}]",
+                  "type": "text",
+                  "description": "Recce photos metadata as JSON"
+                },
+                {
+                  "key": "reccePhoto0",
+                  "type": "file",
+                  "src": [],
+                  "description": "First recce photo"
+                },
+                {
+                  "key": "reccePhoto1",
+                  "type": "file",
+                  "src": [],
+                  "description": "Second recce photo"
+                },
+                {
+                  "key": "notes",
+                  "value": "Test recce submission from Postman",
+                  "type": "text",
+                  "description": "Optional notes"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/stores/{{storeId}}/recce",
+              "host": ["{{baseUrl}}"],
+              "path": ["stores", "{{storeId}}", "recce"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Installation Submission",
+      "item": [
+        {
+          "name": "Submit Installation with Photos",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "installationPhotosData",
+                  "value": "[{\"reccePhotoIndex\":0},{\"reccePhotoIndex\":1}]",
+                  "type": "text",
+                  "description": "Installation photos metadata as JSON"
+                },
+                {
+                  "key": "installationPhoto0",
+                  "type": "file",
+                  "src": [],
+                  "description": "First installation photo"
+                },
+                {
+                  "key": "installationPhoto1",
+                  "type": "file",
+                  "src": [],
+                  "description": "Second installation photo"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/stores/{{storeId}}/installation",
+              "host": ["{{baseUrl}}"],
+              "path": ["stores", "{{storeId}}", "installation"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Download Reports",
+      "item": [
+        {
+          "name": "Download Recce PPT",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stores/{{storeId}}/ppt/recce",
+              "host": ["{{baseUrl}}"],
+              "path": ["stores", "{{storeId}}", "ppt", "recce"]
+            }
+          }
+        },
+        {
+          "name": "Download Recce PDF",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stores/{{storeId}}/pdf/recce",
+              "host": ["{{baseUrl}}"],
+              "path": ["stores", "{{storeId}}", "pdf", "recce"]
+            }
+          }
+        },
+        {
+          "name": "Download Installation PPT",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stores/{{storeId}}/ppt/installation",
+              "host": ["{{baseUrl}}"],
+              "path": ["stores", "{{storeId}}", "ppt", "installation"]
+            }
+          }
+        },
+        {
+          "name": "Download Installation PDF",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stores/{{storeId}}/pdf/installation",
+              "host": ["{{baseUrl}}"],
+              "path": ["stores", "{{storeId}}", "pdf", "installation"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

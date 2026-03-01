@@ -701,6 +701,7 @@ export const submitRecce = async (req: Request | any, res: Response) => {
             height: parseFloat(photoData.height),
             unit: photoData.unit || "in",
           },
+          elements: photoData.elements || [],
         });
       }
     }
