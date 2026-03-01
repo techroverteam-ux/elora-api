@@ -24,6 +24,8 @@ app.use(
       'http://localhost:3000',
       'https://elora-web.vercel.app',
       'https://elora-web-git-main-techroverteam-ux.vercel.app',
+      'https://www.eloracreativeart.in',
+      'https://eloracreativeart.in',
       /\.vercel\.app$/
     ],
     credentials: true,
