@@ -84,15 +84,20 @@ class EnhancedUploadService {
       fs.writeFileSync(tempFilePath, fileBuffer);
 
       // Connect to FTP
+      console.log('Connecting to FTP...');
       await ftpClient.connect();
+      console.log('FTP connected successfully');
 
-      // Create directory structure: /uploads/folderType/clientCode/storeId/
+      // Create directory structure: /storage/uploads/folderType/clientCode/storeId/
       const remotePath = `${process.env.BASE_PUBLIC_PATH}/${folderType}/${clientCode}/${storeId}`;
+      console.log('Creating remote directory:', remotePath);
       await ftpClient.ensureDir(remotePath);
 
       // Upload file
       const remoteFilePath = `${remotePath}/${fileName}`;
+      console.log('Uploading file to:', remoteFilePath);
       await ftpClient.uploadFile(tempFilePath, remoteFilePath);
+      console.log('File uploaded successfully');
 
       // Close FTP connection
       await ftpClient.close();
@@ -100,9 +105,12 @@ class EnhancedUploadService {
       // Clean up temp file
       fs.unlinkSync(tempFilePath);
 
-      return `${process.env.BASE_PUBLIC_URL}/${folderType}/${clientCode}/${storeId}/${fileName}`;
+      const publicUrl = `${process.env.BASE_PUBLIC_URL}/${folderType}/${clientCode}/${storeId}/${fileName}`;
+      console.log('Generated public URL:', publicUrl);
+      return publicUrl;
 
     } catch (error) {
+      console.error('FTPS upload error:', error);
       if (tempFilePath && fs.existsSync(tempFilePath)) {
         fs.unlinkSync(tempFilePath);
       }
@@ -179,9 +187,13 @@ class EnhancedUploadService {
     fileName: string
   ): string {
     if (this.storageType === 'ftps') {
-      return `${process.env.BASE_PUBLIC_URL}/${folderType}/${clientCode}/${storeId}/${fileName}`;
+      const url = `${process.env.BASE_PUBLIC_URL}/${folderType}/${clientCode}/${storeId}/${fileName}`;
+      console.log('Generated FTPS URL:', url);
+      return url;
     } else {
-      return `${process.env.BASE_LOCAL_URL || 'http://localhost:3000'}/uploads/${folderType}/${clientCode}/${storeId}/${fileName}`;
+      const url = `${process.env.BASE_LOCAL_URL || 'http://localhost:3000'}/uploads/${folderType}/${clientCode}/${storeId}/${fileName}`;
+      console.log('Generated local URL:', url);
+      return url;
     }
   }
 
