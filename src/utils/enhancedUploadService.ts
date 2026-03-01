@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const FTPClient = require('../config/ftpClient');
+import { checkConfiguration, validateFTPSConfig } from './configChecker';
 
 type StorageType = 'local' | 'ftps';
 
@@ -9,7 +10,21 @@ class EnhancedUploadService {
   private storageType: StorageType;
 
   constructor() {
-    this.storageType = (process.env.STORAGE_TYPE as StorageType) || 'local';
+    // Check configuration on startup
+    const config = checkConfiguration();
+    
+    // Determine storage type based on environment and configuration
+    if (process.env.STORAGE_TYPE === 'ftps' && validateFTPSConfig()) {
+      this.storageType = 'ftps';
+      console.log('✅ FTPS configuration validated, using FTPS storage');
+    } else {
+      this.storageType = 'local';
+      if (process.env.STORAGE_TYPE === 'ftps') {
+        console.warn('⚠️ FTPS requested but configuration invalid, falling back to local storage');
+      } else {
+        console.log('📁 Using local storage');
+      }
+    }
   }
 
   // Generate unique filename with hash
@@ -31,9 +46,18 @@ class EnhancedUploadService {
     userName: string
   ): Promise<string> {
     const uniqueFileName = this.generateUniqueFilename(fileName);
+    
+    console.log(`Uploading file with storage type: ${this.storageType}`);
+    console.log(`File details:`, { fileName, clientCode, storeId, folderType });
 
     if (this.storageType === 'ftps') {
-      return await this.uploadToFTPS(fileBuffer, uniqueFileName, clientCode, storeId, folderType);
+      try {
+        return await this.uploadToFTPS(fileBuffer, uniqueFileName, clientCode, storeId, folderType);
+      } catch (error: any) {
+        console.error('FTPS upload failed, falling back to local storage:', error);
+        // Fallback to local storage if FTPS fails
+        return this.uploadToLocal(fileBuffer, uniqueFileName, clientCode, storeId, folderType, userName);
+      }
     } else {
       return this.uploadToLocal(fileBuffer, uniqueFileName, clientCode, storeId, folderType, userName);
     }
@@ -95,16 +119,31 @@ class EnhancedUploadService {
     folderType: string,
     userName: string
   ): string {
-    const uploadDir = path.join(process.cwd(), 'uploads', folderType, clientCode, storeId);
-    
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
+    try {
+      // In serverless environments, use /tmp directory which is writable
+      const baseDir = process.env.NODE_ENV === 'production' ? '/tmp' : process.cwd();
+      const uploadDir = path.join(baseDir, 'uploads', folderType, clientCode, storeId);
+      
+      console.log(`Creating directory: ${uploadDir}`);
+      
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+
+      const filePath = path.join(uploadDir, fileName);
+      console.log(`Writing file to: ${filePath}`);
+      
+      fs.writeFileSync(filePath, fileBuffer);
+
+      // Return the relative path for URL construction
+      const relativePath = `uploads/${folderType}/${clientCode}/${storeId}/${fileName}`;
+      console.log(`File uploaded successfully, relative path: ${relativePath}`);
+      
+      return relativePath;
+    } catch (error: any) {
+      console.error('Local upload failed:', error);
+      throw new Error(`Failed to upload file locally: ${error.message}`);
     }
-
-    const filePath = path.join(uploadDir, fileName);
-    fs.writeFileSync(filePath, fileBuffer);
-
-    return `uploads/${folderType}/${clientCode}/${storeId}/${fileName}`;
   }
 
   async deleteFile(
@@ -125,7 +164,8 @@ class EnhancedUploadService {
         throw error;
       }
     } else {
-      const filePath = path.join(process.cwd(), 'uploads', folderType, clientCode, storeId, fileName);
+      const baseDir = process.env.NODE_ENV === 'production' ? '/tmp' : process.cwd();
+      const filePath = path.join(baseDir, 'uploads', folderType, clientCode, storeId, fileName);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }

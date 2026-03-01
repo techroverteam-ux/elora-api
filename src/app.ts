@@ -14,6 +14,7 @@ import clientRoutes from "./modules/client/client.routes";
 import rfqRoutes from "./modules/rfq/rfq.routes";
 import uploadRoutes from "./routes/uploadRoutes";
 import { setupSwagger } from "./config/swagger";
+import { getConfigStatus } from "./controllers/configController";
 import path from "path";
 
 const app = express();
@@ -314,6 +315,9 @@ app.get("/api/v1/health", (_req, res) => {
     message: "Elora API is running",
   });
 });
+
+// Configuration status check
+app.get("/api/v1/config", getConfigStatus);
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/roles", roleRoutes);
 app.use("/api/v1/users", userRoutes);
