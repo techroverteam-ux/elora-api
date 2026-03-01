@@ -2,6 +2,13 @@ import { Request, Response } from "express";
 import Store from "../store/store.model";
 import Client from "../client/client.model";
 import ExcelJS from "exceljs";
+import archiver from "archiver";
+import path from "path";
+
+interface SkippedStore {
+  storeId: string;
+  reason: string;
+}
 
 export const generateRFQ = async (req: Request, res: Response) => {
   try {
@@ -11,177 +18,223 @@ export const generateRFQ = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "No stores selected" });
     }
 
-    const stores = await Store.find({ _id: { $in: storeIds } }).populate("clientId");
+    const validStores: Array<{ storeId: string; buffer: Buffer }> = [];
+    const skippedStores: SkippedStore[] = [];
 
-    if (stores.length === 0) {
-      return res.status(404).json({ message: "No stores found" });
+    for (const storeId of storeIds) {
+      try {
+        const store = await Store.findById(storeId);
+
+        if (!store) {
+          skippedStores.push({ storeId, reason: "Store not found" });
+          continue;
+        }
+
+        if (store.currentStatus !== "RECCE_SUBMITTED" && store.currentStatus !== "RECCE_APPROVED") {
+          skippedStores.push({ storeId, reason: "Invalid status" });
+          continue;
+        }
+
+        if (!store.recce) {
+          skippedStores.push({ storeId, reason: "No recce found" });
+          continue;
+        }
+
+        if (!store.recce.reccePhotos || store.recce.reccePhotos.length === 0) {
+          skippedStores.push({ storeId, reason: "No recce photos" });
+          continue;
+        }
+
+        const elementIds = store.recce.reccePhotos.flatMap(p => p.elements?.map(e => e.elementId) || []);
+        if (elementIds.length === 0) {
+          skippedStores.push({ storeId, reason: "No elements" });
+          continue;
+        }
+
+        const client = await Client.findById(store.clientId);
+        if (!client) {
+          skippedStores.push({ storeId, reason: "Client not found" });
+          continue;
+        }
+
+        const clientElementIds = client.elements.map(e => e.elementId.toString());
+        const allElementsExist = elementIds.every(id => clientElementIds.includes(id));
+
+        if (!allElementsExist) {
+          skippedStores.push({ storeId, reason: "Invalid element IDs" });
+          continue;
+        }
+
+        const buffer = await generateSingleRFQ(store, client);
+        validStores.push({ storeId: store.storeId || store._id.toString(), buffer });
+      } catch (error) {
+        skippedStores.push({ storeId, reason: (error as Error).message });
+      }
     }
 
-    const clientStore = stores[0];
-    const client: any = clientStore.clientId;
+    res.setHeader("x-skipped-stores", JSON.stringify(skippedStores));
 
-    if (!client) {
-      return res.status(400).json({ message: "Client not found for selected stores" });
+    if (validStores.length === 0) {
+      return res.status(400).json({ error: "No valid stores to process", skippedStores });
     }
 
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet("RFQ");
+    if (validStores.length === 1) {
+      const { storeId, buffer } = validStores[0];
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="RFQ_${storeId}.xlsx"`);
+      return res.send(buffer);
+    }
 
-    sheet.mergeCells("A1:G3");
-    const headerCell = sheet.getCell("A1");
-    headerCell.value = "( ELORA CREATIVE ART ) PLOT NO. 55, STREET NO.2, MILKMAN COLONY, JODHPUR. (RAJ.)-342008\nGST NO: 08AXYPK1335R1ZJ";
-    headerCell.font = { size: 14, bold: true };
-    headerCell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-
-    sheet.mergeCells("A4:G4");
-    const titleCell = sheet.getCell("A4");
-    titleCell.value = "Request for Quotation (RFQ)";
-    titleCell.font = { size: 12, bold: true };
-    titleCell.alignment = { vertical: "middle", horizontal: "center" };
-
-    const rfqNumber = `RFQ-${Date.now()}`;
-    const currentDate = new Date().toLocaleDateString("en-IN");
-    sheet.mergeCells("A5:D5");
-    sheet.getCell("A5").value = `RFQ NO.: ${rfqNumber}`;
-    sheet.mergeCells("E5:G5");
-    sheet.getCell("E5").value = `Date: ${currentDate}`;
-    sheet.getCell("E5").alignment = { horizontal: "right" };
-
-    sheet.mergeCells("A7:G7");
-    const quotationForCell = sheet.getCell("A7");
-    quotationForCell.value = "Quotation For: Inshop Branding";
-    quotationForCell.font = { size: 11, bold: true };
-
-    sheet.mergeCells("A8:G8");
-    const clientNameCell = sheet.getCell("A8");
-    clientNameCell.value = client.clientName;
-    clientNameCell.font = { size: 12, bold: true };
-
-    sheet.mergeCells("A9:G9");
-    sheet.getCell("A9").value = `Contact Person Name: ${client.branchName || "N/A"}`;
-    sheet.mergeCells("A10:G10");
-    sheet.getCell("A10").value = `Contact Person No.: ${client.gstNumber || "N/A"}`;
-
-    const headerRow = sheet.getRow(12);
-    const headers = ["Sl. No.", "Description", "Transport Mode", "Quantity", "UOM/Sqft/Km", "Unit Price", "Amount"];
-    headers.forEach((header, index) => {
-      const cell = headerRow.getCell(index + 1);
-      cell.value = header;
-      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEAB308" } };
-      cell.alignment = { vertical: "middle", horizontal: "center" };
-      cell.border = {
-        top: { style: "thin" },
-        left: { style: "thin" },
-        bottom: { style: "thin" },
-        right: { style: "thin" },
-      };
-    });
-
-    let currentRow = 13;
-    let totalAmount = 0;
-
-    client.elements.forEach((element: any, index: number) => {
-      const row = sheet.getRow(currentRow);
-      const amount = element.customRate * element.quantity;
-      totalAmount += amount;
-
-      row.values = [
-        index + 1,
-        element.elementName,
-        "Road",
-        element.quantity,
-        "Sqft",
-        element.customRate,
-        amount,
-      ];
-
-      row.eachCell((cell: any) => {
-        cell.alignment = { vertical: "middle", horizontal: "center" };
-        cell.border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-      });
-
-      currentRow++;
-    });
-
-    currentRow += 2;
-    const taxRate = 0.18;
-    const taxAmount = totalAmount * taxRate;
-    const totalWithTax = totalAmount + taxAmount;
-
-    sheet.mergeCells(`A${currentRow}:E${currentRow}`);
-    sheet.getCell(`A${currentRow}`).value = "Amount in Words:";
-    sheet.getCell(`A${currentRow}`).font = { bold: true };
-
-    currentRow++;
-    sheet.mergeCells(`A${currentRow}:E${currentRow}`);
-    sheet.getCell(`A${currentRow}`).value = "Total Amount before tax";
-    sheet.getCell(`F${currentRow}`).value = totalAmount;
-
-    currentRow++;
-    sheet.mergeCells(`A${currentRow}:E${currentRow}`);
-    sheet.getCell(`A${currentRow}`).value = "Taxes/GST @ 18%";
-    sheet.getCell(`F${currentRow}`).value = taxAmount;
-
-    currentRow++;
-    sheet.mergeCells(`A${currentRow}:E${currentRow}`);
-    sheet.getCell(`A${currentRow}`).value = "Total Amount After tax";
-    sheet.getCell(`A${currentRow}`).font = { bold: true };
-    sheet.getCell(`F${currentRow}`).value = totalWithTax;
-    sheet.getCell(`F${currentRow}`).font = { bold: true };
-
-    currentRow += 3;
-    sheet.mergeCells(`A${currentRow}:G${currentRow}`);
-    sheet.getCell(`A${currentRow}`).value = "Terms & Conditions:";
-    sheet.getCell(`A${currentRow}`).font = { bold: true };
-
-    const terms = [
-      "Billing will be done only on basis of acceptance of this Quotation.",
-      "Delivery deadline: As per requirement Of material",
-      "Payment terms: Due after 30-35 days of submission of invoices & supported documents",
-      "All materials should be as per specified and approved specifications",
-      "All rates are inclusive of sampling, production, installation, packaging and transportation etc. at all locations.",
-      "In case of a missed deadline, company reserves the right to reject the delivery and payment.",
-    ];
-
-    terms.forEach((term) => {
-      currentRow++;
-      sheet.mergeCells(`A${currentRow}:G${currentRow}`);
-      sheet.getCell(`A${currentRow}`).value = term;
-    });
-
-    currentRow += 3;
-    sheet.mergeCells(`A${currentRow}:C${currentRow + 3}`);
-    const vendorCell = sheet.getCell(`A${currentRow}`);
-    vendorCell.value = "(For Vendor use only)\nPrepared By: SHADAB KHAN\nContact No: 9799333000\nSignature:";
-    vendorCell.alignment = { vertical: "top", horizontal: "left", wrapText: true };
-
-    sheet.mergeCells(`E${currentRow}:G${currentRow + 3}`);
-    const relameCell = sheet.getCell(`E${currentRow}`);
-    relameCell.value = "(For Relame use only)\nName of approver:\nEMP ID:\nSignature:";
-    relameCell.alignment = { vertical: "top", horizontal: "left", wrapText: true };
-
-    sheet.columns = [
-      { width: 10 },
-      { width: 30 },
-      { width: 15 },
-      { width: 12 },
-      { width: 15 },
-      { width: 15 },
-      { width: 15 },
-    ];
-
-    const buffer = await workbook.xlsx.writeBuffer();
-    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", `attachment; filename="RFQ_${client.clientCode}_${Date.now()}.xlsx"`);
-    res.send(buffer);
+    const zipBuffer = await createZip(validStores);
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", 'attachment; filename="RFQs.zip"');
+    res.send(zipBuffer);
   } catch (error: any) {
     console.error("RFQ Generation Error:", error);
     res.status(500).json({ message: "Failed to generate RFQ", error: error.message });
   }
 };
+
+async function generateSingleRFQ(store: any, client: any): Promise<any> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(path.resolve("templates/rfq-template.xlsx"));
+
+  const worksheet = workbook.getWorksheet(1);
+  if (!worksheet) throw new Error("Template worksheet not found");
+
+  worksheet.eachRow(row => {
+    row.eachCell(cell => {
+      if (cell.value && typeof cell.value === "string") {
+        cell.value = cell.value
+          .replace("{{clientName}}", client.clientName || "")
+          .replace("{{clientGST}}", client.gstNumber || "")
+          .replace("{{storeId}}", store.storeId || "")
+          .replace("{{storeName}}", store.storeName || "")
+          .replace("{{storeAddress}}", store.location?.address || "")
+          .replace("{{date}}", new Date().toLocaleDateString());
+      }
+    });
+  });
+
+  const lineItems = calculateLineItems(store.recce, client);
+  const tableStartRow = findTableStartRow(worksheet);
+  populateLineItems(worksheet, lineItems, tableStartRow);
+
+  const subtotal = lineItems.reduce((sum, item) => sum + item.amount, 0);
+  const gst = subtotal * 0.18;
+  const grandTotal = subtotal + gst;
+
+  populateTotals(worksheet, subtotal, gst, grandTotal, tableStartRow + lineItems.length);
+
+  return await workbook.xlsx.writeBuffer();
+}
+
+function calculateLineItems(recce: any, client: any) {
+  const elementMap = new Map<string, { quantity: number; area: number; rate: number; name: string }>();
+
+  for (const photo of recce.reccePhotos) {
+    const { measurements, elements } = photo;
+    const { width, height, unit } = measurements;
+
+    let areaSqft = 0;
+    if (unit === "inches") {
+      areaSqft = (width * height) / 144;
+    } else if (unit === "feet") {
+      areaSqft = width * height;
+    }
+
+    for (const elem of elements || []) {
+      const clientElement = client.elements.find((e: any) => e.elementId.toString() === elem.elementId);
+      if (!clientElement) continue;
+
+      const key = elem.elementId;
+      if (!elementMap.has(key)) {
+        elementMap.set(key, {
+          quantity: 0,
+          area: 0,
+          rate: clientElement.customRate || 0,
+          name: clientElement.elementName || "Unknown"
+        });
+      }
+
+      const existing = elementMap.get(key)!;
+      existing.quantity += elem.quantity || 1;
+      existing.area += areaSqft;
+    }
+  }
+
+  return Array.from(elementMap.values()).map(item => ({
+    elementName: item.name,
+    quantity: item.quantity,
+    area: item.area,
+    rate: item.rate,
+    amount: item.area * item.rate
+  }));
+}
+
+function findTableStartRow(worksheet: ExcelJS.Worksheet): number {
+  let startRow = 10;
+  worksheet.eachRow((row, rowNumber) => {
+    row.eachCell(cell => {
+      const val = cell.value?.toString().toLowerCase();
+      if (val?.includes("s.no") || val?.includes("element") || val?.includes("description")) {
+        startRow = rowNumber + 1;
+      }
+    });
+  });
+  return startRow;
+}
+
+function populateLineItems(worksheet: ExcelJS.Worksheet, lineItems: any[], startRow: number) {
+  const templateRow = worksheet.getRow(startRow);
+  const styles: any[] = [];
+  templateRow.eachCell({ includeEmpty: true }, cell => {
+    styles.push({ font: cell.font, alignment: cell.alignment, border: cell.border, fill: cell.fill });
+  });
+
+  lineItems.forEach((item, index) => {
+    const row = worksheet.getRow(startRow + index);
+    styles.forEach((style, i) => {
+      const cell = row.getCell(i + 1);
+      cell.font = style.font;
+      cell.alignment = style.alignment;
+      cell.border = style.border;
+      cell.fill = style.fill;
+    });
+
+    row.getCell(1).value = index + 1;
+    row.getCell(2).value = item.elementName;
+    row.getCell(3).value = item.quantity;
+    row.getCell(4).value = parseFloat(item.area.toFixed(2));
+    row.getCell(5).value = parseFloat(item.rate.toFixed(2));
+    row.getCell(6).value = parseFloat(item.amount.toFixed(2));
+    row.commit();
+  });
+}
+
+function populateTotals(worksheet: ExcelJS.Worksheet, subtotal: number, gst: number, grandTotal: number, startRow: number) {
+  const totalsRow = startRow + 2;
+  worksheet.getRow(totalsRow).getCell(5).value = "Subtotal:";
+  worksheet.getRow(totalsRow).getCell(6).value = parseFloat(subtotal.toFixed(2));
+  worksheet.getRow(totalsRow + 1).getCell(5).value = "GST (18%):";
+  worksheet.getRow(totalsRow + 1).getCell(6).value = parseFloat(gst.toFixed(2));
+  worksheet.getRow(totalsRow + 2).getCell(5).value = "Grand Total:";
+  worksheet.getRow(totalsRow + 2).getCell(6).value = parseFloat(grandTotal.toFixed(2));
+}
+
+async function createZip(validStores: Array<{ storeId: string; buffer: Buffer }>): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    const buffers: Buffer[] = [];
+
+    archive.on("data", (chunk: Buffer) => buffers.push(chunk));
+    archive.on("end", () => resolve(Buffer.concat(buffers)));
+    archive.on("error", reject);
+
+    validStores.forEach(({ storeId, buffer }) => {
+      archive.append(buffer, { name: `RFQ_${storeId}.xlsx` });
+    });
+
+    archive.finalize();
+  });
+}
