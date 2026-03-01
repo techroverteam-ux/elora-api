@@ -35,9 +35,22 @@ const connectDB = async () => {
 };
 
 export default async (req: any, res: any) => {
+  // Define allowed origins
+  const allowedOrigins = [
+    'http://localhost:3000',
+    'https://elora-web.vercel.app',
+    'https://elora-web-git-main-techroverteam-ux.vercel.app',
+    'https://www.eloracreativeart.in',
+    'https://eloracreativeart.in'
+  ];
+  
+  const origin = req.headers.origin;
+  const isAllowedOrigin = allowedOrigins.includes(origin) || /\.vercel\.app$/.test(origin);
+  const corsOrigin = isAllowedOrigin ? origin : allowedOrigins[0];
+
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', 'https://elora-web.vercel.app');
+    res.setHeader('Access-Control-Allow-Origin', corsOrigin);
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -45,7 +58,7 @@ export default async (req: any, res: any) => {
   }
 
   // Set CORS headers for all requests
-  res.setHeader('Access-Control-Allow-Origin', 'https://elora-web.vercel.app');
+  res.setHeader('Access-Control-Allow-Origin', corsOrigin);
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie');
