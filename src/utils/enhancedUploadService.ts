@@ -191,7 +191,11 @@ class EnhancedUploadService {
       console.log('Generated FTPS URL:', url);
       return url;
     } else {
-      const url = `${process.env.BASE_LOCAL_URL || 'http://localhost:3000'}/uploads/${folderType}/${clientCode}/${storeId}/${fileName}`;
+      // For local storage, use the API's image serving endpoint
+      const apiBaseUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://elora-api-smoky.vercel.app' 
+        : 'http://localhost:3000';
+      const url = `${apiBaseUrl}/uploads/${folderType}/${clientCode}/${storeId}/${fileName}`;
       console.log('Generated local URL:', url);
       return url;
     }
