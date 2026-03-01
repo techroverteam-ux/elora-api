@@ -442,17 +442,19 @@ export const getStoreById = async (req: Request, res: Response) => {
     
     // Convert relative paths to full URLs for images
     if (store.recce?.initialPhotos) {
-      store.recce.initialPhotos = store.recce.initialPhotos.map(photo => {
-        if (photo.startsWith('uploads/')) {
-          return enhancedUploadService.getFileUrl(
-            photo.split('/')[1], // folderType
-            photo.split('/')[2], // clientCode
-            photo.split('/')[3], // storeId
-            photo.split('/')[4]  // fileName
-          );
-        }
-        return photo;
-      });
+      store.recce.initialPhotos = store.recce.initialPhotos
+        .filter(photo => !photo.startsWith('blob:')) // Remove blob URLs
+        .map(photo => {
+          if (photo.startsWith('uploads/')) {
+            return enhancedUploadService.getFileUrl(
+              photo.split('/')[1], // folderType
+              photo.split('/')[2], // clientCode
+              photo.split('/')[3], // storeId
+              photo.split('/')[4]  // fileName
+            );
+          }
+          return photo;
+        });
     }
     
     if (store.recce?.reccePhotos) {
@@ -622,8 +624,17 @@ export const submitRecce = async (req: Request | any, res: Response) => {
 
     const userName = req.user?.name || "Unknown";
 
-    // Start with existing initial photos if resubmission
-    const initialPhotos: string[] = existingInitialPhotos ? JSON.parse(existingInitialPhotos) : [];
+    // Start with existing initial photos if resubmission (filter out blob URLs)
+    const initialPhotos: string[] = [];
+    if (existingInitialPhotos) {
+      const existing = JSON.parse(existingInitialPhotos);
+      existing.forEach((photo: string) => {
+        // Only keep actual uploaded files, not blob URLs
+        if (photo.startsWith('uploads/') || photo.startsWith('http')) {
+          initialPhotos.push(photo);
+        }
+      });
+    }
     
     // Upload new initial photos (up to 10 total)
     const initialCount = parseInt(initialPhotosCount || "0");
