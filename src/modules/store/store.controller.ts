@@ -439,6 +439,36 @@ export const getStoreById = async (req: Request, res: Response) => {
       .populate("workflow.installationAssignedTo", "name");
 
     if (!store) return res.status(404).json({ message: "Store not found" });
+    
+    // Convert relative paths to full URLs for images
+    if (store.recce?.initialPhotos) {
+      store.recce.initialPhotos = store.recce.initialPhotos.map(photo => {
+        if (photo.startsWith('uploads/')) {
+          return enhancedUploadService.getFileUrl(
+            photo.split('/')[1], // folderType
+            photo.split('/')[2], // clientCode
+            photo.split('/')[3], // storeId
+            photo.split('/')[4]  // fileName
+          );
+        }
+        return photo;
+      });
+    }
+    
+    if (store.recce?.reccePhotos) {
+      store.recce.reccePhotos = store.recce.reccePhotos.map((reccePhoto: any) => {
+        if (reccePhoto.photo && reccePhoto.photo.startsWith('uploads/')) {
+          reccePhoto.photo = enhancedUploadService.getFileUrl(
+            reccePhoto.photo.split('/')[1], // folderType
+            reccePhoto.photo.split('/')[2], // clientCode
+            reccePhoto.photo.split('/')[3], // storeId
+            reccePhoto.photo.split('/')[4]  // fileName
+          );
+        }
+        return reccePhoto;
+      });
+    }
+    
     res.status(200).json({ store });
   } catch (error: any) {
     res.status(500).json({ message: "Failed to fetch store" });
