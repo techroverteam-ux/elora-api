@@ -26,248 +26,162 @@ const findKey = (row: any, keywords: string[]): string | undefined => {
 
 export const uploadStoresBulk = async (req: Request, res: Response) => {
   try {
-    // --- FIX: SELF-HEALING DATABASE ---
-    // This command deletes the old "Unique" rule for storeCode that is causing the crash.
-    // We catch errors just in case the index is already gone.
-    await Store.collection.dropIndex("storeCode_1").catch(() => {
-      // console.log("Index already dropped or doesn't exist");
-    });
-    // ----------------------------------
+    await Store.collection.dropIndex("storeCode_1").catch(() => {});
 
-    const files =
-      (req.files as Express.Multer.File[]) || (req.file ? [req.file] : []);
-
+    const files = (req.files as Express.Multer.File[]) || (req.file ? [req.file] : []);
     if (files.length === 0) {
       return res.status(400).json({ message: "No files uploaded" });
     }
 
-    let totalProcessed = 0;
-    let totalSuccess = 0;
-    let allErrors: any[] = [];
-    const toInsert: any[] = [];
-
-    // 1. Get existing codes and client codes
-    const existingCodes = new Set(
-      (await Store.find().select("dealerCode")).map((s) => s.dealerCode),
-    );
+    const allRows: any[] = [];
+    const existingCodes = new Set((await Store.find().select("dealerCode")).map((s) => s.dealerCode));
     const clientCodes = await Client.find().select("clientCode _id");
-    const clientCodeMap = new Map(
-      clientCodes.map((c) => [c.clientCode, c._id]),
-    );
+    const clientCodeMap = new Map(clientCodes.map((c) => [c.clientCode, c._id]));
+    const toInsert: any[] = [];
+    const dealerCodesInFile = new Set<string>();
 
     for (const file of files) {
       try {
-        // Use buffer instead of file path for memory storage
         const workbook = XLSX.read(file.buffer, { type: "buffer" });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const rawData: any[] = XLSX.utils.sheet_to_json(sheet);
 
-        totalProcessed += rawData.length;
-
         for (const [index, row] of rawData.entries()) {
           const rowNum = index + 2;
-
-          // A. Client Code Check
-          const clientCodeRaw = row["Client Code"];
+          let error = null;
           let clientId = null;
-          if (clientCodeRaw) {
-            const clientCode = String(clientCodeRaw).trim();
-            clientId = clientCodeMap.get(clientCode);
-            if (!clientId) {
-              allErrors.push({
-                file: file.originalname,
-                row: rowNum,
-                error: `Invalid Client Code: ${clientCode}`,
-              });
-              continue;
-            }
-          }
 
-          // B. Dealer Code Check
-          const dCodeRaw = row["Dealer Code"];
-
-          if (!dCodeRaw) {
-            // Skip empty rows (like footer totals) silently or with a minor note
-            allErrors.push({
-              file: file.originalname,
-              row: rowNum,
-              error: "Skipped: 'Dealer Code' is missing/empty",
-            });
-            continue;
-          }
-
-          const dCode = String(dCodeRaw).trim();
-
-          // C. Duplicates
-          if (existingCodes.has(dCode)) {
-            allErrors.push({
-              file: file.originalname,
-              row: rowNum,
-              error: `Duplicate in DB: ${dCode}`,
-            });
-            continue;
-          }
-          if (toInsert.find((i) => i.dealerCode === dCode)) {
-            allErrors.push({
-              file: file.originalname,
-              row: rowNum,
-              error: `Duplicate in File: ${dCode}`,
-            });
-            continue;
-          }
-
-          // D. Build Object
-          const cityRaw = row["City "] || row["City"] || ""; // Handle both "City " and "City"
-          const districtRaw = row["District"] || "";
-          // If City is empty, use District as City
-          const city = cityRaw || districtRaw;
-          const district = districtRaw;
-          const dealerCode = dCode;
-
-          // Generate storeId manually since insertMany doesn't trigger pre-save hooks
-          const cityPrefix = city.trim().substring(0, 3).toUpperCase();
-          const districtPrefix = district.trim().substring(0, 3).toUpperCase();
-          const storeId = `${cityPrefix}${districtPrefix}${dealerCode.toUpperCase()}`;
-
-          // Parse numeric values safely
-          const parseNumber = (val: any): number => {
-            const num = Number(val);
-            return isNaN(num) ? 0 : num;
-          };
-
-          const width = parseNumber(row["Width (Ft.)"]);
-          const height = parseNumber(row["Height (Ft.)"]);
-          const qty = parseNumber(row["Qty"]) || 1;
-          const boardSize = parseNumber(row["Board Size (Sq.Ft.)"]);
-          const boardRate = parseNumber(row["Board Rate/Sq.Ft."]);
-          const totalBoardCost = parseNumber(
-            row["Total Board Cost (w/o taxes)"],
-          );
-          const angleCharges = parseNumber(row["Angle Charges (if any)"]);
-          const scaffoldingCharges = parseNumber(
-            row["Scaffolding Charges (if any)"],
-          );
-          const transportation = parseNumber(row["Transportation (if any)"]);
-          const flanges = parseNumber(row["Flanges per pc (if any)"]);
-          const lollipop = parseNumber(row["Lollipop per pc (if any)"]);
-          const oneWayVision = parseNumber(row["One Way Vision (if any)"]);
-          const sunboard = parseNumber(row["3 mm Sunboard (if any)"]);
-          const totalCost = parseNumber(row["Total Cost w/0 Tax"]);
-
-          const newStore = {
-            projectID: row["Sr. No."] ? String(row["Sr. No."]) : "",
-            dealerCode: dCode,
-            storeId: storeId,
-            storeCode: row["Vendor Code & Name"] || "",
-            storeName: row["Dealer's Name"] || "Unknown Name",
+          const rowData = {
+            srNo: row["Sr. No."] || "",
+            clientCode: row["Client Code"] || "",
+            dealerCode: row["Dealer Code"] || "",
             vendorCode: row["Vendor Code & Name"] || "",
-            clientCode: clientCodeRaw ? String(clientCodeRaw).trim() : "",
-            clientId: clientId,
-
-            location: {
-              zone: row["Zone"] || "",
-              state: row["State"] || "",
-              district: district,
-              city: city,
-              area: district,
-              address: row["Dealer's Address"] || "",
-            },
-
-            contact: {
-              personName: "",
-              mobile: "",
-            },
-
-            commercials: {
-              poNumber: row["PO Number"] || "",
-              poMonth: row["PO Month"] || "",
-              invoiceNumber: row["INVOICE NO:"] || row["Invoice No"] || "",
-              invoiceRemarks: row["Invoice Remarks"] || "",
-              totalCost: totalCost,
-            },
-
-            costDetails: {
-              boardRate: boardRate,
-              totalBoardCost: totalBoardCost,
-              angleCharges: angleCharges,
-              scaffoldingCharges: scaffoldingCharges,
-              transportation: transportation,
-              flanges: flanges,
-              lollipop: lollipop,
-              oneWayVision: oneWayVision,
-              sunboard: sunboard,
-            },
-
-            specs: {
-              type: row["Dealer Board Type"] || "",
-              width: width,
-              height: height,
-              qty: qty,
-              boardSize: boardSize ? String(boardSize) : `${width}x${height}`,
-            },
-
-            remark: row["Remark"] || "",
-            imagesAttached: row["Images Attached in PPT (yes/no)"]
-              ? String(row["Images Attached in PPT (yes/no)"])
-                  .toLowerCase()
-                  .includes("yes") ||
-                String(row["Images Attached in PPT (yes/no)"])
-                  .toLowerCase()
-                  .includes("y")
-              : false,
-
-            currentStatus: StoreStatus.UPLOADED,
+            dealerName: row["Dealer's Name"] || "",
+            state: row["State"] || "",
+            city: row["City"] || row["City "] || "",
+            district: row["District"] || "",
+            address: row["Dealer's Address"] || "",
+            width: row["Width (Ft.)"] || "",
+            height: row["Height (Ft.)"] || "",
+            boardType: row["Dealer Board Type"] || "",
           };
 
-          toInsert.push(newStore);
-        }
-      } catch (err: any) {
-        allErrors.push({
-          file: file.originalname,
-          error: "Parsing Error: " + err.message,
-        });
-      }
-      // No need to delete files with memory storage
-    }
-
-    // 3. Batch Insert
-    if (toInsert.length > 0) {
-      try {
-        await Store.insertMany(toInsert, { ordered: false });
-        totalSuccess = toInsert.length;
-      } catch (err: any) {
-        if (err.name === "ValidationError") {
-          Object.keys(err.errors).forEach((field) => {
-            allErrors.push({
-              error: `Validation Error: ${err.errors[field].message}`,
-            });
-          });
-        } else if (err.writeErrors) {
-          totalSuccess = toInsert.length - err.writeErrors.length;
-          err.writeErrors.forEach((e: any) => {
-            if (e.code === 11000) {
-              // Check WHICH field is duplicate
-              const field = Object.keys(e.keyValue)[0];
-              allErrors.push({
-                error: `Duplicate ${field}: ${e.keyValue[field]}`,
-              });
+          // Validation
+          if (!rowData.dealerCode) {
+            error = "Dealer Code is required";
+          } else {
+            const dCode = String(rowData.dealerCode).trim();
+            if (existingCodes.has(dCode)) {
+              error = `Store with Dealer Code ${dCode} already exists in system`;
+            } else if (dealerCodesInFile.has(dCode)) {
+              error = `Dealer Code ${dCode} appears multiple times in this file`;
             } else {
-              allErrors.push({ error: `DB Write Error: ${e.errmsg}` });
+              dealerCodesInFile.add(dCode);
+              
+              if (rowData.clientCode) {
+                const clientCode = String(rowData.clientCode).trim();
+                clientId = clientCodeMap.get(clientCode);
+                if (!clientId) {
+                  error = `Client Code ${clientCode} not found in system`;
+                }
+              }
+
+              if (!error) {
+                const city = rowData.city || rowData.district;
+                const district = rowData.district;
+                const cityPrefix = city.trim().substring(0, 3).toUpperCase();
+                const districtPrefix = district.trim().substring(0, 3).toUpperCase();
+                const storeId = `${cityPrefix}${districtPrefix}${dCode.toUpperCase()}`;
+                const parseNumber = (val: any): number => { const num = Number(val); return isNaN(num) ? 0 : num; };
+
+                toInsert.push({
+                  projectID: rowData.srNo ? String(rowData.srNo) : "",
+                  dealerCode: dCode,
+                  storeId: storeId,
+                  storeCode: rowData.vendorCode,
+                  storeName: rowData.dealerName || "Unknown Name",
+                  vendorCode: rowData.vendorCode,
+                  clientCode: rowData.clientCode ? String(rowData.clientCode).trim() : "",
+                  clientId: clientId,
+                  location: {
+                    zone: row["Zone"] || "",
+                    state: rowData.state,
+                    district: district,
+                    city: city,
+                    area: district,
+                    address: rowData.address,
+                  },
+                  contact: { personName: "", mobile: "" },
+                  commercials: {
+                    poNumber: row["PO Number"] || "",
+                    poMonth: row["PO Month"] || "",
+                    invoiceNumber: row["INVOICE NO:"] || row["Invoice No"] || "",
+                    invoiceRemarks: row["Invoice Remarks"] || "",
+                    totalCost: parseNumber(row["Total Cost w/0 Tax"]),
+                  },
+                  costDetails: {
+                    boardRate: parseNumber(row["Board Rate/Sq.Ft."]),
+                    totalBoardCost: parseNumber(row["Total Board Cost (w/o taxes)"]),
+                    angleCharges: parseNumber(row["Angle Charges (if any)"]),
+                    scaffoldingCharges: parseNumber(row["Scaffolding Charges (if any)"]),
+                    transportation: parseNumber(row["Transportation (if any)"]),
+                    flanges: parseNumber(row["Flanges per pc (if any)"]),
+                    lollipop: parseNumber(row["Lollipop per pc (if any)"]),
+                    oneWayVision: parseNumber(row["One Way Vision (if any)"]),
+                    sunboard: parseNumber(row["3 mm Sunboard (if any)"]),
+                  },
+                  specs: {
+                    type: rowData.boardType,
+                    width: parseNumber(rowData.width),
+                    height: parseNumber(rowData.height),
+                    qty: parseNumber(row["Qty"]) || 1,
+                    boardSize: parseNumber(row["Board Size (Sq.Ft.)"]) ? String(parseNumber(row["Board Size (Sq.Ft.)"])) : `${parseNumber(rowData.width)}x${parseNumber(rowData.height)}`,
+                  },
+                  remark: row["Remark"] || "",
+                  imagesAttached: row["Images Attached in PPT (yes/no)"] ? String(row["Images Attached in PPT (yes/no)"]).toLowerCase().includes("yes") || String(row["Images Attached in PPT (yes/no)"]).toLowerCase().includes("y") : false,
+                  currentStatus: StoreStatus.UPLOADED,
+                });
+              }
             }
+          }
+
+          allRows.push({
+            rowNumber: rowNum,
+            data: rowData,
+            status: error ? "error" : "success",
+            error: error,
           });
-        } else {
-          allErrors.push({ error: `Critical Error: ${err.message}` });
         }
+      } catch (err: any) {
+        return res.status(400).json({ message: "File parsing error", error: err.message });
       }
     }
 
-    res.status(201).json({
-      message: "Bulk upload processed",
-      totalProcessed,
-      successCount: totalSuccess,
-      errorCount: allErrors.length,
-      errors: allErrors,
-    });
+    // If ANY errors exist, reject entire upload
+    const errorCount = allRows.filter(r => r.status === "error").length;
+    if (errorCount > 0) {
+      return res.status(400).json({
+        message: "Upload rejected due to errors. Please fix all errors and re-upload.",
+        totalProcessed: allRows.length,
+        successCount: 0,
+        errorCount: errorCount,
+        rows: allRows,
+      });
+    }
+
+    // All valid - proceed with insert
+    try {
+      await Store.insertMany(toInsert, { ordered: false });
+      return res.status(201).json({
+        message: "All stores uploaded successfully",
+        totalProcessed: allRows.length,
+        successCount: allRows.length,
+        errorCount: 0,
+        rows: allRows,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ message: "Database insertion failed", error: err.message });
+    }
   } catch (error: any) {
     console.error("Upload Error:", error);
     res.status(500).json({ message: "Server Error", error: error.message });
@@ -289,6 +203,11 @@ export const createStore = async (req: Request, res: Response) => {
 
     if (!dealerCode) {
       return res.status(400).json({ message: "Dealer Code is required" });
+    }
+
+    // Validate required fields for storeId generation
+    if (!location?.city || !location?.district) {
+      return res.status(400).json({ message: "City and District are required for Store ID generation" });
     }
 
     let clientId = null;
@@ -2600,6 +2519,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
       "Dealer Code",
       "Vendor Code & Name",
       "Dealer's Name",
+      "State",
       "City",
       "District",
       "Dealer's Address",
@@ -2633,6 +2553,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
       { width: 30 },
       { width: 15 },
       { width: 15 },
+      { width: 15 },
       { width: 40 },
       { width: 12 },
       { width: 12 },
@@ -2645,6 +2566,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "DLR001",
         "ELORA CREATIVE ART",
         "Rajesh Kumar",
+        "Maharashtra",
         "Mumbai",
         "Mumbai Suburban",
         "123 Main Street, Andheri West",
@@ -2659,6 +2581,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "ELORA CREATIVE ART",
         "Amit Sharma",
         "Delhi",
+        "Delhi",
         "Central Delhi",
         "456 Park Avenue, Connaught Place",
         10,
@@ -2671,6 +2594,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "DLR003",
         "ELORA CREATIVE ART",
         "Priya Singh",
+        "Karnataka",
         "Bangalore",
         "Bangalore Urban",
         "789 MG Road, Indiranagar",
@@ -2684,6 +2608,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "DLR004",
         "ELORA CREATIVE ART",
         "Suresh Patel",
+        "Maharashtra",
         "Pune",
         "Pune",
         "321 FC Road, Shivajinagar",
@@ -2697,6 +2622,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "DLR005",
         "ELORA CREATIVE ART",
         "Neha Gupta",
+        "Telangana",
         "Hyderabad",
         "Hyderabad",
         "654 Banjara Hills, Road No 12",
@@ -2710,6 +2636,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "DLR006",
         "ELORA CREATIVE ART",
         "Vikram Reddy",
+        "Tamil Nadu",
         "Chennai",
         "Chennai",
         "987 Anna Salai, T Nagar",
@@ -2723,6 +2650,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "DLR007",
         "ELORA CREATIVE ART",
         "Anjali Verma",
+        "West Bengal",
         "Kolkata",
         "Kolkata",
         "147 Park Street, Central Kolkata",
@@ -2736,6 +2664,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "DLR008",
         "ELORA CREATIVE ART",
         "Rahul Joshi",
+        "Gujarat",
         "Ahmedabad",
         "Ahmedabad",
         "258 CG Road, Navrangpura",
@@ -2749,6 +2678,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "DLR009",
         "ELORA CREATIVE ART",
         "Kavita Desai",
+        "Rajasthan",
         "Jaipur",
         "Jaipur",
         "369 MI Road, C Scheme",
@@ -2762,6 +2692,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "DLR010",
         "ELORA CREATIVE ART",
         "Manoj Yadav",
+        "Uttar Pradesh",
         "Lucknow",
         "Lucknow",
         "741 Hazratganj, Lucknow Central",

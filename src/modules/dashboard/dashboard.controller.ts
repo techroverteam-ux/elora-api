@@ -2,9 +2,27 @@ import { Request, Response } from "express";
 import Store, { StoreStatus } from "../store/store.model";
 import User from "../user/user.model";
 
+const parseDate = (dateStr: string): Date | null => {
+  if (!dateStr) return null;
+  // Handle DD-MMM-YYYY format (e.g., "01-Jan-2024")
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    const day = parseInt(parts[0]);
+    const monthMap: any = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+    const month = monthMap[parts[1]];
+    const year = parseInt(parts[2]);
+    if (!isNaN(day) && month !== undefined && !isNaN(year)) {
+      return new Date(year, month, day);
+    }
+  }
+  // Fallback to standard Date parsing
+  const date = new Date(dateStr);
+  return isNaN(date.getTime()) ? null : date;
+};
+
 export const getDashboardStats = async (req: Request | any, res: Response) => {
   try {
-    const { startDate, endDate, status, zone, state } = req.query;
+    const { startDate, endDate, status, zone, state, store, client, city, district } = req.query;
     
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -27,11 +45,20 @@ export const getDashboardStats = async (req: Request | any, res: Response) => {
     }
     
     if (startDate && endDate) {
-      filter.createdAt = { $gte: new Date(startDate as string), $lte: new Date(endDate as string) };
+      const start = parseDate(startDate as string);
+      const end = parseDate(endDate as string);
+      if (start && end) {
+        end.setHours(23, 59, 59, 999);
+        filter.createdAt = { $gte: start, $lte: end };
+      }
     }
     if (status) filter.currentStatus = status;
-    if (zone) filter['location.zone'] = zone;
-    if (state) filter['location.state'] = state;
+    if (zone) filter['location.zone'] = new RegExp(zone as string, 'i');
+    if (state) filter['location.state'] = new RegExp(state as string, 'i');
+    if (city) filter['location.city'] = new RegExp(city as string, 'i');
+    if (district) filter['location.district'] = new RegExp(district as string, 'i');
+    if (store) filter.$or = [{ storeName: new RegExp(store as string, 'i') }, { storeCode: new RegExp(store as string, 'i') }];
+    if (client) filter.$or = [{ clientCode: new RegExp(client as string, 'i') }];
 
     // KPI COUNTS
     const totalStores = await Store.countDocuments(filter);
@@ -83,65 +110,54 @@ export const getDashboardStats = async (req: Request | any, res: Response) => {
     ]);
 
     // Personnel stats (only for admin)
-    let personnelStats = [];
+    let personnelStats: Array<{
+      _id: any;
+      name: string;
+      email: string;
+      role: string;
+      assignedCount: number;
+      completedCount: number;
+    }> = [];
     if (isSuperAdmin || isAdmin) {
-      personnelStats = await User.aggregate([
-        {
-          $lookup: {
-            from: "roles",
-            localField: "roles",
-            foreignField: "_id",
-            as: "roleDetails",
-          },
-        },
-        {
-          $match: {
-            "roleDetails.code": { $in: ["RECCE", "INSTALLATION"] },
-            isActive: true,
-          },
-        },
-        {
-          $lookup: {
-            from: "stores",
-            let: { userId: "$_id" },
-            pipeline: [
-              {
-                $match: {
-                  $expr: {
-                    $or: [
-                      { $eq: ["$workflow.recceAssignedTo", "$$userId"] },
-                      { $eq: ["$workflow.installationAssignedTo", "$$userId"] },
-                    ],
-                  },
-                },
-              },
-            ],
-            as: "assignedStores",
-          },
-        },
-        {
-          $project: {
-            name: 1,
-            email: 1,
-            role: { $arrayElemAt: ["$roleDetails.name", 0] },
-            assignedCount: { $size: "$assignedStores" },
-            completedCount: {
-              $size: {
-                $filter: {
-                  input: "$assignedStores",
-                  as: "store",
-                  cond: {
-                     $or: [
-                         { $and: [ { $eq: ["$$store.workflow.recceAssignedTo", "$_id"] }, { $in: ["$$store.currentStatus", ["RECCE_SUBMITTED", "RECCE_APPROVED", "COMPLETED"]] } ] },
-                         { $and: [ { $eq: ["$$store.workflow.installationAssignedTo", "$_id"] }, { $in: ["$$store.currentStatus", ["INSTALLATION_SUBMITTED", "COMPLETED"]] } ] }
-                     ]
-                  }
-                }
-              }
+      try {
+        const recceUsers = await User.find({ isActive: true }).populate({
+          path: 'roles',
+          match: { code: { $in: ['RECCE', 'INSTALLATION'] } }
+        }).lean();
+
+        const validUsers = recceUsers.filter(u => u.roles && (u.roles as any[]).length > 0);
+
+        personnelStats = await Promise.all(validUsers.map(async (user: any) => {
+          const role = user.roles[0];
+          const assignedStores = await Store.find({
+            $or: [
+              { 'workflow.recceAssignedTo': user._id },
+              { 'workflow.installationAssignedTo': user._id }
+            ]
+          }).lean();
+
+          const completedStores = assignedStores.filter((store: any) => {
+            if (store.workflow?.recceAssignedTo?.toString() === user._id.toString()) {
+              return ['RECCE_SUBMITTED', 'RECCE_APPROVED', 'INSTALLATION_ASSIGNED', 'INSTALLATION_SUBMITTED', 'COMPLETED'].includes(store.currentStatus);
             }
-          },
-        },
-      ]);
+            if (store.workflow?.installationAssignedTo?.toString() === user._id.toString()) {
+              return ['INSTALLATION_SUBMITTED', 'COMPLETED'].includes(store.currentStatus);
+            }
+            return false;
+          });
+
+          return {
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            role: role.code,
+            assignedCount: assignedStores.length,
+            completedCount: completedStores.length
+          };
+        }));
+      } catch (err) {
+        console.error('Personnel stats error:', err);
+      }
     }
 
     // Recent stores
