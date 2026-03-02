@@ -18,13 +18,14 @@ export const checkConfiguration = () => {
 };
 
 export const validateFTPSConfig = (): boolean => {
-  const required = ['FTP_HOST', 'FTP_USER', 'FTP_PASSWORD', 'BASE_PUBLIC_PATH', 'BASE_PUBLIC_URL'];
+  const required = ['FTP_HOST', 'FTP_USER', 'FTP_PASSWORD'];
   const missing = required.filter(key => !process.env[key]);
   
   if (missing.length > 0) {
-    console.error('Missing FTPS configuration:', missing);
+    console.error('[CONFIG] Missing FTPS configuration:', missing);
     return false;
   }
   
+  console.log('[CONFIG] All required FTPS variables present');
   return true;
 };

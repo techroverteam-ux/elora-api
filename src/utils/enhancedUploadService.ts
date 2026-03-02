@@ -13,16 +13,22 @@ class EnhancedUploadService {
     // Check configuration on startup
     const config = checkConfiguration();
     
+    console.log('[INIT] Checking storage configuration...');
+    console.log('[INIT] STORAGE_TYPE env:', process.env.STORAGE_TYPE);
+    console.log('[INIT] FTP_HOST env:', process.env.FTP_HOST);
+    console.log('[INIT] FTP_USER env:', process.env.FTP_USER);
+    console.log('[INIT] FTP_SECURE env:', process.env.FTP_SECURE);
+    
     // Determine storage type based on environment and configuration
     if (process.env.STORAGE_TYPE === 'ftps' && validateFTPSConfig()) {
       this.storageType = 'ftps';
-      console.log('✅ FTPS configuration validated, using FTPS storage');
+      console.log('[INIT] ✅ FTPS configuration validated, using FTPS storage');
     } else {
       this.storageType = 'local';
       if (process.env.STORAGE_TYPE === 'ftps') {
-        console.warn('⚠️ FTPS requested but configuration invalid, falling back to local storage');
+        console.warn('[INIT] ⚠️ FTPS requested but configuration invalid, falling back to local storage');
       } else {
-        console.log('📁 Using local storage');
+        console.log('[INIT] 📁 Using local storage');
       }
     }
   }
@@ -47,18 +53,23 @@ class EnhancedUploadService {
   ): Promise<string> {
     const uniqueFileName = this.generateUniqueFilename(fileName);
     
-    console.log(`Uploading file with storage type: ${this.storageType}`);
-    console.log(`File details:`, { fileName, clientCode, storeId, folderType });
+    console.log(`[UPLOAD] Storage type: ${this.storageType}`);
+    console.log(`[UPLOAD] File details:`, { fileName, clientCode, storeId, folderType });
 
     if (this.storageType === 'ftps') {
       try {
-        return await this.uploadToFTPS(fileBuffer, uniqueFileName, clientCode, storeId, folderType);
+        console.log('[UPLOAD] Attempting FTPS upload...');
+        const result = await this.uploadToFTPS(fileBuffer, uniqueFileName, clientCode, storeId, folderType);
+        console.log('[UPLOAD] FTPS upload SUCCESS:', result);
+        return result;
       } catch (error: any) {
-        console.error('FTPS upload failed, falling back to local storage:', error);
+        console.error('[UPLOAD] FTPS upload FAILED:', error.message);
+        console.error('[UPLOAD] Falling back to local storage');
         // Fallback to local storage if FTPS fails
         return this.uploadToLocal(fileBuffer, uniqueFileName, clientCode, storeId, folderType, userName);
       }
     } else {
+      console.log('[UPLOAD] Using local storage');
       return this.uploadToLocal(fileBuffer, uniqueFileName, clientCode, storeId, folderType, userName);
     }
   }
