@@ -734,7 +734,7 @@ export const uploadUsersBulk = async (req: Request, res: Response) => {
               } else {
                 const foundRoles = await Role.find({ code: { $in: roleCodes } });
                 if (foundRoles.length !== roleCodes.length) {
-                  const invalidRoles = roleCodes.filter(code => !foundRoles.find(r => r.code === code));
+                  const invalidRoles = roleCodes.filter((code: string) => !foundRoles.find(r => r.code === code));
                   error = `Invalid role code(s): "${invalidRoles.join('", "')}". Please check Available Roles sheet`;
                 } else if (!error) {
                   toInsert.push({

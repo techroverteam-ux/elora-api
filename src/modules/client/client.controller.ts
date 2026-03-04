@@ -96,7 +96,7 @@ export const updateClient = async (req: Request, res: Response) => {
     }
 
     // Check if GST number already exists for a different client
-    const existingClient = await Client.findOne({ gstNumber, _id: { $ne: req.params.id } });
+    const existingClient = await Client.findOne({ gstNumber, _id: { $ne: req.params.id as any } });
     if (existingClient) {
       return res.status(400).json({ message: `GST number "${gstNumber}" already exists in the system` });
     }
