@@ -70,6 +70,12 @@ export const getDashboardStats = async (req: Request | any, res: Response) => {
     });
     const recceDoneToday = await Store.countDocuments({ ...filter, "recce.submittedDate": { $gte: today } });
 
+    // Recce Assigned (pending recce) - stores currently assigned for recce
+    const recceAssigned = await Store.countDocuments({
+      ...filter,
+      currentStatus: StoreStatus.RECCE_ASSIGNED
+    });
+
     const installationDoneTotal = await Store.countDocuments({
       ...filter,
       currentStatus: { $in: [StoreStatus.INSTALLATION_SUBMITTED, StoreStatus.COMPLETED] }
@@ -170,6 +176,7 @@ export const getDashboardStats = async (req: Request | any, res: Response) => {
       kpi: {
         totalStores,
         newStoresToday,
+        recceAssigned,
         recceDoneTotal,
         recceDoneToday,
         installationDoneTotal,

@@ -243,6 +243,7 @@ export const getDashboardAnalytics = async (req: Request | any, res: Response) =
         .limit(20)
         .select("storeName dealerCode location.city location.state location.district currentStatus recce.assignedDate createdAt");
 
+      const totalCompleted = approved + rejected;
       analytics = {
         overview: {
           totalAssigned: assignedToMe,
@@ -250,7 +251,7 @@ export const getDashboardAnalytics = async (req: Request | any, res: Response) =
           submitted,
           approved,
           rejected,
-          completionRate: approved > 0 ? ((approved / assignedToMe) * 100).toFixed(2) : 0
+          completionRate: totalCompleted > 0 ? ((approved / totalCompleted) * 100).toFixed(2) : 0
         },
         recentActivity: {
           submissionsLast7Days: recentSubmissions
@@ -312,7 +313,7 @@ export const getDashboardAnalytics = async (req: Request | any, res: Response) =
           pending,
           submitted,
           completed,
-          completionRate: completed > 0 ? ((completed / assignedToMe) * 100).toFixed(2) : 0
+          completionRate: assignedToMe > 0 ? ((completed / assignedToMe) * 100).toFixed(2) : 0
         },
         recentActivity: {
           submissionsLast7Days: recentSubmissions

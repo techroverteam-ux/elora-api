@@ -593,6 +593,10 @@ export const exportUsers = async (
 export const downloadUserTemplate = async (req: Request, res: Response) => {
   try {
     const ExcelJS = require('exceljs');
+    
+    // Fetch roles from database
+    const roles = await Role.find().select('code name').sort({ name: 1 });
+    
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Users');
     const headers = ['Name', 'Email', 'Password', 'Role Codes (comma separated)'];
@@ -606,12 +610,15 @@ export const downloadUserTemplate = async (req: Request, res: Response) => {
       cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
     }
     sheet.columns = [{ width: 25 }, { width: 30 }, { width: 20 }, { width: 35 }];
+    
+    // Use actual role codes from database for samples
+    const roleCodes = roles.map(r => r.code);
     const samples = [
-      ['John Doe', 'john@example.com', 'Password123!', 'RECCE'],
-      ['Jane Smith', 'jane@example.com', 'SecurePass456!', 'INSTALLATION'],
-      ['Admin User', 'admin@example.com', 'Admin789!', 'ADMIN,RECCE'],
-      ['Field Staff', 'field@example.com', 'Field123!', 'RECCE,INSTALLATION'],
-      ['Manager', 'manager@example.com', 'Manager456!', 'ADMIN']
+      ['John Doe', 'john@example.com', 'Password123!', roleCodes[0] || 'RECCE'],
+      ['Jane Smith', 'jane@example.com', 'SecurePass456!', roleCodes[1] || 'INSTALLATION'],
+      ['Admin User', 'admin@example.com', 'Admin789!', roleCodes.slice(0, 2).join(',') || 'ADMIN,RECCE'],
+      ['Field Staff', 'field@example.com', 'Field123!', roleCodes.slice(0, 2).join(',') || 'RECCE,INSTALLATION'],
+      ['Manager', 'manager@example.com', 'Manager456!', roleCodes[0] || 'ADMIN']
     ];
     samples.forEach((data, idx) => {
       const row = sheet.getRow(idx + 2);
@@ -621,6 +628,29 @@ export const downloadUserTemplate = async (req: Request, res: Response) => {
         cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
       });
     });
+
+    // Add Roles sheet
+    const rolesSheet = workbook.addWorksheet('Available Roles');
+    const roleHeaders = ['Role Code', 'Role Name'];
+    const roleHeaderRow = rolesSheet.getRow(1);
+    for (let i = 0; i < roleHeaders.length; i++) {
+      const cell = roleHeaderRow.getCell(i + 1);
+      cell.value = roleHeaders[i];
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEAB308' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+    }
+    rolesSheet.columns = [{ width: 20 }, { width: 30 }];
+    roles.forEach((role, idx) => {
+      const row = rolesSheet.getRow(idx + 2);
+      row.values = [role.code, role.name];
+      row.eachCell((cell: any) => {
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+      });
+    });
+
     const instructionsSheet = workbook.addWorksheet('Instructions');
     const titleCell = instructionsSheet.getCell('A1');
     titleCell.value = 'Instructions for User Template';
@@ -628,7 +658,14 @@ export const downloadUserTemplate = async (req: Request, res: Response) => {
     titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEAB308' } };
     titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
     titleCell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-    const instructions = ['1. Fill all required fields in the Users sheet', '2. Email must be unique for each user', '3. Password must be at least 8 characters', '4. Role Codes: Use SUPER_ADMIN, ADMIN, RECCE, or INSTALLATION', '5. Multiple roles can be separated by commas', '6. Delete sample data before uploading'];
+    const instructions = [
+      '1. Fill all required fields in the Users sheet',
+      '2. Email must be unique for each user',
+      '3. Password must be at least 8 characters',
+      '4. Refer to "Available Roles" sheet for valid role codes',
+      '5. Multiple roles can be separated by commas (e.g., ADMIN,RECCE)',
+      '6. Delete sample data before uploading'
+    ];
     instructions.forEach((text, i) => {
       const cell = instructionsSheet.getCell('A' + (i + 3));
       cell.value = text;
@@ -651,80 +688,104 @@ export const uploadUsersBulk = async (req: Request, res: Response) => {
     if (files.length === 0) {
       return res.status(400).json({ message: 'No files uploaded' });
     }
-    let totalProcessed = 0;
-    let totalSuccess = 0;
-    let allErrors: any[] = [];
-    const toInsert: any[] = [];
+
+    const allRows: any[] = [];
     const existingEmails = new Set((await User.find().select('email')).map((u) => u.email));
+    const toInsert: any[] = [];
+    const emailsInFile = new Set<string>();
+
     for (const file of files) {
       try {
-        const workbook = XLSX.readFile(file.path);
+        const workbook = XLSX.read(file.buffer, { type: 'buffer' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const rawData: any[] = XLSX.utils.sheet_to_json(sheet);
-        totalProcessed += rawData.length;
+
         for (const [index, row] of rawData.entries()) {
           const rowNum = index + 2;
-          const email = row['Email']?.trim().toLowerCase();
-          if (!email) {
-            allErrors.push({ file: file.originalname, row: rowNum, error: 'Email is missing' });
-            continue;
-          }
-          if (existingEmails.has(email)) {
-            allErrors.push({ file: file.originalname, row: rowNum, error: `Duplicate email: ${email}` });
-            continue;
-          }
-          if (toInsert.find((u) => u.email === email)) {
-            allErrors.push({ file: file.originalname, row: rowNum, error: `Duplicate in file: ${email}` });
-            continue;
-          }
-          const roleCodesStr = row['Role Codes (comma separated)'] || '';
-          const roleCodes = roleCodesStr.split(',').map((c: string) => c.trim().toUpperCase()).filter((c: string) => c);
-          if (roleCodes.length === 0) {
-            allErrors.push({ file: file.originalname, row: rowNum, error: 'At least one role is required' });
-            continue;
-          }
-          const foundRoles = await Role.find({ code: { $in: roleCodes } });
-          if (foundRoles.length !== roleCodes.length) {
-            allErrors.push({ file: file.originalname, row: rowNum, error: `Invalid role codes: ${roleCodes.join(', ')}` });
-            continue;
-          }
-          const newUser = {
-            name: row['Name'] || 'Unknown',
-            email: email,
-            password: row['Password'] || 'DefaultPass123!',
-            roles: foundRoles.map((r) => r._id),
-            isActive: true,
+          let error = null;
+
+          const rowData = {
+            name: row['Name'] || '',
+            email: row['Email'] || '',
+            password: row['Password'] || '',
+            roleCodes: row['Role Codes (comma separated)'] || '',
           };
-          toInsert.push(newUser);
-        }
-      } catch (err: any) {
-        allErrors.push({ file: file.originalname, error: 'Parsing Error: ' + err.message });
-      } finally {
-        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
-      }
-    }
-    if (toInsert.length > 0) {
-      try {
-        await User.insertMany(toInsert, { ordered: false });
-        totalSuccess = toInsert.length;
-      } catch (err: any) {
-        if (err.writeErrors) {
-          totalSuccess = toInsert.length - err.writeErrors.length;
-          err.writeErrors.forEach((e: any) => {
-            allErrors.push({ error: `DB Error: ${e.errmsg}` });
+
+          const email = rowData.email.trim().toLowerCase();
+          if (!email) {
+            error = 'Email is required';
+          } else if (existingEmails.has(email)) {
+            error = `User with email "${email}" already exists in system`;
+          } else if (emailsInFile.has(email)) {
+            error = `Email "${email}" appears multiple times in this file`;
+          } else {
+            emailsInFile.add(email);
+
+            if (!rowData.name) {
+              error = 'Name is required';
+            } else if (!rowData.password) {
+              error = 'Password is required';
+            } else {
+              const roleCodesStr = rowData.roleCodes;
+              const roleCodes = roleCodesStr.split(',').map((c: string) => c.trim().toUpperCase()).filter((c: string) => c);
+              
+              if (roleCodes.length === 0) {
+                error = 'At least one role is required';
+              } else {
+                const foundRoles = await Role.find({ code: { $in: roleCodes } });
+                if (foundRoles.length !== roleCodes.length) {
+                  const invalidRoles = roleCodes.filter(code => !foundRoles.find(r => r.code === code));
+                  error = `Invalid role code(s): "${invalidRoles.join('", "')}". Please check Available Roles sheet`;
+                } else if (!error) {
+                  toInsert.push({
+                    name: rowData.name,
+                    email: email,
+                    password: rowData.password,
+                    roles: foundRoles.map((r) => r._id),
+                    isActive: true,
+                  });
+                }
+              }
+            }
+          }
+
+          allRows.push({
+            rowNumber: rowNum,
+            data: rowData,
+            status: error ? 'error' : 'success',
+            error: error,
           });
-        } else {
-          allErrors.push({ error: `Critical Error: ${err.message}` });
         }
+      } catch (err: any) {
+        return res.status(400).json({ message: 'File parsing error', error: err.message });
       }
     }
-    res.status(201).json({
-      message: 'Bulk upload processed',
-      totalProcessed,
-      successCount: totalSuccess,
-      errorCount: allErrors.length,
-      errors: allErrors,
-    });
+
+    // If ANY errors exist, reject entire upload
+    const errorCount = allRows.filter(r => r.status === 'error').length;
+    if (errorCount > 0) {
+      return res.status(400).json({
+        message: 'Upload rejected due to errors. Please fix all errors and re-upload.',
+        totalProcessed: allRows.length,
+        successCount: 0,
+        errorCount: errorCount,
+        rows: allRows,
+      });
+    }
+
+    // All valid - proceed with insert
+    try {
+      await User.insertMany(toInsert, { ordered: false });
+      return res.status(201).json({
+        message: 'All users uploaded successfully',
+        totalProcessed: allRows.length,
+        successCount: allRows.length,
+        errorCount: 0,
+        rows: allRows,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ message: 'Database insertion failed', error: err.message });
+    }
   } catch (error: any) {
     console.error('Upload Error:', error);
     res.status(500).json({ message: 'Server Error', error: error.message });

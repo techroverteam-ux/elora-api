@@ -33,7 +33,7 @@ const ClientSchema = new Schema<ClientDocument>(
     clientName: { type: String, required: true, trim: true },
     branchName: { type: String, required: true, trim: true },
     amount: { type: Number, required: true, min: 0 },
-    gstNumber: { type: String, required: true, trim: true },
+    gstNumber: { type: String, required: true, trim: true, unique: true },
     elements: [ClientElementSchema],
     isActive: { type: Boolean, default: true },
   },

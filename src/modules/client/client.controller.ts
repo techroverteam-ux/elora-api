@@ -57,6 +57,17 @@ export const createClient = async (req: Request, res: Response) => {
   try {
     const { clientName, branchName, amount, gstNumber, elements } = req.body;
 
+    // Validate that at least one element is provided
+    if (!elements || !Array.isArray(elements) || elements.length === 0) {
+      return res.status(400).json({ message: "At least one element is required" });
+    }
+
+    // Check if GST number already exists
+    const existingClient = await Client.findOne({ gstNumber });
+    if (existingClient) {
+      return res.status(400).json({ message: `GST number "${gstNumber}" already exists in the system` });
+    }
+
     const clientCode = generateClientCode(clientName, branchName);
 
     const client = new Client({
@@ -65,7 +76,7 @@ export const createClient = async (req: Request, res: Response) => {
       branchName,
       amount,
       gstNumber,
-      elements: elements || [],
+      elements,
     });
 
     await client.save();
@@ -78,6 +89,17 @@ export const createClient = async (req: Request, res: Response) => {
 export const updateClient = async (req: Request, res: Response) => {
   try {
     const { clientName, branchName, amount, gstNumber, elements } = req.body;
+
+    // Validate that at least one element is provided
+    if (!elements || !Array.isArray(elements) || elements.length === 0) {
+      return res.status(400).json({ message: "At least one element is required" });
+    }
+
+    // Check if GST number already exists for a different client
+    const existingClient = await Client.findOne({ gstNumber, _id: { $ne: req.params.id } });
+    if (existingClient) {
+      return res.status(400).json({ message: `GST number "${gstNumber}" already exists in the system` });
+    }
 
     const client = await Client.findByIdAndUpdate(
       req.params.id,
