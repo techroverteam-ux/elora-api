@@ -627,17 +627,30 @@ export const submitRecce = async (req: Request | any, res: Response) => {
 
     console.log("Recce photos uploaded:", reccePhotos);
 
-    // Calculate costs based on recce data
-    let totalBoardSize = 0;
-    reccePhotos.forEach((rp: any) => {
-      const width = rp.measurements.unit === "in" ? rp.measurements.width / 12 : rp.measurements.width;
-      const height = rp.measurements.unit === "in" ? rp.measurements.height / 12 : rp.measurements.height;
-      const boardSize = width * height;
-      totalBoardSize += boardSize;
-    });
+    // Calculate costs based on recce data and client element rates
+    let totalBoardCost = 0;
+    
+    if (store.clientId) {
+      const client = await Client.findById(store.clientId);
+      if (client && client.elements) {
+        reccePhotos.forEach((rp: any) => {
+          const width = rp.measurements.unit === "in" ? rp.measurements.width / 12 : rp.measurements.width;
+          const height = rp.measurements.unit === "in" ? rp.measurements.height / 12 : rp.measurements.height;
+          const boardSize = width * height;
+          
+          if (rp.elements && rp.elements.length > 0) {
+            const elementId = rp.elements[0].elementId;
+            const clientElement = client.elements.find((el: any) => el.elementId.toString() === elementId.toString());
+            if (clientElement) {
+              rp.elements[0].customRate = clientElement.customRate;
+              const elementCost = boardSize * clientElement.customRate * (rp.elements[0].quantity || 1);
+              totalBoardCost += elementCost;
+            }
+          }
+        });
+      }
+    }
 
-    const boardRate = store.costDetails?.boardRate || 0;
-    const totalBoardCost = totalBoardSize * boardRate;
     const angleCharges = store.costDetails?.angleCharges || 0;
     const scaffoldingCharges = store.costDetails?.scaffoldingCharges || 0;
     const transportation = store.costDetails?.transportation || 0;
@@ -654,7 +667,6 @@ export const submitRecce = async (req: Request | any, res: Response) => {
       "recce.initialPhotos": initialPhotos,
       "recce.reccePhotos": reccePhotos,
       "recce.submittedBy": userName,
-      "recce.costDetails.boardRate": boardRate,
       "recce.costDetails.totalBoardCost": totalBoardCost,
       "recce.commercials.totalCost": totalCost,
       currentStatus: StoreStatus.RECCE_SUBMITTED,

@@ -89,10 +89,16 @@ export interface StoreDocument extends Document {
     reccePhotos?: Array<{
       photo: string; // Google Drive link
       measurements: { width: number; height: number; unit: string };
-      elements?: Array<{ elementId: string; elementName: string; quantity: number }>;
+      elements?: Array<{ elementId: string; elementName: string; quantity: number; customRate?: number }>;
     }>;
     notes?: string;
     submittedBy?: string; // User name who submitted
+    costDetails?: {
+      totalBoardCost?: number;
+    };
+    commercials?: {
+      totalCost?: number;
+    };
   };
 
   installation?: {
@@ -205,12 +211,19 @@ const StoreSchema = new Schema<StoreDocument>(
               elementId: { type: String },
               elementName: { type: String },
               quantity: { type: Number, default: 1 },
+              customRate: { type: Number },
             },
           ],
         },
       ],
       notes: String,
       submittedBy: String,
+      costDetails: {
+        totalBoardCost: { type: Number },
+      },
+      commercials: {
+        totalCost: { type: Number },
+      },
     },
 
     installation: {
