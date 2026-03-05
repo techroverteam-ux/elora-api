@@ -627,6 +627,26 @@ export const submitRecce = async (req: Request | any, res: Response) => {
 
     console.log("Recce photos uploaded:", reccePhotos);
 
+    // Calculate costs based on recce data
+    let totalBoardSize = 0;
+    reccePhotos.forEach((rp: any) => {
+      const width = rp.measurements.unit === "in" ? rp.measurements.width / 12 : rp.measurements.width;
+      const height = rp.measurements.unit === "in" ? rp.measurements.height / 12 : rp.measurements.height;
+      const boardSize = width * height;
+      totalBoardSize += boardSize;
+    });
+
+    const boardRate = store.costDetails?.boardRate || 0;
+    const totalBoardCost = totalBoardSize * boardRate;
+    const angleCharges = store.costDetails?.angleCharges || 0;
+    const scaffoldingCharges = store.costDetails?.scaffoldingCharges || 0;
+    const transportation = store.costDetails?.transportation || 0;
+    const flanges = store.costDetails?.flanges || 0;
+    const lollipop = store.costDetails?.lollipop || 0;
+    const oneWayVision = store.costDetails?.oneWayVision || 0;
+    const sunboard = store.costDetails?.sunboard || 0;
+    const totalCost = totalBoardCost + angleCharges + scaffoldingCharges + transportation + flanges + lollipop + oneWayVision + sunboard;
+
     // Prepare Recce Data
     const recceUpdate: any = {
       "recce.submittedDate": new Date(),
@@ -634,6 +654,9 @@ export const submitRecce = async (req: Request | any, res: Response) => {
       "recce.initialPhotos": initialPhotos,
       "recce.reccePhotos": reccePhotos,
       "recce.submittedBy": userName,
+      "recce.costDetails.boardRate": boardRate,
+      "recce.costDetails.totalBoardCost": totalBoardCost,
+      "recce.commercials.totalCost": totalCost,
       currentStatus: StoreStatus.RECCE_SUBMITTED,
     };
 
