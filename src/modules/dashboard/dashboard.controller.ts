@@ -95,12 +95,15 @@ export const getDashboardStats = async (req: Request | any, res: Response) => {
       { $sort: { count: -1 } }
     ]);
 
-    // State-wise distribution
+    // State-wise distribution (case-insensitive grouping)
     const stateDistribution = await Store.aggregate([
       { $match: filter },
-      { $group: { _id: "$location.state", count: { $sum: 1 } } },
+      { $addFields: { normalizedState: { $toLower: "$location.state" } } },
+      { $group: { _id: "$normalizedState", count: { $sum: 1 } } },
       { $sort: { count: -1 } },
-      { $limit: 10 }
+      { $limit: 10 },
+      { $project: { _id: { $toUpper: { $substrCP: ["$_id", 0, 1] } }, count: 1, rest: { $substrCP: ["$_id", 1, { $strLenCP: "$_id" }] } } },
+      { $project: { _id: { $concat: ["$_id", "$rest"] }, count: 1 } }
     ]);
 
     // Monthly trend (last 6 months)
@@ -109,7 +112,7 @@ export const getDashboardStats = async (req: Request | any, res: Response) => {
     const monthlyTrend = await Store.aggregate([
       { $match: { ...filter, createdAt: { $gte: sixMonthsAgo } } },
       { $group: {
-        _id: { $dateToString: { format: "%Y-%m", date: "$createdAt" } },
+        _id: { $dateToString: { format: "%b %Y", date: "$createdAt" } },
         count: { $sum: 1 }
       }},
       { $sort: { _id: 1 } }
@@ -175,6 +178,7 @@ export const getDashboardStats = async (req: Request | any, res: Response) => {
     res.json({
       kpi: {
         totalStores,
+        totalClients: isSuperAdmin ? await Store.distinct('clientId').then(ids => ids.length) : undefined,
         newStoresToday,
         recceAssigned,
         recceDoneTotal,

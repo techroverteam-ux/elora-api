@@ -191,13 +191,18 @@ function populateLineItems(worksheet: ExcelJS.Worksheet, lineItems: any[], start
 }
 
 function populateTotals(worksheet: ExcelJS.Worksheet, subtotal: number, gst: number, grandTotal: number, startRow: number) {
-  const totalsRow = startRow + 2;
-  worksheet.getRow(totalsRow).getCell(5).value = "Subtotal:";
-  worksheet.getRow(totalsRow).getCell(6).value = parseFloat(subtotal.toFixed(2));
-  worksheet.getRow(totalsRow + 1).getCell(5).value = "GST (18%):";
-  worksheet.getRow(totalsRow + 1).getCell(6).value = parseFloat(gst.toFixed(2));
-  worksheet.getRow(totalsRow + 2).getCell(5).value = "Grand Total:";
-  worksheet.getRow(totalsRow + 2).getCell(6).value = parseFloat(grandTotal.toFixed(2));
+  worksheet.eachRow(row => {
+    row.eachCell(cell => {
+      const cellValue = cell.value?.toString() || "";
+      if (cellValue.includes("{{subtotal}}") || cellValue.includes("{{totalAmountBeforeTax}}")) {
+        cell.value = parseFloat(subtotal.toFixed(2));
+      } else if (cellValue.includes("{{gst}}") || cellValue.includes("{{taxes}}")) {
+        cell.value = parseFloat(gst.toFixed(2));
+      } else if (cellValue.includes("{{grandTotal}}") || cellValue.includes("{{totalAmountAfterTax}}")) {
+        cell.value = parseFloat(grandTotal.toFixed(2));
+      }
+    });
+  });
 }
 
 async function createZip(validStores: Array<{ storeId: string; buffer: Buffer }>): Promise<Buffer> {
