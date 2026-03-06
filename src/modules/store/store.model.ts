@@ -90,9 +90,16 @@ export interface StoreDocument extends Document {
       photo: string; // Google Drive link
       measurements: { width: number; height: number; unit: string };
       elements?: Array<{ elementId: string; elementName: string; quantity: number; customRate?: number }>;
+      approvalStatus?: "PENDING" | "APPROVED" | "REJECTED";
+      approvedBy?: mongoose.Types.ObjectId;
+      approvedAt?: Date;
+      rejectionReason?: string;
     }>;
     notes?: string;
     submittedBy?: string; // User name who submitted
+    approvedPhotosCount?: number;
+    rejectedPhotosCount?: number;
+    pendingPhotosCount?: number;
     costDetails?: {
       totalBoardCost?: number;
     };
@@ -214,10 +221,17 @@ const StoreSchema = new Schema<StoreDocument>(
               customRate: { type: Number },
             },
           ],
+          approvalStatus: { type: String, enum: ["PENDING", "APPROVED", "REJECTED"], default: "PENDING" },
+          approvedBy: { type: Schema.Types.ObjectId, ref: "User" },
+          approvedAt: Date,
+          rejectionReason: String,
         },
       ],
       notes: String,
       submittedBy: String,
+      approvedPhotosCount: { type: Number, default: 0 },
+      rejectedPhotosCount: { type: Number, default: 0 },
+      pendingPhotosCount: { type: Number, default: 0 },
       costDetails: {
         totalBoardCost: { type: Number },
       },

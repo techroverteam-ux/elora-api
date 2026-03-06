@@ -258,7 +258,7 @@ export const getAllStores = async (req: Request | any, res: Response) => {
     const limit = Number(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    const { status, search, city, clientCode, clientName } = req.query;
+    const { status, search, city, clientCode, clientName, district, state, storeName, storeCode } = req.query;
 
     let query: any = {};
 
@@ -290,12 +290,32 @@ export const getAllStores = async (req: Request | any, res: Response) => {
       query["location.city"] = { $regex: city, $options: "i" };
     }
 
-    // 4. Client Code Filter
+    // 4. District Filter
+    if (district) {
+      query["location.district"] = { $regex: district, $options: "i" };
+    }
+
+    // 5. State Filter
+    if (state) {
+      query["location.state"] = { $regex: state, $options: "i" };
+    }
+
+    // 6. Store Name Filter
+    if (storeName) {
+      query.storeName = { $regex: storeName, $options: "i" };
+    }
+
+    // 7. Store Code Filter
+    if (storeCode) {
+      query.dealerCode = { $regex: storeCode, $options: "i" };
+    }
+
+    // 8. Client Code Filter
     if (clientCode) {
       query.clientCode = { $regex: clientCode, $options: "i" };
     }
 
-    // 5. Client Name Filter
+    // 9. Client Name Filter
     if (clientName) {
       const clients = await Client.find({
         clientName: { $regex: clientName, $options: "i" },
@@ -307,7 +327,7 @@ export const getAllStores = async (req: Request | any, res: Response) => {
       }
     }
 
-    // 6. Search (Store Name, Dealer Code, City)
+    // 10. Search (Store Name, Dealer Code, City)
     if (search) {
       const searchRegex = { $regex: search, $options: "i" };
       query.$and = [
@@ -1076,6 +1096,93 @@ export const reviewRecce = async (req: Request, res: Response) => {
   }
 };
 
+// --- NEW: Review Individual Recce Photo ---
+export const reviewReccePhoto = async (req: Request | any, res: Response) => {
+  try {
+    const { id, photoIndex } = req.params;
+    const { status, rejectionReason } = req.body;
+
+    if (!["APPROVED", "REJECTED"].includes(status)) {
+      return res.status(400).json({ message: "Invalid status. Use APPROVED or REJECTED." });
+    }
+
+    const store = await Store.findById(id);
+    if (!store || !store.recce?.reccePhotos) {
+      return res.status(404).json({ message: "Store or recce photos not found" });
+    }
+
+    const photoIdx = parseInt(photoIndex);
+    if (photoIdx < 0 || photoIdx >= store.recce.reccePhotos.length) {
+      return res.status(400).json({ message: "Invalid photo index" });
+    }
+
+    store.recce.reccePhotos[photoIdx].approvalStatus = status as "APPROVED" | "REJECTED";
+    store.recce.reccePhotos[photoIdx].approvedBy = req.user._id;
+    store.recce.reccePhotos[photoIdx].approvedAt = new Date();
+    if (status === "REJECTED" && rejectionReason) {
+      store.recce.reccePhotos[photoIdx].rejectionReason = rejectionReason;
+    }
+
+    const approved = store.recce.reccePhotos.filter(p => p.approvalStatus === "APPROVED").length;
+    const rejected = store.recce.reccePhotos.filter(p => p.approvalStatus === "REJECTED").length;
+    const pending = store.recce.reccePhotos.filter(p => !p.approvalStatus || p.approvalStatus === "PENDING").length;
+
+    store.recce.approvedPhotosCount = approved;
+    store.recce.rejectedPhotosCount = rejected;
+    store.recce.pendingPhotosCount = pending;
+
+    if (approved > 0 && pending === 0) {
+      store.currentStatus = StoreStatus.RECCE_APPROVED;
+    } else if (approved === 0 && rejected === store.recce.reccePhotos.length) {
+      store.currentStatus = StoreStatus.RECCE_REJECTED;
+    } else {
+      store.currentStatus = StoreStatus.RECCE_SUBMITTED;
+    }
+
+    await store.save();
+
+    res.status(200).json({
+      message: `Photo ${photoIdx + 1} ${status.toLowerCase()} successfully`,
+      store,
+      summary: { approved, rejected, pending }
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: "Review failed", error: error.message });
+  }
+};
+
+// --- NEW: Bulk Approve All Recce Photos ---
+export const bulkApproveReccePhotos = async (req: Request | any, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const store = await Store.findById(id);
+    if (!store || !store.recce?.reccePhotos) {
+      return res.status(404).json({ message: "Store or recce photos not found" });
+    }
+
+    store.recce.reccePhotos.forEach(photo => {
+      photo.approvalStatus = "APPROVED";
+      photo.approvedBy = req.user._id;
+      photo.approvedAt = new Date();
+    });
+
+    store.recce.approvedPhotosCount = store.recce.reccePhotos.length;
+    store.recce.rejectedPhotosCount = 0;
+    store.recce.pendingPhotosCount = 0;
+    store.currentStatus = StoreStatus.RECCE_APPROVED;
+
+    await store.save();
+
+    res.status(200).json({
+      message: "All photos approved successfully",
+      store
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: "Bulk approval failed", error: error.message });
+  }
+};
+
 // --- UPDATED: Submit Installation Data (Multiple Images matching Recce Photos) ---
 export const submitInstallation = async (req: Request | any, res: Response) => {
   try {
@@ -1098,6 +1205,15 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
       }
     }
 
+    // Filter only approved recce photos
+    const approvedReccePhotos = store.recce?.reccePhotos?.filter(
+      p => p.approvalStatus === "APPROVED"
+    ) || [];
+
+    if (approvedReccePhotos.length === 0) {
+      return res.status(400).json({ message: "No approved recce photos found. Cannot submit installation." });
+    }
+
     const userName = req.user?.name || "Unknown";
     const installationPhotos: Array<{ reccePhotoIndex: number; installationPhoto: string }> = [];
 
@@ -1107,6 +1223,18 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
       const photoData = photosArray[i];
       const fieldName = `installationPhoto${i}`;
       const file = filesArray?.find(f => f.fieldname === fieldName);
+
+      // Validate that the reccePhotoIndex refers to an approved photo
+      const originalRecceIndex = photoData.reccePhotoIndex;
+      const approvedIndex = store.recce?.reccePhotos?.findIndex(
+        (p, idx) => idx === originalRecceIndex && p.approvalStatus === "APPROVED"
+      );
+
+      if (approvedIndex === -1) {
+        return res.status(400).json({ 
+          message: `Recce photo at index ${originalRecceIndex} is not approved or does not exist.` 
+        });
+      }
 
       if (file) {
         const link = await enhancedUploadService.uploadFile(
@@ -2954,5 +3082,229 @@ export const generateStoreExcel = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("Excel Gen Error:", error);
     res.status(500).json({ message: "Failed to generate Excel" });
+  }
+};
+
+// --- NEW: Export Recce for Approval (Single/Bulk) ---
+export const exportRecceForApproval = async (req: Request | any, res: Response) => {
+  try {
+    const { storeIds } = req.body;
+
+    if (!storeIds || !Array.isArray(storeIds) || storeIds.length === 0) {
+      return res.status(400).json({ message: "No stores selected" });
+    }
+
+    const stores = await Store.find({ _id: { $in: storeIds } }).populate("clientId", "clientName");
+
+    if (stores.length === 0) {
+      return res.status(404).json({ message: "No stores found" });
+    }
+
+    const ExcelJS = require("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Recce Approval");
+
+    const headers = [
+      "Store ID", "Store Name", "Store Code", "Client Code", "Client Name",
+      "City", "District", "State", "Address", "Contact", "Mobile",
+      "Photo Index", "Photo URL", "Width (in)", "Height (in)", "Unit",
+      "Element", "Board Rate", "Total Board Cost", "Angle Charges", "Scaffolding",
+      "Transportation", "Total Cost", "Current Status", "STATUS", "REJECTION_REASON"
+    ];
+
+    const headerRow = worksheet.getRow(1);
+    headers.forEach((header, index) => {
+      const cell = headerRow.getCell(index + 1);
+      cell.value = header;
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4472C4" } };
+      cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    });
+    headerRow.height = 30;
+
+    worksheet.columns = [
+      { width: 15 }, { width: 25 }, { width: 15 }, { width: 12 }, { width: 20 },
+      { width: 12 }, { width: 12 }, { width: 12 }, { width: 35 }, { width: 15 }, { width: 12 },
+      { width: 10 }, { width: 50 }, { width: 10 }, { width: 10 }, { width: 8 },
+      { width: 20 }, { width: 12 }, { width: 15 }, { width: 12 }, { width: 12 },
+      { width: 12 }, { width: 12 }, { width: 15 }, { width: 15 }, { width: 30 }
+    ];
+
+    let rowIndex = 2;
+    stores.forEach((store: any) => {
+      const reccePhotos = store.recce?.reccePhotos || [];
+      if (reccePhotos.length === 0) return;
+
+      reccePhotos.forEach((photo: any, photoIndex: number) => {
+        const row = worksheet.getRow(rowIndex);
+        row.values = [
+          store.storeId || store.dealerCode,
+          store.storeName,
+          store.dealerCode,
+          store.clientCode || "-",
+          (store.clientId as any)?.clientName || "-",
+          store.location.city || "-",
+          store.location.district || "-",
+          store.location.state || "-",
+          store.location.address || "-",
+          store.contact?.personName || "-",
+          store.contact?.mobile || "-",
+          photoIndex,
+          photo.photo || "-",
+          photo.measurements.width,
+          photo.measurements.height,
+          photo.measurements.unit,
+          photo.elements?.[0]?.elementName || "-",
+          store.costDetails?.boardRate || 0,
+          store.costDetails?.totalBoardCost || 0,
+          store.costDetails?.angleCharges || 0,
+          store.costDetails?.scaffoldingCharges || 0,
+          store.costDetails?.transportation || 0,
+          store.commercials?.totalCost || 0,
+          photo.approvalStatus || "PENDING",
+          photo.approvalStatus || "PENDING",
+          photo.rejectionReason || ""
+        ];
+
+        // Make photo URL clickable
+        if (photo.photo) {
+          const urlCell = row.getCell(13);
+          urlCell.value = { text: "View Photo", hyperlink: photo.photo };
+          urlCell.font = { color: { argb: "FF0000FF" }, underline: true };
+        }
+
+        // Add dropdown validation for STATUS column (column 25)
+        const statusCell = row.getCell(25);
+        statusCell.dataValidation = {
+          type: "list",
+          allowBlank: false,
+          formulae: ['"PENDING,APPROVED,REJECTED"'],
+          showErrorMessage: true,
+          errorTitle: "Invalid Status",
+          error: "Please select PENDING, APPROVED, or REJECTED"
+        };
+
+        row.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        row.height = 25;
+        rowIndex++;
+      });
+    });
+
+    worksheet.eachRow((row: Row, rowNumber: number) => {
+      row.eachCell((cell: Cell) => {
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFD1D5DB" } },
+          left: { style: "thin", color: { argb: "FFD1D5DB" } },
+          bottom: { style: "thin", color: { argb: "FFD1D5DB" } },
+          right: { style: "thin", color: { argb: "FFD1D5DB" } },
+        };
+      });
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = `Recce_Approval_${stores.length}_Stores_${new Date().toISOString().split('T')[0]}.xlsx`;
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(buffer);
+  } catch (error: any) {
+    console.error("Export Error:", error);
+    res.status(500).json({ message: "Failed to export recce", error: error.message });
+  }
+};
+
+// --- NEW: Import Recce Approval from Excel ---
+export const importRecceApproval = async (req: Request | any, res: Response) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    const ExcelJS = require("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(file.buffer);
+    const worksheet = workbook.getWorksheet("Recce Approval");
+
+    if (!worksheet) {
+      return res.status(400).json({ message: "Invalid Excel format. Sheet 'Recce Approval' not found." });
+    }
+
+    const updates: any[] = [];
+    const errors: any[] = [];
+
+    worksheet.eachRow((row: any, rowNumber: number) => {
+      if (rowNumber === 1) return; // Skip header
+
+      const storeId = row.getCell(1).value;
+      const photoIndex = row.getCell(12).value;
+      const status = row.getCell(25).value;
+      const rejectionReason = row.getCell(26).value || "";
+
+      if (!storeId || photoIndex === null || photoIndex === undefined) {
+        errors.push({ row: rowNumber, error: "Missing Store ID or Photo Index" });
+        return;
+      }
+
+      if (!status || !["PENDING", "APPROVED", "REJECTED"].includes(status)) {
+        errors.push({ row: rowNumber, error: `Invalid status: ${status}` });
+        return;
+      }
+
+      updates.push({ storeId, photoIndex, status, rejectionReason });
+    });
+
+    if (errors.length > 0) {
+      return res.status(400).json({ message: "Validation errors found", errors });
+    }
+
+    // Process updates
+    let successCount = 0;
+    for (const update of updates) {
+      try {
+        const store = await Store.findOne({ $or: [{ storeId: update.storeId }, { dealerCode: update.storeId }] });
+        if (!store || !store.recce?.reccePhotos) continue;
+
+        const photoIdx = parseInt(update.photoIndex);
+        if (photoIdx < 0 || photoIdx >= store.recce.reccePhotos.length) continue;
+
+        store.recce.reccePhotos[photoIdx].approvalStatus = update.status;
+        store.recce.reccePhotos[photoIdx].approvedBy = req.user._id;
+        store.recce.reccePhotos[photoIdx].approvedAt = new Date();
+        if (update.status === "REJECTED" && update.rejectionReason) {
+          store.recce.reccePhotos[photoIdx].rejectionReason = update.rejectionReason;
+        }
+
+        const approved = store.recce.reccePhotos.filter(p => p.approvalStatus === "APPROVED").length;
+        const rejected = store.recce.reccePhotos.filter(p => p.approvalStatus === "REJECTED").length;
+        const pending = store.recce.reccePhotos.filter(p => !p.approvalStatus || p.approvalStatus === "PENDING").length;
+
+        store.recce.approvedPhotosCount = approved;
+        store.recce.rejectedPhotosCount = rejected;
+        store.recce.pendingPhotosCount = pending;
+
+        if (approved > 0 && pending === 0) {
+          store.currentStatus = StoreStatus.RECCE_APPROVED;
+        } else if (approved === 0 && rejected === store.recce.reccePhotos.length) {
+          store.currentStatus = StoreStatus.RECCE_REJECTED;
+        } else {
+          store.currentStatus = StoreStatus.RECCE_SUBMITTED;
+        }
+
+        await store.save();
+        successCount++;
+      } catch (err) {
+        errors.push({ storeId: update.storeId, photoIndex: update.photoIndex, error: "Update failed" });
+      }
+    }
+
+    res.status(200).json({
+      message: "Import completed",
+      successCount,
+      totalProcessed: updates.length,
+      errors
+    });
+  } catch (error: any) {
+    console.error("Import Error:", error);
+    res.status(500).json({ message: "Failed to import", error: error.message });
   }
 };

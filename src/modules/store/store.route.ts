@@ -13,6 +13,8 @@ import {
   submitRecce,
   generateReccePPT,
   reviewRecce,
+  reviewReccePhoto,
+  bulkApproveReccePhotos,
   submitInstallation,
   generateInstallationPPT,
   generateBulkPPT,
@@ -22,6 +24,8 @@ import {
   exportStores,
   bulkAssignStoresToUser,
   generateStoreExcel,
+  exportRecceForApproval,
+  importRecceApproval,
 } from "./store.controller";
 import { generateReccePDF, generateInstallationPDF, generateBulkPDF } from "./pdf.controller";
 import { protect } from "../../middlewares/auth.middleware";
@@ -100,6 +104,9 @@ router.get("/export/recce", exportRecceTasks);
 router.get("/export/installation", exportInstallationTasks);
 
 router.get("/export", exportStores);
+
+router.post("/recce/export-approval", protect, checkPermission("stores", "view"), exportRecceForApproval);
+router.post("/recce/import-approval", protect, checkPermission("stores", "edit"), upload.single("file"), importRecceApproval);
 
 /**
  * @swagger
@@ -606,6 +613,75 @@ router.post(
   "/:id/recce/review",
   checkPermission("stores", "edit"),
   reviewRecce,
+);
+
+/**
+ * @swagger
+ * /api/v1/stores/{id}/recce/photos/{photoIndex}/review:
+ *   post:
+ *     summary: Review individual recce photo
+ *     description: Approve or reject a specific recce photo
+ *     tags: [Stores]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: photoIndex
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - status
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [APPROVED, REJECTED]
+ *               rejectionReason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Photo review submitted successfully
+ */
+router.post(
+  "/:id/recce/photos/:photoIndex/review",
+  checkPermission("stores", "edit"),
+  reviewReccePhoto,
+);
+
+/**
+ * @swagger
+ * /api/v1/stores/{id}/recce/approve-all:
+ *   post:
+ *     summary: Bulk approve all recce photos
+ *     description: Approve all recce photos at once
+ *     tags: [Stores]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: All photos approved successfully
+ */
+router.post(
+  "/:id/recce/approve-all",
+  checkPermission("stores", "edit"),
+  bulkApproveReccePhotos,
 );
 
 // --- UPDATED: Accept TWO Installation Images ---
