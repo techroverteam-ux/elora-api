@@ -584,6 +584,7 @@ export const submitRecce = async (req: Request | any, res: Response) => {
       if (file) {
         const clientCodeToUse = store.clientCode || store.dealerCode || "DEFAULT";
         console.log(`[DEBUG] Using clientCode: ${clientCodeToUse}, storeId: ${store.storeId}, userName: ${userName}`);
+        console.log(`[DEBUG] Enhanced upload service storage type: ${enhancedUploadService.getStorageType()}`);
         
         const link = await enhancedUploadService.uploadFile(
           file.buffer,
@@ -594,6 +595,7 @@ export const submitRecce = async (req: Request | any, res: Response) => {
           "initial",
           userName,
         );
+        console.log(`[DEBUG] Upload result: ${link}`);
         initialPhotos.push(link);
       }
     }

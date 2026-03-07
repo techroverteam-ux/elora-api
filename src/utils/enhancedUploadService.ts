@@ -19,17 +19,22 @@ class EnhancedUploadService {
     console.log('[INIT] FTP_USER env:', process.env.FTP_USER);
     console.log('[INIT] FTP_SECURE env:', process.env.FTP_SECURE);
     
+    // Force FTPS for now - set default values if not provided
+    if (!process.env.FTP_HOST) {
+      process.env.FTP_HOST = 'ftp.enamorimpex.com';
+      process.env.FTP_USER = 'eloraftp@storage.enamorimpex.com';
+      process.env.FTP_PASSWORD = 'AkshayNeriya!@#2026';
+      process.env.FTP_SECURE = 'true';
+      console.log('[INIT] 🔧 Set default FTPS credentials');
+    }
+    
     // Determine storage type based on environment and configuration
-    if (process.env.STORAGE_TYPE === 'ftps' && validateFTPSConfig()) {
+    if (validateFTPSConfig()) {
       this.storageType = 'ftps';
       console.log('[INIT] ✅ FTPS configuration validated, using FTPS storage');
     } else {
       this.storageType = 'local';
-      if (process.env.STORAGE_TYPE === 'ftps') {
-        console.warn('[INIT] ⚠️ FTPS requested but configuration invalid, falling back to local storage');
-      } else {
-        console.log('[INIT] 📁 Using local storage');
-      }
+      console.warn('[INIT] ⚠️ FTPS configuration invalid, falling back to local storage');
     }
   }
 
