@@ -79,13 +79,22 @@ class UploadController {
         });
       }
 
-      const { clientCode, storeId, folderType } = req.body;
+      const { clientCode, storeId, folderType, userName } = req.body;
 
       // Connect to FTP
       await ftpClient.connect();
 
-      // Create directory structure
-      const remotePath = `${process.env.BASE_PUBLIC_PATH}/${clientCode}/${storeId}/${folderType}`;
+      // Map folderType to proper names with user
+      const folderTypeMap = {
+        'initial': 'Initial Photos',
+        'recce': 'ReccePhotos',
+        'installation': 'Installation Photos'
+      };
+      const mappedFolderType = folderTypeMap[folderType] || folderType;
+      const userSuffix = userName || 'Unknown_User';
+
+      // Create directory structure: /{clientCode}/{storeId}/{folderType}_{userName}/
+      const remotePath = `/${clientCode}/${storeId}/${mappedFolderType}_${userSuffix}`;
       await ftpClient.ensureDir(remotePath);
 
       // Process each file
@@ -101,11 +110,11 @@ class UploadController {
         const remoteFilePath = `${remotePath}/${uniqueFileName}`;
         await ftpClient.uploadFile(tempFilePath, remoteFilePath);
 
-        const publicUrl = `${process.env.BASE_PUBLIC_URL}/${clientCode}/${storeId}/${folderType}/${uniqueFileName}`;
+        const publicUrl = `https://storage.enamorimpex.com/eloraftp/${clientCode}/${storeId}/${encodeURIComponent(mappedFolderType + '_' + userSuffix)}/${uniqueFileName}`;
         
         uploadedFiles.push({
           fileName: uniqueFileName,
-          path: `/${clientCode}/${storeId}/${folderType}/${uniqueFileName}`,
+          path: `/${clientCode}/${storeId}/${mappedFolderType}_${userSuffix}/${uniqueFileName}`,
           url: publicUrl,
           fileId: uniqueFileName.split('_')[1]
         });

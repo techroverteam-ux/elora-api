@@ -385,12 +385,8 @@ export const getStoreById = async (req: Request, res: Response) => {
         .filter(photo => !photo.startsWith('blob:')) // Remove blob URLs
         .map(photo => {
           if (photo.startsWith('uploads/')) {
-            return enhancedUploadService.getFileUrl(
-              photo.split('/')[1], // folderType
-              photo.split('/')[2], // clientCode
-              photo.split('/')[3], // storeId
-              photo.split('/')[4]  // fileName
-            );
+            // For backward compatibility, construct URL directly
+            return `https://storage.enamorimpex.com/eloraftp/${photo}`;
           }
           return photo;
         });
@@ -399,12 +395,8 @@ export const getStoreById = async (req: Request, res: Response) => {
     if (store.recce?.reccePhotos) {
       store.recce.reccePhotos = store.recce.reccePhotos.map((reccePhoto: any) => {
         if (reccePhoto.photo && reccePhoto.photo.startsWith('uploads/')) {
-          reccePhoto.photo = enhancedUploadService.getFileUrl(
-            reccePhoto.photo.split('/')[1], // folderType
-            reccePhoto.photo.split('/')[2], // clientCode
-            reccePhoto.photo.split('/')[3], // storeId
-            reccePhoto.photo.split('/')[4]  // fileName
-          );
+          // For backward compatibility, construct URL directly
+          reccePhoto.photo = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo}`;
         }
         return reccePhoto;
       });

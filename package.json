@@ -18,7 +18,7 @@
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
-    "dotenv": "^17.2.3",
+    "dotenv": "^17.3.1",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "express-basic-auth": "^1.2.1",
