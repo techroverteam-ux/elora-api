@@ -38,7 +38,11 @@ class EnhancedUploadService {
     const timestamp = Date.now();
     const randomHash = crypto.randomBytes(8).toString('hex');
     const ext = path.extname(originalName);
-    const baseName = path.basename(originalName, ext);
+    let baseName = path.basename(originalName, ext);
+    
+    // Clean up already processed filenames to avoid duplication
+    baseName = baseName.replace(/^\d+_[a-f0-9]+_/, '');
+    
     return `${timestamp}_${randomHash}_${baseName}${ext}`;
   }
 
@@ -142,12 +146,9 @@ class EnhancedUploadService {
     userName: string
   ): string {
     try {
-      // Map folderType to match cPanel structure
-      const ftpFolderType = folderType === 'installation' ? 'installation-images' : 'recce-images';
-      
-      // In serverless environments, use /tmp directory which is writable
+      // Use correct folder structure: clientCode/storeId/folderType_userName
       const baseDir = process.env.NODE_ENV === 'production' ? '/tmp' : process.cwd();
-      const uploadDir = path.join(baseDir, 'uploads', ftpFolderType, `${clientCode}${storeId}`);
+      const uploadDir = path.join(baseDir, clientCode, storeId, `${folderType}_${userName}`);
       
       console.log(`Creating directory: ${uploadDir}`);
       
@@ -161,7 +162,7 @@ class EnhancedUploadService {
       fs.writeFileSync(filePath, fileBuffer);
 
       // Return the relative path for URL construction
-      const relativePath = `uploads/${ftpFolderType}/${clientCode}${storeId}/${fileName}`;
+      const relativePath = `${clientCode}/${storeId}/${folderType}_${userName}/${fileName}`;
       console.log(`File uploaded successfully, relative path: ${relativePath}`);
       
       return relativePath;
@@ -175,15 +176,14 @@ class EnhancedUploadService {
     folderType: string,
     clientCode: string,
     storeId: string,
-    fileName: string
+    fileName: string,
+    userName: string
   ): Promise<void> {
-    const ftpFolderType = folderType === 'installation' ? 'installation-images' : 'recce-images';
-    
     if (this.storageType === 'ftps') {
       const ftpClient = new FTPClient();
       try {
         await ftpClient.connect();
-        const remoteFilePath = `/eloraftp/uploads/${ftpFolderType}/${clientCode}${storeId}/${fileName}`;
+        const remoteFilePath = `/${clientCode}/${storeId}/${folderType}_${userName}/${fileName}`;
         await ftpClient.deleteFile(remoteFilePath);
         await ftpClient.close();
       } catch (error) {
@@ -192,7 +192,7 @@ class EnhancedUploadService {
       }
     } else {
       const baseDir = process.env.NODE_ENV === 'production' ? '/tmp' : process.cwd();
-      const filePath = path.join(baseDir, 'uploads', ftpFolderType, `${clientCode}${storeId}`, fileName);
+      const filePath = path.join(baseDir, clientCode, storeId, `${folderType}_${userName}`, fileName);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
@@ -217,7 +217,7 @@ class EnhancedUploadService {
       const url = `https://storage.enamorimpex.com/eloraftp/${clientCode}/${storeId}/${encodeURIComponent(mappedFolderType + '_' + userName)}/${fileName}`;
       return url;
     } else {
-      const relativePath = `uploads/${folderType}/${clientCode}/${storeId}/${fileName}`;
+      const relativePath = `${clientCode}/${storeId}/${folderType}_${userName}/${fileName}`;
       return relativePath;
     }
   }
