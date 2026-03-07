@@ -3,7 +3,6 @@ const path = require('path');
 const crypto = require('crypto');
 const FTPClient = require('../config/ftpClient');
 import { checkConfiguration, validateFTPSConfig } from './configChecker';
-import logger from './logger';
 
 type StorageType = 'local' | 'ftps';
 
@@ -56,11 +55,10 @@ class EnhancedUploadService {
         const result = await this.uploadToFTPS(fileBuffer, uniqueFileName, clientCode, storeId, folderType, userName);
         return result;
       } catch (error: any) {
-        logger.error('[UPLOAD] FTPS failed, using local', { error: error.message, clientCode, storeId });
+        console.error('[UPLOAD] FTPS failed, using local:', error.message);
         return this.uploadToLocal(fileBuffer, uniqueFileName, clientCode, storeId, folderType, userName);
       }
     } else {
-      logger.info('[UPLOAD] Using local storage', { clientCode, storeId });
       return this.uploadToLocal(fileBuffer, uniqueFileName, clientCode, storeId, folderType, userName);
     }
   }
@@ -77,7 +75,7 @@ class EnhancedUploadService {
     let tempFilePath = null;
 
     try {
-      logger.info('[FTPS] Starting upload', { clientCode, storeId, folderType, userName });
+      console.log(`[FTPS] Upload: ${clientCode}/${storeId}/${folderType}_${userName}`);
       
       // Create temp file
       const tempDir = path.join(process.cwd(), 'temp');
@@ -87,12 +85,10 @@ class EnhancedUploadService {
       
       tempFilePath = path.join(tempDir, fileName);
       fs.writeFileSync(tempFilePath, fileBuffer);
-      logger.debug('[FTPS] Temp file created', { tempFilePath });
 
       // Connect to FTP
-      logger.info('[FTPS] Connecting to FTP server');
       await ftpClient.connect();
-      logger.info('[FTPS] Connected successfully');
+      console.log(`[FTPS] Connected`);
 
       // Map folderType to proper names with user
       const folderTypeMap: { [key: string]: string } = {
@@ -104,31 +100,26 @@ class EnhancedUploadService {
       
       // Create directory structure: /{clientCode}/{storeId}/{folderType}_{userName}/
       const remotePath = `/eloraftp/${clientCode}/${storeId}/${mappedFolderType}_${userName}`;
-      logger.info('[FTPS] Creating directory', { remotePath });
       await ftpClient.ensureDir(remotePath);
-      logger.info('[FTPS] Directory created successfully');
+      console.log(`[FTPS] Directory created: ${remotePath}`);
 
       // Upload file
       const remoteFilePath = `${remotePath}/${fileName}`;
-      logger.info('[FTPS] Uploading file', { remoteFilePath });
       await ftpClient.uploadFile(tempFilePath, remoteFilePath);
-      logger.info('[FTPS] File uploaded successfully');
+      console.log(`[FTPS] File uploaded: ${fileName}`);
 
       // Close FTP connection
       await ftpClient.close();
-      logger.debug('[FTPS] Connection closed');
 
       // Clean up temp file
       fs.unlinkSync(tempFilePath);
-      logger.debug('[FTPS] Temp file cleaned up');
 
       // Return relative path for URL construction
       const relativePath = `${clientCode}/${storeId}/${mappedFolderType}_${userName}/${fileName}`;
-      logger.info('[FTPS] Upload completed', { relativePath });
       return relativePath;
 
     } catch (error: any) {
-      logger.error('[FTPS] Upload failed', { error: error?.message || error, clientCode, storeId });
+      console.error(`[FTPS] Error:`, error?.message || error);
       if (tempFilePath && fs.existsSync(tempFilePath)) {
         fs.unlinkSync(tempFilePath);
       }
@@ -162,7 +153,7 @@ class EnhancedUploadService {
       
       return relativePath;
     } catch (error: any) {
-      logger.error('Local upload failed', { error: error.message, clientCode, storeId });
+      console.error('Local upload failed:', error);
       throw new Error(`Failed to upload file locally: ${error.message}`);
     }
   }
