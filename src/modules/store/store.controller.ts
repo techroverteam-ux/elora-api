@@ -545,7 +545,6 @@ export const submitRecce = async (req: Request | any, res: Response) => {
     if (!store) return res.status(404).json({ message: "Store not found" });
 
     console.log(`[DEBUG] Store found - clientCode: ${store.clientCode}, dealerCode: ${store.dealerCode}, storeId: ${store.storeId}`);
-    console.log(`[DEBUG] Store location:`, store.location);
 
     // Generate storeId if missing
     if (!store.storeId) {
@@ -583,8 +582,7 @@ export const submitRecce = async (req: Request | any, res: Response) => {
       const file = filesArray?.find(f => f.fieldname === fieldName);
       if (file) {
         const clientCodeToUse = store.clientCode || store.dealerCode || "DEFAULT";
-        console.log(`[DEBUG] Using clientCode: ${clientCodeToUse}, storeId: ${store.storeId}, userName: ${userName}`);
-        console.log(`[DEBUG] Enhanced upload service storage type: ${enhancedUploadService.getStorageType()}`);
+        console.log(`[DEBUG] Upload params: ${clientCodeToUse}/${store.storeId}/${userName}`);
         
         const link = await enhancedUploadService.uploadFile(
           file.buffer,
@@ -595,7 +593,6 @@ export const submitRecce = async (req: Request | any, res: Response) => {
           "initial",
           userName,
         );
-        console.log(`[DEBUG] Upload result: ${link}`);
         initialPhotos.push(link);
       }
     }
