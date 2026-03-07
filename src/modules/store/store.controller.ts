@@ -387,6 +387,9 @@ export const getStoreById = async (req: Request, res: Response) => {
           if (photo.startsWith('uploads/')) {
             // For backward compatibility, construct URL directly
             return `https://storage.enamorimpex.com/eloraftp/${photo}`;
+          } else if (!photo.startsWith('http')) {
+            // For new format without uploads prefix
+            return `https://storage.enamorimpex.com/eloraftp/${photo}`;
           }
           return photo;
         });
@@ -396,6 +399,9 @@ export const getStoreById = async (req: Request, res: Response) => {
       store.recce.reccePhotos = store.recce.reccePhotos.map((reccePhoto: any) => {
         if (reccePhoto.photo && reccePhoto.photo.startsWith('uploads/')) {
           // For backward compatibility, construct URL directly
+          reccePhoto.photo = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo}`;
+        } else if (reccePhoto.photo && !reccePhoto.photo.startsWith('http')) {
+          // For new format without uploads prefix
           reccePhoto.photo = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo}`;
         }
         return reccePhoto;
@@ -577,7 +583,7 @@ export const submitRecce = async (req: Request | any, res: Response) => {
           file.buffer,
           `initial_${Date.now()}_${i}.jpg`,
           file.mimetype,
-          store.clientCode || "DEFAULT",
+          store.clientCode || store.dealerCode || "DEFAULT",
           store.storeId,
           "initial",
           userName,
@@ -619,7 +625,7 @@ export const submitRecce = async (req: Request | any, res: Response) => {
           file.buffer,
           `recce_${Date.now()}_${i}.jpg`,
           file.mimetype,
-          store.clientCode || "DEFAULT",
+          store.clientCode || store.dealerCode || "DEFAULT",
           store.storeId,
           "recce",
           userName,
@@ -1233,7 +1239,7 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
           file.buffer,
           `installation_${Date.now()}_${i}.jpg`,
           file.mimetype,
-          store.clientCode || "DEFAULT",
+          store.clientCode || store.dealerCode || "DEFAULT",
           store.storeId,
           "installation",
           userName,
