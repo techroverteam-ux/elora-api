@@ -544,6 +544,9 @@ export const submitRecce = async (req: Request | any, res: Response) => {
     const store = await Store.findById(id);
     if (!store) return res.status(404).json({ message: "Store not found" });
 
+    console.log(`[DEBUG] Store found - clientCode: ${store.clientCode}, dealerCode: ${store.dealerCode}, storeId: ${store.storeId}`);
+    console.log(`[DEBUG] Store location:`, store.location);
+
     // Generate storeId if missing
     if (!store.storeId) {
       if (store.location?.city && store.location?.district && store.dealerCode) {
@@ -579,11 +582,14 @@ export const submitRecce = async (req: Request | any, res: Response) => {
       const fieldName = `initialPhoto${i}`;
       const file = filesArray?.find(f => f.fieldname === fieldName);
       if (file) {
+        const clientCodeToUse = store.clientCode || store.dealerCode || "DEFAULT";
+        console.log(`[DEBUG] Using clientCode: ${clientCodeToUse}, storeId: ${store.storeId}, userName: ${userName}`);
+        
         const link = await enhancedUploadService.uploadFile(
           file.buffer,
           `initial_${Date.now()}_${i}.jpg`,
           file.mimetype,
-          store.clientCode || store.dealerCode || "DEFAULT",
+          clientCodeToUse,
           store.storeId,
           "initial",
           userName,
