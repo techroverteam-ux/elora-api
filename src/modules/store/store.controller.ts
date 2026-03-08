@@ -545,6 +545,7 @@ export const submitRecce = async (req: Request | any, res: Response) => {
     if (!store) return res.status(404).json({ message: "Store not found" });
 
     console.log(`[DEBUG] Store found - clientCode: ${store.clientCode}, dealerCode: ${store.dealerCode}, storeId: ${store.storeId}`);
+    console.log(`[DEBUG] Store location:`, store.location);
 
     // Generate storeId if missing
     if (!store.storeId) {
@@ -552,8 +553,10 @@ export const submitRecce = async (req: Request | any, res: Response) => {
         const cityPrefix = store.location.city.trim().substring(0, 3).toUpperCase();
         const districtPrefix = store.location.district.trim().substring(0, 3).toUpperCase();
         const storeId = `${cityPrefix}${districtPrefix}${store.dealerCode.toUpperCase()}`;
+        console.log(`[DEBUG] Generated storeId: ${storeId}`);
         store.storeId = storeId;
         await store.save();
+        console.log(`[DEBUG] Store saved with storeId: ${store.storeId}`);
       } else {
         return res.status(400).json({
           message: "Cannot generate Store ID. Missing city or district information.",
@@ -561,7 +564,8 @@ export const submitRecce = async (req: Request | any, res: Response) => {
       }
     }
 
-    const userName = req.user?.name || "Unknown";
+    const userName = req.user?.name || req.user?.email?.split('@')[0] || "Unknown_User";
+    console.log(`[DEBUG] User info - Name: ${req.user?.name}, Email: ${req.user?.email}, Using: ${userName}`);
 
     // Start with existing initial photos if resubmission (filter out blob URLs)
     const initialPhotos: string[] = [];
@@ -583,6 +587,7 @@ export const submitRecce = async (req: Request | any, res: Response) => {
       if (file) {
         const clientCodeToUse = store.clientCode || store.dealerCode || "DEFAULT";
         console.log(`[DEBUG] Upload params: ${clientCodeToUse}/${store.storeId}/${userName}`);
+        console.log(`[DEBUG] Storage type: ${enhancedUploadService.getStorageType()}`);
         
         const link = await enhancedUploadService.uploadFile(
           file.buffer,
@@ -591,8 +596,9 @@ export const submitRecce = async (req: Request | any, res: Response) => {
           clientCodeToUse,
           store.storeId,
           "initial",
-          userName,
+          userName.replace(/\s+/g, '_'), // Replace spaces with underscores for folder names
         );
+        console.log(`[DEBUG] Upload result: ${link}`);
         initialPhotos.push(link);
       }
     }
@@ -633,7 +639,7 @@ export const submitRecce = async (req: Request | any, res: Response) => {
           store.clientCode || store.dealerCode || "DEFAULT",
           store.storeId,
           "recce",
-          userName,
+          userName.replace(/\s+/g, '_'), // Replace spaces with underscores for folder names
         );
 
         reccePhotos.push({
@@ -1217,7 +1223,8 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
       return res.status(400).json({ message: "No approved recce photos found. Cannot submit installation." });
     }
 
-    const userName = req.user?.name || "Unknown";
+    const userName = req.user?.name || req.user?.email?.split('@')[0] || "Unknown_User";
+    console.log(`[DEBUG] Installation user - Name: ${req.user?.name}, Email: ${req.user?.email}, Using: ${userName}`);
     const installationPhotos: Array<{ reccePhotoIndex: number; installationPhoto: string }> = [];
 
     const photosArray = JSON.parse(installationPhotosData || "[]");
@@ -1247,7 +1254,7 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
           store.clientCode || store.dealerCode || "DEFAULT",
           store.storeId,
           "installation",
-          userName,
+          userName.replace(/\s+/g, '_'), // Replace spaces with underscores for folder names
         );
 
         installationPhotos.push({
