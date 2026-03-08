@@ -254,7 +254,7 @@ async function testCompleteBusinessFlow() {
     // 12. Login as INSTALLATION user and submit installation
     console.log('1️⃣2️⃣ Logging in as INSTALLATION user...');
     const installLoginResponse = await axios.post(`${API_BASE}/auth/login`, {
-      email: installUsers[0].email,
+      email: 'akshayinstall@gmail.com',  // Use correct installation user email
       password: 'Akshay@123'
     });
     const installToken = installLoginResponse.data.token;
@@ -269,13 +269,32 @@ async function testCompleteBusinessFlow() {
     }]));
     installFormData.append('installationPhoto0', testImageBuffer, 'installation_test.jpg');
 
-    await axios.post(`${API_BASE}/stores/${storeId}/installation`, installFormData, {
+    const installResponse = await axios.post(`${API_BASE}/stores/${storeId}/installation`, installFormData, {
       headers: {
         ...installHeaders,
         ...installFormData.getHeaders()
       }
     });
-    console.log('✅ Installation data submitted\n');
+    console.log('✅ Installation data submitted');
+    console.log('📸 INSTALLATION RESPONSE:', JSON.stringify(installResponse.data, null, 2));
+    
+    // VERIFY INSTALLATION PHOTO UPLOAD
+    console.log('\n🔍 VERIFYING INSTALLATION FILE UPLOAD...');
+    const finalStoreCheck = await axios.get(`${API_BASE}/stores/${storeId}`, { headers });
+    const finalStore = finalStoreCheck.data.store;
+    
+    if (finalStore.installation?.photos?.[0]?.installationPhoto) {
+      const installPhotoPath = finalStore.installation.photos[0].installationPhoto;
+      const installUrl = `https://storage.enamorimpex.com/eloraftp/${installPhotoPath}`;
+      console.log(`Testing Installation Photo: ${installUrl}`);
+      
+      try {
+        const installTest = await axios.head(installUrl);
+        console.log(`✅ Installation Photo ACTUALLY UPLOADED: ${installTest.status}`);
+      } catch (error) {
+        console.log(`❌ Installation Photo NOT UPLOADED: ${error.response?.status || error.message}`);
+      }
+    }
 
     // 14. Generate reports
     console.log('1️⃣4️⃣ Testing report generation...');

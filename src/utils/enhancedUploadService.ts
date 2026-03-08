@@ -263,6 +263,53 @@ class EnhancedUploadService {
     }
   }
 
+  // NEW: Convert relative path to full URL
+  convertRelativePathToFullUrl(relativePath: string): string {
+    if (!relativePath) return '';
+    
+    // If already a full URL, return as is
+    if (relativePath.startsWith('http')) {
+      return relativePath;
+    }
+    
+    // Convert relative path to full URL
+    const fullUrl = `https://storage.enamorimpex.com/eloraftp/${relativePath}`;
+    console.log(`[URL] Converting '${relativePath}' to '${fullUrl}'`);
+    return fullUrl;
+  }
+
+  // NEW: Extract components from relative path for frontend use
+  parseRelativePath(relativePath: string): {
+    clientCode: string;
+    storeId: string;
+    folderType: string;
+    userName: string;
+    fileName: string;
+  } | null {
+    if (!relativePath) return null;
+    
+    // Expected format: CLIENTCODE/STOREID/FOLDERTYPE_USERNAME/FILENAME
+    const parts = relativePath.split('/');
+    if (parts.length !== 4) return null;
+    
+    const [clientCode, storeId, folderWithUser, fileName] = parts;
+    
+    // Split folderType_userName
+    const lastUnderscoreIndex = folderWithUser.lastIndexOf('_');
+    if (lastUnderscoreIndex === -1) return null;
+    
+    const folderType = folderWithUser.substring(0, lastUnderscoreIndex);
+    const userName = folderWithUser.substring(lastUnderscoreIndex + 1);
+    
+    return {
+      clientCode,
+      storeId,
+      folderType,
+      userName,
+      fileName
+    };
+  }
+
   getStorageType(): StorageType {
     return this.storageType;
   }
