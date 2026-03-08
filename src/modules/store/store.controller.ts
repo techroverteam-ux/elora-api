@@ -384,25 +384,20 @@ export const getStoreById = async (req: Request, res: Response) => {
       store.recce.initialPhotos = store.recce.initialPhotos
         .filter(photo => !photo.startsWith('blob:')) // Remove blob URLs
         .map(photo => {
-          if (photo.startsWith('uploads/')) {
-            // For backward compatibility, construct URL directly
-            return `https://storage.enamorimpex.com/eloraftp/${photo}`;
-          } else if (!photo.startsWith('http')) {
-            // For new format without uploads prefix
-            return `https://storage.enamorimpex.com/eloraftp/${photo}`;
+          // Don't add prefix if already a full URL
+          if (photo.startsWith('http')) {
+            return photo;
           }
+          // Add prefix for relative paths
           return photo;
         });
     }
     
     if (store.recce?.reccePhotos) {
       store.recce.reccePhotos = store.recce.reccePhotos.map((reccePhoto: any) => {
-        if (reccePhoto.photo && reccePhoto.photo.startsWith('uploads/')) {
-          // For backward compatibility, construct URL directly
-          reccePhoto.photo = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo}`;
-        } else if (reccePhoto.photo && !reccePhoto.photo.startsWith('http')) {
-          // For new format without uploads prefix
-          reccePhoto.photo = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo}`;
+        if (reccePhoto.photo && !reccePhoto.photo.startsWith('http')) {
+          // Keep relative path, frontend will add full URL
+          return reccePhoto;
         }
         return reccePhoto;
       });

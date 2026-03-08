@@ -4,7 +4,7 @@ const fs = require('fs');
 
 // Test the complete business flow
 async function testCompleteBusinessFlow() {
-  const API_BASE = 'http://localhost:5000';
+  const API_BASE = 'https://elora-api-smoky.vercel.app/api/v1';
   let authToken = '';
 
   console.log('🚀 Testing Complete Elora Business Flow\n');
@@ -14,43 +14,65 @@ async function testCompleteBusinessFlow() {
     console.log('1️⃣ Admin Login...');
     const loginResponse = await axios.post(`${API_BASE}/auth/login`, {
       email: 'admin@elora.com',
-      password: 'admin123'
+      password: 'Admin@123'
     });
     authToken = loginResponse.data.token;
     console.log('✅ Admin logged in successfully\n');
 
     const headers = { Authorization: `Bearer ${authToken}` };
 
-    // 2. Create a test client
-    console.log('2️⃣ Creating test client...');
+    // 2. Get available elements first
+    console.log('2️⃣ Getting available elements...');
+    const elementsResponse = await axios.get(`${API_BASE}/elements/all`, { headers });
+    const availableElements = elementsResponse.data.elements || [];
+    
+    if (availableElements.length === 0) {
+      console.log('❌ No elements found. Please create elements first.');
+      return;
+    }
+    
+    const firstElement = availableElements[0];
+    console.log(`✅ Found element: ${firstElement.name}\n`);
+
+    // 3. Create a test client
+    console.log('3️⃣ Creating test client...');
     const clientData = {
       clientName: 'Test Client Corp',
       branchName: 'Mumbai Branch',
       amount: 100000,
       gstNumber: '27AAAAA0000A1Z5',
-      elements: [
-        {
-          elementId: '507f1f77bcf86cd799439011', // Replace with actual element ID
-          elementName: 'LED Board',
-          customRate: 150,
-          quantity: 1
-        }
-      ]
+      elements: [{
+        elementId: firstElement._id,
+        elementName: firstElement.name,
+        customRate: 150,
+        quantity: 1
+      }]
     };
 
+    let clientCode = null;
     try {
       const clientResponse = await axios.post(`${API_BASE}/clients`, clientData, { headers });
-      console.log(`✅ Client created: ${clientResponse.data.client?.clientCode}\n`);
+      clientCode = clientResponse.data.client.clientCode;
+      console.log(`✅ Client created with code: ${clientCode}\n`);
     } catch (err) {
-      console.log('ℹ️ Client might already exist, continuing...\n');
+      if (err.response?.status === 400 && err.response?.data?.message?.includes('already exists')) {
+        // Get existing clients to find a valid client code
+        const existingClients = await axios.get(`${API_BASE}/clients`, { headers });
+        if (existingClients.data.clients && existingClients.data.clients.length > 0) {
+          clientCode = existingClients.data.clients[0].clientCode;
+          console.log(`ℹ️ Using existing client code: ${clientCode}\n`);
+        }
+      } else {
+        throw err;
+      }
     }
 
-    // 3. Create a test store
-    console.log('3️⃣ Creating test store...');
+    // 4. Create a test store
+    console.log('4️⃣ Creating test store...');
     const storeData = {
       dealerCode: `TEST_${Date.now()}`,
       storeName: 'Test Store Mumbai',
-      clientCode: 'CLI001', // Use existing client code
+      ...(clientCode && { clientCode: clientCode }),
       location: {
         city: 'Mumbai',
         district: 'Mumbai Suburban',
@@ -63,8 +85,8 @@ async function testCompleteBusinessFlow() {
     const storeId = storeResponse.data.store._id;
     console.log(`✅ Store created: ${storeId}\n`);
 
-    // 4. Get RECCE users
-    console.log('4️⃣ Getting RECCE users...');
+    // 5. Get RECCE users
+    console.log('5️⃣ Getting RECCE users...');
     const recceUsersResponse = await axios.get(`${API_BASE}/users/role/RECCE`, { headers });
     const recceUsers = recceUsersResponse.data.users;
     
@@ -76,8 +98,8 @@ async function testCompleteBusinessFlow() {
     const recceUserId = recceUsers[0]._id;
     console.log(`✅ Found RECCE user: ${recceUsers[0].name}\n`);
 
-    // 5. Assign store to RECCE user
-    console.log('5️⃣ Assigning store to RECCE user...');
+    // 6. Assign store to RECCE user
+    console.log('6️⃣ Assigning store to RECCE user...');
     await axios.post(`${API_BASE}/stores/assign`, {
       storeIds: [storeId],
       userId: recceUserId,
@@ -85,18 +107,18 @@ async function testCompleteBusinessFlow() {
     }, { headers });
     console.log('✅ Store assigned to RECCE user\n');
 
-    // 6. Login as RECCE user and submit recce
-    console.log('6️⃣ Logging in as RECCE user...');
+    // 7. Login as RECCE user and submit recce
+    console.log('7️⃣ Logging in as RECCE user...');
     const recceLoginResponse = await axios.post(`${API_BASE}/auth/login`, {
-      email: recceUsers[0].email,
-      password: 'password123' // Default password
+      email: 'akshayrecce@gmail.com',
+      password: 'Akshay@123'
     });
     const recceToken = recceLoginResponse.data.token;
     const recceHeaders = { Authorization: `Bearer ${recceToken}` };
     console.log('✅ RECCE user logged in\n');
 
-    // 7. Submit recce data
-    console.log('7️⃣ Submitting recce data...');
+    // 8. Submit recce data
+    console.log('8️⃣ Submitting recce data...');
     
     // Create a test image buffer
     const testImageBuffer = Buffer.from([
@@ -125,30 +147,59 @@ async function testCompleteBusinessFlow() {
       height: 60,
       unit: 'in',
       elements: [{
-        elementId: '507f1f77bcf86cd799439011',
-        elementName: 'LED Board',
+        elementId: firstElement._id,
+        elementName: firstElement.name,
         quantity: 1
       }]
     }]));
     formData.append('reccePhoto0', testImageBuffer, 'recce_test.jpg');
 
-    await axios.post(`${API_BASE}/stores/${storeId}/recce`, formData, {
+    const recceResponse = await axios.post(`${API_BASE}/stores/${storeId}/recce`, formData, {
       headers: {
         ...recceHeaders,
         ...formData.getHeaders()
       }
     });
-    console.log('✅ Recce data submitted\n');
+    console.log('✅ Recce data submitted');
+    console.log('📸 RECCE RESPONSE:', JSON.stringify(recceResponse.data, null, 2));
+    
+    // Get updated store data to see photo URLs
+    const updatedStoreResponse = await axios.get(`${API_BASE}/stores/${storeId}`, { headers });
+    const updatedStore = updatedStoreResponse.data.store;
+    
+    console.log('\n📋 UPLOADED PHOTOS:');
+    console.log('='.repeat(50));
+    
+    if (updatedStore.recce?.initialPhotos) {
+      console.log('📷 Initial Photos:');
+      updatedStore.recce.initialPhotos.forEach((photo, i) => {
+        const fullUrl = photo.startsWith('http') ? photo : `https://storage.enamorimpex.com/eloraftp/${photo}`;
+        console.log(`   ${i + 1}. ${fullUrl}`);
+      });
+    }
+    
+    if (updatedStore.recce?.reccePhotos) {
+      console.log('📷 Recce Photos:');
+      updatedStore.recce.reccePhotos.forEach((photo, i) => {
+        const fullUrl = photo.photo.startsWith('http') ? photo.photo : `https://storage.enamorimpex.com/eloraftp/${photo.photo}`;
+        console.log(`   ${i + 1}. ${fullUrl}`);
+        console.log(`      Measurements: ${photo.measurements.width}x${photo.measurements.height} ${photo.measurements.unit}`);
+        if (photo.elements) {
+          console.log(`      Elements: ${photo.elements.map(e => e.elementName).join(', ')}`);
+        }
+      });
+    }
+    console.log('\n');
 
-    // 8. Login back as admin and approve recce
-    console.log('8️⃣ Admin approving recce...');
+    // 9. Login back as admin and approve recce
+    console.log('9️⃣ Admin approving recce...');
     await axios.post(`${API_BASE}/stores/${storeId}/recce/photos/0/review`, {
       status: 'APPROVED'
     }, { headers });
     console.log('✅ Recce photo approved\n');
 
-    // 9. Get INSTALLATION users
-    console.log('9️⃣ Getting INSTALLATION users...');
+    // 10. Get INSTALLATION users
+    console.log('🔟 Getting INSTALLATION users...');
     const installUsersResponse = await axios.get(`${API_BASE}/users/role/INSTALLATION`, { headers });
     const installUsers = installUsersResponse.data.users;
     
@@ -160,8 +211,8 @@ async function testCompleteBusinessFlow() {
     const installUserId = installUsers[0]._id;
     console.log(`✅ Found INSTALLATION user: ${installUsers[0].name}\n`);
 
-    // 10. Assign store to INSTALLATION user
-    console.log('🔟 Assigning store to INSTALLATION user...');
+    // 11. Assign store to INSTALLATION user
+    console.log('1️⃣1️⃣ Assigning store to INSTALLATION user...');
     await axios.post(`${API_BASE}/stores/assign`, {
       storeIds: [storeId],
       userId: installUserId,
@@ -169,18 +220,18 @@ async function testCompleteBusinessFlow() {
     }, { headers });
     console.log('✅ Store assigned to INSTALLATION user\n');
 
-    // 11. Login as INSTALLATION user and submit installation
-    console.log('1️⃣1️⃣ Logging in as INSTALLATION user...');
+    // 12. Login as INSTALLATION user and submit installation
+    console.log('1️⃣2️⃣ Logging in as INSTALLATION user...');
     const installLoginResponse = await axios.post(`${API_BASE}/auth/login`, {
       email: installUsers[0].email,
-      password: 'password123' // Default password
+      password: 'Akshay@123'
     });
     const installToken = installLoginResponse.data.token;
     const installHeaders = { Authorization: `Bearer ${installToken}` };
     console.log('✅ INSTALLATION user logged in\n');
 
-    // 12. Submit installation data
-    console.log('1️⃣2️⃣ Submitting installation data...');
+    // 13. Submit installation data
+    console.log('1️⃣3️⃣ Submitting installation data...');
     const installFormData = new FormData();
     installFormData.append('installationPhotosData', JSON.stringify([{
       reccePhotoIndex: 0
@@ -195,8 +246,8 @@ async function testCompleteBusinessFlow() {
     });
     console.log('✅ Installation data submitted\n');
 
-    // 13. Generate reports
-    console.log('1️⃣3️⃣ Testing report generation...');
+    // 14. Generate reports
+    console.log('1️⃣4️⃣ Testing report generation...');
     
     // Test recce PPT
     const reccePPTResponse = await axios.get(`${API_BASE}/stores/${storeId}/ppt/recce`, {
@@ -212,8 +263,8 @@ async function testCompleteBusinessFlow() {
     });
     console.log(`✅ Installation PPT generated (${installPPTResponse.data.byteLength} bytes)\n`);
 
-    // 14. Verify final store status
-    console.log('1️⃣4️⃣ Verifying final store status...');
+    // 15. Verify final store status
+    console.log('1️⃣5️⃣ Verifying final store status...');
     const finalStoreResponse = await axios.get(`${API_BASE}/stores/${storeId}`, { headers });
     const finalStore = finalStoreResponse.data.store;
     
