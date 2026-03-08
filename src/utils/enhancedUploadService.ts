@@ -84,8 +84,8 @@ class EnhancedUploadService {
       console.log(`[FTPS] Upload: ${clientCode}/${storeId}/${folderType}_${userName}`);
       console.log(`[FTPS] Input params - clientCode: '${clientCode}', storeId: '${storeId}', folderType: '${folderType}', userName: '${userName}'`);
       
-      // Create temp file
-      const tempDir = path.join(process.cwd(), 'temp');
+      // Create temp file - USE /tmp for Vercel serverless
+      const tempDir = process.env.NODE_ENV === 'production' ? '/tmp' : path.join(process.cwd(), 'temp');
       if (!fs.existsSync(tempDir)) {
         fs.mkdirSync(tempDir, { recursive: true });
         console.log(`[FTPS] Created temp directory: ${tempDir}`);
