@@ -17,7 +17,7 @@ async function testCorrectBusinessFlow() {
     console.log('✅ Connected\n');
 
     // Test data
-    const clientCode = 'JOD';
+    const clientCode = 'TESMUM368613';
     const storeId = '6100046168';
     const userName = 'John_Doe'; // Dynamic user name
     const folderTypes = [

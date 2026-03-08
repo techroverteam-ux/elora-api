@@ -10,25 +10,18 @@ class EnhancedUploadService {
   private storageType: StorageType;
 
   constructor() {
-    // Use production FTPS credentials as tested in test-business-flow.js
-    if (!process.env.FTP_HOST) {
-      process.env.FTP_HOST = 'ftp.enamorimpex.com';
-      process.env.FTP_USER = 'eloraftp@storage.enamorimpex.com';
-      process.env.FTP_PASSWORD = 'AkshayNeriya!@#2026';
-      process.env.FTP_SECURE = 'true';
-      console.log('[INIT] Set production FTPS credentials (as tested)');
-    }
+    // FORCE production FTPS credentials - NO FALLBACK
+    process.env.FTP_HOST = 'ftp.enamorimpex.com';
+    process.env.FTP_USER = 'eloraftp@storage.enamorimpex.com';
+    process.env.FTP_PASSWORD = 'AkshayNeriya!@#2026';
+    process.env.FTP_SECURE = 'true';
     
+    console.log('[INIT] FORCED production FTPS credentials');
     console.log(`[INIT] FTPS Config - Host: ${process.env.FTP_HOST}, User: ${process.env.FTP_USER}, Secure: ${process.env.FTP_SECURE}`);
     
-    // Determine storage type based on environment and configuration
-    if (validateFTPSConfig()) {
-      this.storageType = 'ftps';
-      console.log('[INIT] Using FTPS storage (production tested)');
-    } else {
-      this.storageType = 'local';
-      console.log('[INIT] Using local storage (fallback)');
-    }
+    // FORCE FTPS ONLY - NO LOCAL FALLBACK
+    this.storageType = 'ftps';
+    console.log('[INIT] FORCED FTPS storage - NO FALLBACK ALLOWED');
   }
 
   // Generate unique filename with hash - match test-business-flow.js pattern
@@ -60,22 +53,19 @@ class EnhancedUploadService {
   ): Promise<string> {
     const uniqueFileName = this.generateUniqueFilename(fileName);
     
-    console.log(`[UPLOAD] Starting upload: ${clientCode}/${storeId}/${folderType}_${userName}/${uniqueFileName}`);
+    console.log(`[UPLOAD] FORCED FTPS upload: ${clientCode}/${storeId}/${folderType}_${userName}/${uniqueFileName}`);
 
-    if (this.storageType === 'ftps') {
-      try {
-        console.log('[UPLOAD] Attempting FTPS upload (production tested)');
-        const result = await this.uploadToFTPS(fileBuffer, uniqueFileName, clientCode, storeId, folderType, userName);
-        console.log('[UPLOAD] FTPS success:', result);
-        return result;
-      } catch (error: any) {
-        console.error('[UPLOAD] FTPS failed:', error.message);
-        console.log('[UPLOAD] Falling back to local storage');
-        return this.uploadToLocal(fileBuffer, uniqueFileName, clientCode, storeId, folderType, userName);
-      }
-    } else {
-      console.log('[UPLOAD] Using local storage directly');
-      return this.uploadToLocal(fileBuffer, uniqueFileName, clientCode, storeId, folderType, userName);
+    // FORCE FTPS UPLOAD - NO FALLBACK ALLOWED
+    try {
+      console.log('[UPLOAD] FORCING FTPS upload - NO LOCAL FALLBACK');
+      const result = await this.uploadToFTPS(fileBuffer, uniqueFileName, clientCode, storeId, folderType, userName);
+      console.log('[UPLOAD] FTPS upload SUCCESS:', result);
+      return result;
+    } catch (error: any) {
+      console.error('[UPLOAD] FTPS upload FAILED:', error.message);
+      console.error('[UPLOAD] FTPS error stack:', error.stack);
+      // DO NOT FALLBACK - THROW ERROR TO FORCE FIX
+      throw new Error(`FTPS upload failed: ${error.message}`);
     }
   }
 

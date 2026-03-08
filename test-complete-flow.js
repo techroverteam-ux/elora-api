@@ -37,10 +37,10 @@ async function testCompleteBusinessFlow() {
     // 3. Create a test client
     console.log('3️⃣ Creating test client...');
     const clientData = {
-      clientName: 'Test Client Corp',
-      branchName: 'Mumbai Branch',
-      amount: 100000,
-      gstNumber: '27AAAAA0000A1Z5',
+      clientName: 'Force Upload Test Client',
+      branchName: 'Chennai Branch',
+      amount: 250000,
+      gstNumber: '33DDDDD3333D4Z8',
       elements: [{
         elementId: firstElement._id,
         elementName: firstElement.name,
@@ -70,14 +70,14 @@ async function testCompleteBusinessFlow() {
     // 4. Create a test store
     console.log('4️⃣ Creating test store...');
     const storeData = {
-      dealerCode: `TEST_${Date.now()}`,
-      storeName: 'Test Store Mumbai',
+      dealerCode: `FORCE_${Date.now()}`,
+      storeName: 'Force Upload Test Store Chennai',
       ...(clientCode && { clientCode: clientCode }),
       location: {
-        city: 'Mumbai',
-        district: 'Mumbai Suburban',
-        state: 'Maharashtra',
-        address: '123 Test Street, Andheri West'
+        city: 'Chennai',
+        district: 'Chennai',
+        state: 'Tamil Nadu',
+        address: '123 Force Upload Street, T Nagar'
       }
     };
 
@@ -162,6 +162,37 @@ async function testCompleteBusinessFlow() {
     });
     console.log('✅ Recce data submitted');
     console.log('📸 RECCE RESPONSE:', JSON.stringify(recceResponse.data, null, 2));
+    
+    // CRITICAL: Verify actual file upload by testing URLs immediately
+    console.log('\n🔍 VERIFYING ACTUAL FILE UPLOAD...');
+    
+    if (recceResponse.data.store?.recce?.initialPhotos?.[0]) {
+      const initialPhotoPath = recceResponse.data.store.recce.initialPhotos[0];
+      const initialUrl = `https://storage.enamorimpex.com/eloraftp/${initialPhotoPath}`;
+      console.log(`Testing Initial Photo: ${initialUrl}`);
+      
+      try {
+        const initialTest = await axios.head(initialUrl);
+        console.log(`✅ Initial Photo ACTUALLY UPLOADED: ${initialTest.status}`);
+      } catch (error) {
+        console.log(`❌ Initial Photo NOT UPLOADED: ${error.response?.status || error.message}`);
+        console.log('🚨 API CLAIMED SUCCESS BUT FILES NOT UPLOADED!');
+      }
+    }
+    
+    if (recceResponse.data.store?.recce?.reccePhotos?.[0]?.photo) {
+      const reccePhotoPath = recceResponse.data.store.recce.reccePhotos[0].photo;
+      const recceUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhotoPath}`;
+      console.log(`Testing Recce Photo: ${recceUrl}`);
+      
+      try {
+        const recceTest = await axios.head(recceUrl);
+        console.log(`✅ Recce Photo ACTUALLY UPLOADED: ${recceTest.status}`);
+      } catch (error) {
+        console.log(`❌ Recce Photo NOT UPLOADED: ${error.response?.status || error.message}`);
+        console.log('🚨 API CLAIMED SUCCESS BUT FILES NOT UPLOADED!');
+      }
+    }
     
     // Get updated store data to see photo URLs
     const updatedStoreResponse = await axios.get(`${API_BASE}/stores/${storeId}`, { headers });
