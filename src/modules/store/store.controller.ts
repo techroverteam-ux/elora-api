@@ -716,8 +716,9 @@ export const submitRecce = async (req: Request | any, res: Response) => {
   }
 };
 
-// --- NEW UPDATED: Generate Recce PPT ---
+// --- FIXED: Generate Recce PPT ---
 export const generateReccePPT = async (req: Request, res: Response) => {
+  const tempFilesToCleanup: string[] = [];
   try {
     const { id } = req.params;
     const store = await Store.findById(id);
@@ -949,7 +950,7 @@ export const generateReccePPT = async (req: Request, res: Response) => {
               w: photoWidth,
               h: photoHeight,
             });
-            imagePathResolver.cleanupTempFile(photoPath);
+            tempFilesToCleanup.push(photoPath);
           }
         } catch (error) {
           console.error(`Failed to load image: ${imagePath}`, error);
@@ -988,12 +989,11 @@ export const generateReccePPT = async (req: Request, res: Response) => {
               w: 8.0,
               h: 5.5,
             });
+            tempFilesToCleanup.push(photoPath);
           }
         } catch (error) {
           console.error(`Failed to load recce photo: ${reccePhoto.photo}`, error);
         }
-
-        // Measurements box
         photoSlide.addShape("rect", {
           x: 1.0,
           y: 6.4,
@@ -1043,14 +1043,16 @@ export const generateReccePPT = async (req: Request, res: Response) => {
             valign: "middle",
           });
         }
-        
-        if (photoPath) {
-          imagePathResolver.cleanupTempFile(photoPath);
-        }
       }
     }
 
     const buffer = await pres.write({ outputType: "nodebuffer" });
+    
+    // Cleanup temp files after buffer is generated
+    tempFilesToCleanup.forEach(filePath => {
+      imagePathResolver.cleanupTempFile(filePath);
+    });
+    
     res.writeHead(200, {
       "Content-Type":
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -1059,6 +1061,10 @@ export const generateReccePPT = async (req: Request, res: Response) => {
     res.end(buffer);
   } catch (error: any) {
     console.error("PPT Gen Error:", error);
+    // Cleanup on error
+    tempFilesToCleanup.forEach(filePath => {
+      imagePathResolver.cleanupTempFile(filePath);
+    });
     if (!res.headersSent)
       res.status(500).json({ message: "Error generating PPT" });
   }
