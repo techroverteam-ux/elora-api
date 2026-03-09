@@ -917,7 +917,6 @@ export const generateReccePPT = async (req: Request, res: Response) => {
       ];
 
       let currentSlide = initialSlide;
-      const tempFiles: string[] = [];
       
       for (let i = 0; i < store.recce.initialPhotos.length; i++) {
         const posIndex = i % photosPerSlide;
@@ -937,11 +936,10 @@ export const generateReccePPT = async (req: Request, res: Response) => {
         }
 
         const pos = positions[posIndex];
+        const imagePath = store.recce.initialPhotos[i];
+        
         try {
-          const imagePath = store.recce.initialPhotos[i];
-          const fullUrl = imagePath.startsWith('http') ? imagePath : `https://storage.enamorimpex.com/eloraftp/${imagePath}`;
-          const photoPath = await imagePathResolver.resolveImagePath(fullUrl);
-          tempFiles.push(photoPath);
+          const photoPath = await imagePathResolver.resolveImagePath(imagePath);
           
           if (fs.existsSync(photoPath)) {
             currentSlide.addImage({
@@ -951,14 +949,12 @@ export const generateReccePPT = async (req: Request, res: Response) => {
               w: photoWidth,
               h: photoHeight,
             });
+            imagePathResolver.cleanupTempFile(photoPath);
           }
         } catch (error) {
-          console.error(`Failed to load image: ${store.recce.initialPhotos[i]}`, error);
+          console.error(`Failed to load image: ${imagePath}`, error);
         }
       }
-      
-      // Cleanup temp files after slide creation
-      tempFiles.forEach(file => imagePathResolver.cleanupTempFile(file));
     }
 
     // RECCE PHOTOS SLIDES (Individual slides with measurements and elements)
@@ -979,10 +975,11 @@ export const generateReccePPT = async (req: Request, res: Response) => {
           photoSlide.addImage({ path: logoPath, x: 0.3, y: 0.15, w: 1.5, h: 0.45 });
         }
 
+        let photoPath: string | null = null;
         try {
           const imagePath = reccePhoto.photo;
-          const fullUrl = imagePath.startsWith('http') ? imagePath : `https://storage.enamorimpex.com/eloraftp/${imagePath}`;
-          const photoPath = await imagePathResolver.resolveImagePath(fullUrl);
+          photoPath = await imagePathResolver.resolveImagePath(imagePath);
+          
           if (fs.existsSync(photoPath)) {
             photoSlide.addImage({
               path: photoPath,
@@ -992,7 +989,6 @@ export const generateReccePPT = async (req: Request, res: Response) => {
               h: 5.5,
             });
           }
-          imagePathResolver.cleanupTempFile(photoPath);
         } catch (error) {
           console.error(`Failed to load recce photo: ${reccePhoto.photo}`, error);
         }
@@ -1046,6 +1042,10 @@ export const generateReccePPT = async (req: Request, res: Response) => {
             align: "center",
             valign: "middle",
           });
+        }
+        
+        if (photoPath) {
+          imagePathResolver.cleanupTempFile(photoPath);
         }
       }
     }
@@ -1499,10 +1499,10 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
         }
 
         const pos = positions[posIndex];
+        const imagePath = store.recce.initialPhotos[i];
+        
         try {
-          const imagePath = store.recce.initialPhotos[i];
-          const fullUrl = imagePath.startsWith('http') ? imagePath : `https://storage.enamorimpex.com/eloraftp/${imagePath}`;
-          const photoPath = await imagePathResolver.resolveImagePath(fullUrl);
+          const photoPath = await imagePathResolver.resolveImagePath(imagePath);
 
           if (fs.existsSync(photoPath)) {
             currentSlide.addImage({
@@ -1512,10 +1512,10 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
               w: photoWidth,
               h: photoHeight,
             });
+            imagePathResolver.cleanupTempFile(photoPath);
           }
-          imagePathResolver.cleanupTempFile(photoPath);
         } catch (error) {
-          console.error(`Failed to load image: ${store.recce.initialPhotos[i]}`, error);
+          console.error(`Failed to load image: ${imagePath}`, error);
         }
       }
     }
@@ -1562,10 +1562,11 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
         });
 
         // BEFORE (Left side)
+        let reccePhotoPath: string | null = null;
         try {
           const imagePath = reccePhoto.photo;
-          const fullUrl = imagePath.startsWith('http') ? imagePath : `https://storage.enamorimpex.com/eloraftp/${imagePath}`;
-          const reccePhotoPath = await imagePathResolver.resolveImagePath(fullUrl);
+          reccePhotoPath = await imagePathResolver.resolveImagePath(imagePath);
+          
           if (fs.existsSync(reccePhotoPath)) {
             comparisonSlide.addImage({
               path: reccePhotoPath,
@@ -1575,7 +1576,6 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
               h: 4.5,
             });
           }
-          imagePathResolver.cleanupTempFile(reccePhotoPath);
         } catch (error) {
           console.error(`Failed to load recce photo: ${reccePhoto.photo}`, error);
         }
@@ -1600,11 +1600,12 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
         });
 
         // AFTER (Right side)
+        let installPhotoPath: string | null = null;
         if (installPhoto) {
           try {
             const imagePath = installPhoto.installationPhoto;
-            const fullUrl = imagePath.startsWith('http') ? imagePath : `https://storage.enamorimpex.com/eloraftp/${imagePath}`;
-            const installPhotoPath = await imagePathResolver.resolveImagePath(fullUrl);
+            installPhotoPath = await imagePathResolver.resolveImagePath(imagePath);
+            
             if (fs.existsSync(installPhotoPath)) {
               comparisonSlide.addImage({
                 path: installPhotoPath,
@@ -1614,7 +1615,6 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
                 h: 4.5,
               });
             }
-            imagePathResolver.cleanupTempFile(installPhotoPath);
           } catch (error) {
             console.error(`Failed to load installation photo: ${installPhoto.installationPhoto}`, error);
           }
@@ -1687,6 +1687,13 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
             align: "center",
             valign: "middle",
           });
+        }
+        
+        if (reccePhotoPath) {
+          imagePathResolver.cleanupTempFile(reccePhotoPath);
+        }
+        if (installPhotoPath) {
+          imagePathResolver.cleanupTempFile(installPhotoPath);
         }
       }
     }
@@ -1996,8 +2003,8 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         },
       );
 
-      const addImage = (
-        relativePath: string | undefined,
+      const addImage = async (
+        imagePath: string | undefined,
         label: string,
         x: number,
         y: number,
@@ -2011,20 +2018,22 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           line: { color: colors.borderDark, width: 2 },
           fill: { color: colors.white },
         });
-        if (relativePath) {
+        if (imagePath) {
           try {
-            const fullUrl = relativePath.startsWith('http') ? relativePath : `https://storage.enamorimpex.com/eloraftp/${relativePath}`;
-            const absolutePath = path.join(process.cwd(), relativePath);
-            if (fs.existsSync(absolutePath)) {
+            const photoPath = await imagePathResolver.resolveImagePath(imagePath);
+            if (fs.existsSync(photoPath)) {
               slide.addImage({
-                path: absolutePath,
+                path: photoPath,
                 x: x + 0.05,
                 y: y + 0.05,
                 w: 2.9,
                 h: 2.0,
               });
+              imagePathResolver.cleanupTempFile(photoPath);
             }
-          } catch (err) {}
+          } catch (err) {
+            console.error(`Failed to load image in bulk PPT: ${imagePath}`, err);
+          }
         }
         slide.addShape("rect", {
           x,
@@ -2048,21 +2057,21 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
       };
 
       if (type === "recce") {
-        addImage(
+        await addImage(
           store.recce?.reccePhotos?.[0]?.photo,
           "PHOTO 1",
           0.5,
           4.9,
           colors.primary,
         );
-        addImage(
+        await addImage(
           store.recce?.reccePhotos?.[1]?.photo,
           "PHOTO 2",
           3.7,
           4.9,
           colors.primary,
         );
-        addImage(
+        await addImage(
           store.recce?.reccePhotos?.[2]?.photo,
           "PHOTO 3",
           6.9,
@@ -2070,15 +2079,15 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           colors.primary,
         );
       } else {
-        addImage(store.recce?.reccePhotos?.[0]?.photo, "BEFORE", 0.5, 4.9, "EF4444");
-        addImage(
+        await addImage(store.recce?.reccePhotos?.[0]?.photo, "BEFORE", 0.5, 4.9, "EF4444");
+        await addImage(
           store.installation?.photos?.[0]?.installationPhoto,
           "AFTER - VIEW 1",
           3.7,
           4.9,
           colors.success,
         );
-        addImage(
+        await addImage(
           store.installation?.photos?.[1]?.installationPhoto,
           "AFTER - VIEW 2",
           6.9,
