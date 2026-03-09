@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import enhancedUploadService from '../../utils/enhancedUploadService';
+import enhancedUploadService from '../utils/enhancedUploadService';
 
 // Convert relative path to full URL
 export const convertPathToUrl = async (req: Request, res: Response) => {
