@@ -938,9 +938,7 @@ export const generateReccePPT = async (req: Request, res: Response) => {
 
         const pos = positions[posIndex];
         try {
-          const imagePath = store.recce.initialPhotos[i];
-          const fullUrl = imagePath.startsWith('http') ? imagePath : `https://storage.enamorimpex.com/eloraftp/${imagePath}`;
-          const photoPath = await imagePathResolver.resolveImagePath(fullUrl);
+          const photoPath = await imagePathResolver.resolveImagePath(store.recce.initialPhotos[i]);
           tempFiles.push(photoPath);
           
           if (fs.existsSync(photoPath)) {
@@ -980,9 +978,7 @@ export const generateReccePPT = async (req: Request, res: Response) => {
         }
 
         try {
-          const imagePath = reccePhoto.photo;
-          const fullUrl = imagePath.startsWith('http') ? imagePath : `https://storage.enamorimpex.com/eloraftp/${imagePath}`;
-          const photoPath = await imagePathResolver.resolveImagePath(fullUrl);
+          const photoPath = await imagePathResolver.resolveImagePath(reccePhoto.photo);
           if (fs.existsSync(photoPath)) {
             photoSlide.addImage({
               path: photoPath,
@@ -1556,9 +1552,7 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
 
         // BEFORE (Left side)
         try {
-          const imagePath = reccePhoto.photo;
-          const fullUrl = imagePath.startsWith('http') ? imagePath : `https://storage.enamorimpex.com/eloraftp/${imagePath}`;
-          const reccePhotoPath = await imagePathResolver.resolveImagePath(fullUrl);
+          const reccePhotoPath = await imagePathResolver.resolveImagePath(reccePhoto.photo);
           if (fs.existsSync(reccePhotoPath)) {
             comparisonSlide.addImage({
               path: reccePhotoPath,
@@ -1595,9 +1589,7 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
         // AFTER (Right side)
         if (installPhoto) {
           try {
-            const imagePath = installPhoto.installationPhoto;
-            const fullUrl = imagePath.startsWith('http') ? imagePath : `https://storage.enamorimpex.com/eloraftp/${imagePath}`;
-            const installPhotoPath = await imagePathResolver.resolveImagePath(fullUrl);
+            const installPhotoPath = await imagePathResolver.resolveImagePath(installPhoto.installationPhoto);
             if (fs.existsSync(installPhotoPath)) {
               comparisonSlide.addImage({
                 path: installPhotoPath,

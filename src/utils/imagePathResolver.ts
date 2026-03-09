@@ -12,16 +12,21 @@ class ImagePathResolver {
 
   // Resolve image path for PPT generation
   async resolveImagePath(imagePath: string): Promise<string> {
-    if (this.storageType === 'ftps' && imagePath.startsWith('https://')) {
-      // Download image temporarily for PPT generation
+    if (!imagePath) throw new Error('Image path is empty');
+    
+    // If it's already a full URL, download it
+    if (imagePath.startsWith('http')) {
       return await this.downloadImageTemporarily(imagePath);
-    } else if (this.storageType === 'local') {
-      // Return local path
-      return path.join(process.cwd(), imagePath);
-    } else {
-      // Fallback to local path
-      return path.join(process.cwd(), imagePath);
     }
+    
+    // If it's a relative path, convert to full URL first
+    if (this.storageType === 'ftps') {
+      const fullUrl = `https://storage.enamorimpex.com/eloraftp/${imagePath}`;
+      return await this.downloadImageTemporarily(fullUrl);
+    }
+    
+    // Local storage - return local path
+    return path.join(process.cwd(), imagePath);
   }
 
   private async downloadImageTemporarily(url: string): Promise<string> {
