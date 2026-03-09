@@ -21,7 +21,9 @@ class ImagePathResolver {
     
     // If it's a relative path, construct full URL
     const cleanPath = imagePath.startsWith('/') ? imagePath.substring(1) : imagePath;
-    const fullUrl = `https://storage.enamorimpex.com/eloraftp/${cleanPath}`;
+    // Decode the path first (in case it has %20 or other encoded chars), then encode properly for URL
+    const decodedPath = decodeURIComponent(cleanPath);
+    const fullUrl = `https://storage.enamorimpex.com/eloraftp/${encodeURI(decodedPath)}`;
     console.log(`[ImageResolver] Resolving: ${imagePath} -> ${fullUrl}`);
     return await this.downloadImageTemporarily(fullUrl);
   }
@@ -33,7 +35,9 @@ class ImagePathResolver {
         fs.mkdirSync(tempDir, { recursive: true });
       }
 
-      const fileName = `temp_${Date.now()}_${Math.random().toString(36).substring(7)}_${path.basename(url).split('?')[0]}`;
+      // Decode URL to get clean filename without %20 or other encoded chars
+      const decodedUrl = decodeURIComponent(url);
+      const fileName = `temp_${Date.now()}_${Math.random().toString(36).substring(7)}_${path.basename(decodedUrl).split('?')[0]}`;
       const tempPath = path.join(tempDir, fileName);
       const file = fs.createWriteStream(tempPath);
 
