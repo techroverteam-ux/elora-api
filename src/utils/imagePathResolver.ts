@@ -19,14 +19,11 @@ class ImagePathResolver {
       return await this.downloadImageTemporarily(imagePath);
     }
     
-    // If it's a relative path, convert to full URL first
-    if (this.storageType === 'ftps') {
-      const fullUrl = `https://storage.enamorimpex.com/eloraftp/${imagePath}`;
-      return await this.downloadImageTemporarily(fullUrl);
-    }
-    
-    // Local storage - return local path
-    return path.join(process.cwd(), imagePath);
+    // If it's a relative path, construct full URL
+    const cleanPath = imagePath.startsWith('/') ? imagePath.substring(1) : imagePath;
+    const fullUrl = `https://storage.enamorimpex.com/eloraftp/${cleanPath}`;
+    console.log(`[ImageResolver] Resolving: ${imagePath} -> ${fullUrl}`);
+    return await this.downloadImageTemporarily(fullUrl);
   }
 
   private async downloadImageTemporarily(url: string): Promise<string> {
@@ -36,21 +33,34 @@ class ImagePathResolver {
         fs.mkdirSync(tempDir, { recursive: true });
       }
 
-      const fileName = `temp_${Date.now()}_${path.basename(url)}`;
+      const fileName = `temp_${Date.now()}_${Math.random().toString(36).substring(7)}_${path.basename(url).split('?')[0]}`;
       const tempPath = path.join(tempDir, fileName);
       const file = fs.createWriteStream(tempPath);
 
       const client = url.startsWith('https://') ? https : http;
       
-      client.get(url, (response) => {
+      const request = client.get(url, { timeout: 10000 }, (response) => {
+        if (response.statusCode !== 200) {
+          fs.unlink(tempPath, () => {});
+          reject(new Error(`Failed to download image: HTTP ${response.statusCode}`));
+          return;
+        }
         response.pipe(file);
         file.on('finish', () => {
           file.close();
+          console.log(`[ImageResolver] Downloaded to: ${tempPath}`);
           resolve(tempPath);
         });
       }).on('error', (err) => {
-        fs.unlink(tempPath, () => {}); // Delete temp file on error
+        fs.unlink(tempPath, () => {});
+        console.error(`[ImageResolver] Download error: ${err.message}`);
         reject(err);
+      });
+      
+      request.setTimeout(10000, () => {
+        request.destroy();
+        fs.unlink(tempPath, () => {});
+        reject(new Error('Download timeout'));
       });
     });
   }

@@ -938,7 +938,9 @@ export const generateReccePPT = async (req: Request, res: Response) => {
 
         const pos = positions[posIndex];
         try {
-          const photoPath = await imagePathResolver.resolveImagePath(store.recce.initialPhotos[i]);
+          const imagePath = store.recce.initialPhotos[i];
+          const fullUrl = imagePath.startsWith('http') ? imagePath : `https://storage.enamorimpex.com/eloraftp/${imagePath}`;
+          const photoPath = await imagePathResolver.resolveImagePath(fullUrl);
           tempFiles.push(photoPath);
           
           if (fs.existsSync(photoPath)) {
@@ -978,7 +980,9 @@ export const generateReccePPT = async (req: Request, res: Response) => {
         }
 
         try {
-          const photoPath = await imagePathResolver.resolveImagePath(reccePhoto.photo);
+          const imagePath = reccePhoto.photo;
+          const fullUrl = imagePath.startsWith('http') ? imagePath : `https://storage.enamorimpex.com/eloraftp/${imagePath}`;
+          const photoPath = await imagePathResolver.resolveImagePath(fullUrl);
           if (fs.existsSync(photoPath)) {
             photoSlide.addImage({
               path: photoPath,
@@ -1495,16 +1499,23 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
         }
 
         const pos = positions[posIndex];
-        const photoPath = path.join(process.cwd(), store.recce.initialPhotos[i]);
+        try {
+          const imagePath = store.recce.initialPhotos[i];
+          const fullUrl = imagePath.startsWith('http') ? imagePath : `https://storage.enamorimpex.com/eloraftp/${imagePath}`;
+          const photoPath = await imagePathResolver.resolveImagePath(fullUrl);
 
-        if (fs.existsSync(photoPath)) {
-          currentSlide.addImage({
-            path: photoPath,
-            x: pos.x,
-            y: pos.y,
-            w: photoWidth,
-            h: photoHeight,
-          });
+          if (fs.existsSync(photoPath)) {
+            currentSlide.addImage({
+              path: photoPath,
+              x: pos.x,
+              y: pos.y,
+              w: photoWidth,
+              h: photoHeight,
+            });
+          }
+          imagePathResolver.cleanupTempFile(photoPath);
+        } catch (error) {
+          console.error(`Failed to load image: ${store.recce.initialPhotos[i]}`, error);
         }
       }
     }
@@ -1552,7 +1563,9 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
 
         // BEFORE (Left side)
         try {
-          const reccePhotoPath = await imagePathResolver.resolveImagePath(reccePhoto.photo);
+          const imagePath = reccePhoto.photo;
+          const fullUrl = imagePath.startsWith('http') ? imagePath : `https://storage.enamorimpex.com/eloraftp/${imagePath}`;
+          const reccePhotoPath = await imagePathResolver.resolveImagePath(fullUrl);
           if (fs.existsSync(reccePhotoPath)) {
             comparisonSlide.addImage({
               path: reccePhotoPath,
@@ -1589,7 +1602,9 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
         // AFTER (Right side)
         if (installPhoto) {
           try {
-            const installPhotoPath = await imagePathResolver.resolveImagePath(installPhoto.installationPhoto);
+            const imagePath = installPhoto.installationPhoto;
+            const fullUrl = imagePath.startsWith('http') ? imagePath : `https://storage.enamorimpex.com/eloraftp/${imagePath}`;
+            const installPhotoPath = await imagePathResolver.resolveImagePath(fullUrl);
             if (fs.existsSync(installPhotoPath)) {
               comparisonSlide.addImage({
                 path: installPhotoPath,
@@ -1998,6 +2013,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         });
         if (relativePath) {
           try {
+            const fullUrl = relativePath.startsWith('http') ? relativePath : `https://storage.enamorimpex.com/eloraftp/${relativePath}`;
             const absolutePath = path.join(process.cwd(), relativePath);
             if (fs.existsSync(absolutePath)) {
               slide.addImage({
