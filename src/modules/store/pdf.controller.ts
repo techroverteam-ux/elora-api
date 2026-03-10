@@ -501,31 +501,31 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
         ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A')
         : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A');
       
-      // Line 1: Store name and City
-      doc.font('Helvetica-Bold').text('Store:', 30, y, { continued: true, width: 45 });
-      doc.font('Helvetica').text(`${store.storeName}`, 75, y, { width: 280 });
-      doc.font('Helvetica-Bold').text('City:', 370, y, { continued: true, width: 35 });
-      doc.font('Helvetica').text(store.location?.city || 'N/A', 405, y, { width: 120 });
+      // Line 1: Store name and City (proper alignment)
+      doc.font('Helvetica-Bold').text('Store:', 30, y, { width: 45, align: 'left' });
+      doc.font('Helvetica').text(store.storeName || 'N/A', 80, y, { width: 250, align: 'left' });
+      doc.font('Helvetica-Bold').text('City:', 350, y, { width: 35, align: 'left' });
+      doc.font('Helvetica').text(store.location?.city || 'N/A', 390, y, { width: 120, align: 'left' });
       
       if (type === "installation") {
-        doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 650, y, { width: 120 });
+        doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 650, y, { width: 120, align: 'left' });
       }
       
       y += 12;
-      // Line 2: Store ID and Date
-      doc.fillColor('#000000').font('Helvetica-Bold').text('ID:', 30, y, { continued: true, width: 25 });
-      doc.font('Helvetica').text(store.storeId || store.storeCode || 'N/A', 55, y, { width: 150 });
-      doc.font('Helvetica-Bold').text('Date:', 220, y, { continued: true, width: 35 });
-      doc.font('Helvetica').text(dateValue, 255, y, { width: 100 });
+      // Line 2: Store ID and Date (proper alignment)
+      doc.fillColor('#000000').font('Helvetica-Bold').text('ID:', 30, y, { width: 25, align: 'left' });
+      doc.font('Helvetica').text(store.storeId || store.storeCode || 'N/A', 60, y, { width: 120, align: 'left' });
+      doc.font('Helvetica-Bold').text('Date:', 200, y, { width: 35, align: 'left' });
+      doc.font('Helvetica').text(dateValue, 240, y, { width: 100, align: 'left' });
       
       const submittedBy = type === "recce" ? store.recce?.submittedBy : store.installation?.submittedBy;
-      doc.font('Helvetica-Bold').text('By:', 370, y, { continued: true, width: 25 });
-      doc.font('Helvetica').text(submittedBy || 'N/A', 395, y, { width: 375 });
+      doc.font('Helvetica-Bold').text('By:', 360, y, { width: 25, align: 'left' });
+      doc.font('Helvetica').text(submittedBy || 'N/A', 390, y, { width: 380, align: 'left' });
       
       y += 12;
       // Line 3: Address (full width)
-      doc.font('Helvetica-Bold').text('Address:', 30, y, { continued: true, width: 55 });
-      doc.font('Helvetica').text(store.location?.address || 'N/A', 85, y, { width: 685 });
+      doc.font('Helvetica-Bold').text('Address:', 30, y, { width: 55, align: 'left' });
+      doc.font('Helvetica').text(store.location?.address || 'N/A', 90, y, { width: 680, align: 'left' });
 
       // Minimal separator line
       doc.save();
@@ -551,19 +551,44 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
         doc.rect(beforeX, contentStartY, imgWidth, imgHeight + 20).strokeColor('#EF4444').lineWidth(2).stroke();
         doc.restore();
         
-        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${encodeURIComponent(reccePhoto.photo)}`;
+        // Load recce image from URL
+        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+        console.log('Loading recce image:', reccePhotoUrl);
         try {
-          const response = await fetch(reccePhotoUrl);
-          if (response.ok) {
-            const imageBuffer = await response.arrayBuffer();
-            doc.image(Buffer.from(imageBuffer), beforeX + 5, contentStartY + 5, { 
-              width: imgWidth - 10, 
-              height: imgHeight - 10, 
-              fit: [imgWidth - 10, imgHeight - 10] 
+          const https = require('https');
+          const http = require('http');
+          const client = reccePhotoUrl.startsWith('https') ? https : http;
+          
+          await new Promise((resolve, reject) => {
+            client.get(reccePhotoUrl, (response: any) => {
+              if (response.statusCode === 200) {
+                const chunks: any[] = [];
+                response.on('data', (chunk: any) => chunks.push(chunk));
+                response.on('end', () => {
+                  try {
+                    const buffer = Buffer.concat(chunks);
+                    doc.image(buffer, beforeX + 5, contentStartY + 5, { 
+                      width: imgWidth - 10, 
+                      height: imgHeight - 10, 
+                      fit: [imgWidth - 10, imgHeight - 10] 
+                    });
+                    resolve(true);
+                  } catch (err) {
+                    console.log('Error processing recce image:', err);
+                    resolve(false);
+                  }
+                });
+              } else {
+                console.log('Failed to load recce image, status:', response.statusCode);
+                resolve(false);
+              }
+            }).on('error', (err: any) => {
+              console.log('Network error loading recce image:', err.message);
+              resolve(false);
             });
-          }
+          });
         } catch (error) {
-          console.log(`Failed to load recce image: ${reccePhotoUrl}`);
+          console.log(`Failed to load recce image: ${error}`);
         }
         
         // Clean label without background shading
@@ -580,19 +605,43 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
         doc.restore();
         
         if (installPhoto) {
-          const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${encodeURIComponent(installPhoto.installationPhoto)}`;
+          const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
+          console.log('Loading installation image:', installPhotoUrl);
           try {
-            const response = await fetch(installPhotoUrl);
-            if (response.ok) {
-              const imageBuffer = await response.arrayBuffer();
-              doc.image(Buffer.from(imageBuffer), afterX + 5, contentStartY + 5, { 
-                width: imgWidth - 10, 
-                height: imgHeight - 10, 
-                fit: [imgWidth - 10, imgHeight - 10] 
+            const https = require('https');
+            const http = require('http');
+            const client = installPhotoUrl.startsWith('https') ? https : http;
+            
+            await new Promise((resolve, reject) => {
+              client.get(installPhotoUrl, (response: any) => {
+                if (response.statusCode === 200) {
+                  const chunks: any[] = [];
+                  response.on('data', (chunk: any) => chunks.push(chunk));
+                  response.on('end', () => {
+                    try {
+                      const buffer = Buffer.concat(chunks);
+                      doc.image(buffer, afterX + 5, contentStartY + 5, { 
+                        width: imgWidth - 10, 
+                        height: imgHeight - 10, 
+                        fit: [imgWidth - 10, imgHeight - 10] 
+                      });
+                      resolve(true);
+                    } catch (err) {
+                      console.log('Error processing installation image:', err);
+                      resolve(false);
+                    }
+                  });
+                } else {
+                  console.log('Failed to load installation image, status:', response.statusCode);
+                  resolve(false);
+                }
+              }).on('error', (err: any) => {
+                console.log('Network error loading installation image:', err.message);
+                resolve(false);
               });
-            }
+            });
           } catch (error) {
-            console.log(`Failed to load installation image: ${installPhotoUrl}`);
+            console.log(`Failed to load installation image: ${error}`);
           }
         }
         
@@ -619,19 +668,43 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
         doc.rect(30, contentStartY, availableWidth, singleImgHeight).strokeColor('#EAB308').lineWidth(2).stroke();
         doc.restore();
         
-        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${encodeURIComponent(reccePhoto.photo)}`;
+        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+        console.log('Loading single recce image:', reccePhotoUrl);
         try {
-          const response = await fetch(reccePhotoUrl);
-          if (response.ok) {
-            const imageBuffer = await response.arrayBuffer();
-            doc.image(Buffer.from(imageBuffer), 35, contentStartY + 5, { 
-              width: availableWidth - 10, 
-              height: singleImgHeight - 10, 
-              fit: [availableWidth - 10, singleImgHeight - 10] 
+          const https = require('https');
+          const http = require('http');
+          const client = reccePhotoUrl.startsWith('https') ? https : http;
+          
+          await new Promise((resolve, reject) => {
+            client.get(reccePhotoUrl, (response: any) => {
+              if (response.statusCode === 200) {
+                const chunks: any[] = [];
+                response.on('data', (chunk: any) => chunks.push(chunk));
+                response.on('end', () => {
+                  try {
+                    const buffer = Buffer.concat(chunks);
+                    doc.image(buffer, 35, contentStartY + 5, { 
+                      width: availableWidth - 10, 
+                      height: singleImgHeight - 10, 
+                      fit: [availableWidth - 10, singleImgHeight - 10] 
+                    });
+                    resolve(true);
+                  } catch (err) {
+                    console.log('Error processing single recce image:', err);
+                    resolve(false);
+                  }
+                });
+              } else {
+                console.log('Failed to load single recce image, status:', response.statusCode);
+                resolve(false);
+              }
+            }).on('error', (err: any) => {
+              console.log('Network error loading single recce image:', err.message);
+              resolve(false);
             });
-          }
+          });
         } catch (error) {
-          console.log(`Failed to load recce image: ${reccePhotoUrl}`);
+          console.log(`Failed to load single recce image: ${error}`);
         }
         
         // Compact measurements at bottom
