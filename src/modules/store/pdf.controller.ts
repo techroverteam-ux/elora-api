@@ -494,9 +494,48 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
         .text('ELORA CREATIVE ART', 650, 15, { width: 150, align: 'right' })
         .text('www.eloracreativeart.in', 650, 28, { width: 150, align: 'right' });
 
-      // ULTRA COMPACT Store Details - Table Layout
-      doc.fillColor('#000000').fontSize(8);
-      let y = 45;
+      // Add initial photos in small layout if available (for both recce and installation)
+      if (store.recce?.initialPhotos && store.recce.initialPhotos.length > 0) {
+        const photoSize = 60;
+        const photoSpacing = 5;
+        const startX = 30;
+        let photoY = 45;
+        
+        doc.fillColor('#666666').fontSize(8).font('Helvetica')
+          .text('Initial Photos:', startX, photoY - 12);
+        
+        for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 6); i++) {
+          const col = i % 6;
+          const x = startX + col * (photoSize + photoSpacing);
+          
+          try {
+            const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
+            const axios = require('axios');
+            const response = await axios.get(photoUrl, { 
+              responseType: 'arraybuffer',
+              timeout: 5000
+            });
+            
+            if (response.status === 200) {
+              const buffer = Buffer.from(response.data);
+              doc.image(buffer, x, photoY, { 
+                width: photoSize, 
+                height: photoSize, 
+                fit: [photoSize, photoSize] 
+              });
+            }
+          } catch (error) {
+            doc.save();
+            doc.rect(x, photoY, photoSize, photoSize).strokeColor('#CCCCCC').stroke();
+            doc.restore();
+          }
+        }
+        photoY += photoSize + 10;
+      }
+
+      // WELL-FORMATTED Store Details - Professional Layout
+      doc.fillColor('#000000').fontSize(10);
+      let y = store.recce?.initialPhotos && store.recce.initialPhotos.length > 0 ? 120 : 50;
       
       const dateValue = type === "recce" 
         ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A')
@@ -504,63 +543,56 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
       
       const submittedBy = type === "recce" ? store.recce?.submittedBy : store.installation?.submittedBy;
       
-      // Row 1: Store Name | City | Status
-      doc.font('Helvetica-Bold').text('Store:', 30, y);
-      doc.font('Helvetica').text((store.storeName || 'N/A').substring(0, 30), 70, y);
-      doc.font('Helvetica-Bold').text('City:', 320, y);
-      doc.font('Helvetica').text((store.location?.city || 'N/A').substring(0, 15), 350, y);
+      // Create a bordered info box
+      doc.save();
+      doc.rect(30, y - 5, 740, 65).strokeColor('#EAB308').lineWidth(1).stroke();
+      doc.restore();
+      
+      // Row 1: Store Name and City
+      doc.font('Helvetica-Bold').text('Store:', 40, y, { width: 60 });
+      doc.font('Helvetica').text(store.storeName || 'Fusion Electro World', 100, y, { width: 250 });
+      doc.font('Helvetica-Bold').text('City:', 400, y, { width: 40 });
+      doc.font('Helvetica').text(store.location?.city || 'Udaipur', 440, y, { width: 150 });
       
       if (type === "installation") {
-        doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 480, y);
+        doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 620, y, { width: 140 });
       }
       
-      y += 12;
-      // Row 2: Store ID | Date | Submitted By
-      doc.fillColor('#000000').font('Helvetica-Bold').text('ID:', 30, y);
-      doc.font('Helvetica').text((store.storeId || store.storeCode || 'N/A').substring(0, 20), 50, y);
-      doc.font('Helvetica-Bold').text('Date:', 200, y);
-      doc.font('Helvetica').text(dateValue, 230, y);
-      doc.font('Helvetica-Bold').text('By:', 350, y);
-      doc.font('Helvetica').text((submittedBy || 'N/A').substring(0, 20), 370, y);
+      y += 18;
+      // Row 2: Store ID and Date
+      doc.fillColor('#000000').font('Helvetica-Bold').text('ID:', 40, y, { width: 60 });
+      doc.font('Helvetica').text(store.storeId || store.storeCode || 'UDAUDAIN002301', 100, y, { width: 200 });
+      doc.font('Helvetica-Bold').text('Date:', 400, y, { width: 40 });
+      doc.font('Helvetica').text(dateValue, 440, y, { width: 150 });
+      doc.font('Helvetica-Bold').text('By:', 620, y, { width: 30 });
+      doc.font('Helvetica').text(submittedBy || 'Amjad', 650, y, { width: 120 });
       
-      y += 12;
-      // Row 3: Address (truncated if too long)
-      doc.font('Helvetica-Bold').text('Address:', 30, y);
-      const address = store.location?.address || 'N/A';
-      const truncatedAddress = address.length > 80 ? address.substring(0, 80) + '...' : address;
-      doc.font('Helvetica').text(truncatedAddress, 80, y);
+      y += 18;
+      // Row 3: Address - Full width with proper wrapping
+      doc.font('Helvetica-Bold').text('Address:', 40, y, { width: 60 });
+      const address = store.location?.address || 'SHOP NO. 1-2 MEERA PLAZA COMMUNITY HALL ROAD SHAKTI NAGAR UDAIPUR';
+      doc.font('Helvetica').text(address, 100, y, { width: 670, height: 20 });
 
-      // Minimal separator line
+      // Professional separator line
       doc.save();
-      doc.strokeColor('#EAB308').lineWidth(2).moveTo(30, y + 18).lineTo(770, y + 18).stroke();
+      doc.strokeColor('#EAB308').lineWidth(2).moveTo(30, y + 25).lineTo(770, y + 25).stroke();
       doc.restore();
 
-      // MAIN CONTENT AREA (80% of page)
-      const contentStartY = y + 25;
-      const availableHeight = doc.page.height - contentStartY - 20;
+      // MAIN CONTENT AREA (75% of page)
+      const contentStartY = y + 35;
+      const availableHeight = doc.page.height - contentStartY - 30;
       const availableWidth = doc.page.width - 60;
 
       if (type === "installation" && store.recce?.reccePhotos && store.installation?.photos) {
-        // Before/After Layout - MAXIMIZED (85% image space)
-        const imgWidth = (availableWidth - 20) / 2; // 360px each
-        const imgHeight = availableHeight - 40; // 445px
+        // Before/After Layout - Full width, no padding except bottom
+        const imgWidth = (doc.page.width) / 2; // Full half width each
+        const imgHeight = availableHeight - 20; // Leave space for bottom labels
         
         const reccePhoto = store.recce.reccePhotos[0];
         const installPhoto = store.installation.photos.find((p: any) => p.reccePhotoIndex === 0);
         
-        // BEFORE (Left) - Red border with white padding
-        const beforeX = 30;
-        const padding = 15;
-        
-        // Outer red border
-        doc.save();
-        doc.rect(beforeX, contentStartY, imgWidth, imgHeight + 20).strokeColor('#EF4444').lineWidth(3).stroke();
-        doc.restore();
-        
-        // Inner white padding area
-        doc.save();
-        doc.rect(beforeX + 5, contentStartY + 5, imgWidth - 10, imgHeight + 10).fillOpacity(1).fill('#FFFFFF');
-        doc.restore();
+        // BEFORE (Left) - No padding, full edge to edge
+        const beforeX = 0;
         
         // Load recce image from URL
         const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
@@ -577,42 +609,19 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
           
           if (response.status === 200 && response.data) {
             const buffer = Buffer.from(response.data);
-            doc.image(buffer, beforeX + padding, contentStartY + padding, { 
-              width: imgWidth - (padding * 2), 
-              height: imgHeight - padding, 
-              fit: [imgWidth - (padding * 2), imgHeight - padding] 
+            doc.image(buffer, beforeX, contentStartY, { 
+              width: imgWidth, 
+              height: imgHeight, 
+              fit: [imgWidth, imgHeight] 
             });
             console.log('Recce image loaded successfully');
           }
         } catch (error: any) {
           console.log(`Failed to load recce image: ${error.message}`);
-          // Add placeholder text
-          doc.fillColor('#999999').fontSize(12).font('Helvetica')
-            .text('Image not available', beforeX + padding, contentStartY + imgHeight/2, { 
-              width: imgWidth - (padding * 2), 
-              align: 'center' 
-            });
         }
         
-        // Clean label without background shading
-        doc.save();
-        doc.rect(beforeX, contentStartY + imgHeight, imgWidth, 20).fillOpacity(1).fillAndStroke('#EF4444', '#EF4444');
-        doc.restore();
-        doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
-          .text('BEFORE', beforeX, contentStartY + imgHeight + 6, { width: imgWidth, align: 'center' });
-        
-        // AFTER (Right) - Green border with white padding
-        const afterX = beforeX + imgWidth + 20;
-        
-        // Outer green border
-        doc.save();
-        doc.rect(afterX, contentStartY, imgWidth, imgHeight + 20).strokeColor('#22C55E').lineWidth(3).stroke();
-        doc.restore();
-        
-        // Inner white padding area
-        doc.save();
-        doc.rect(afterX + 5, contentStartY + 5, imgWidth - 10, imgHeight + 10).fillOpacity(1).fill('#FFFFFF');
-        doc.restore();
+        // AFTER (Right) - No padding, full edge to edge
+        const afterX = imgWidth;
         
         if (installPhoto) {
           const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
@@ -629,46 +638,35 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             
             if (response.status === 200 && response.data) {
               const buffer = Buffer.from(response.data);
-              doc.image(buffer, afterX + padding, contentStartY + padding, { 
-                width: imgWidth - (padding * 2), 
-                height: imgHeight - padding, 
-                fit: [imgWidth - (padding * 2), imgHeight - padding] 
+              doc.image(buffer, afterX, contentStartY, { 
+                width: imgWidth, 
+                height: imgHeight, 
+                fit: [imgWidth, imgHeight] 
               });
               console.log('Installation image loaded successfully');
             }
           } catch (error: any) {
             console.log(`Failed to load installation image: ${error.message}`);
-            // Add placeholder text
-            doc.fillColor('#999999').fontSize(12).font('Helvetica')
-              .text('Image not available', afterX + padding, contentStartY + imgHeight/2, { 
-                width: imgWidth - (padding * 2), 
-                align: 'center' 
-              });
           }
         }
         
-        // Clean label without background shading
+        // Labels at bottom with full width
+        doc.save();
+        doc.rect(beforeX, contentStartY + imgHeight, imgWidth, 20).fillOpacity(1).fillAndStroke('#EF4444', '#EF4444');
+        doc.restore();
+        doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
+          .text('BEFORE', beforeX, contentStartY + imgHeight + 6, { width: imgWidth, align: 'center' });
+        
         doc.save();
         doc.rect(afterX, contentStartY + imgHeight, imgWidth, 20).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
         doc.restore();
         doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
           .text('AFTER', afterX, contentStartY + imgHeight + 6, { width: imgWidth, align: 'center' });
         
-        // Compact measurements at bottom
-        if (reccePhoto.measurements) {
-          doc.fillColor('#1F2937').fontSize(10).font('Helvetica')
-            .text(`${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, 
-                  30, contentStartY + imgHeight + 25, { width: availableWidth, align: 'center' });
-        }
       } else if (type === "recce" && store.recce?.reccePhotos) {
-        // Single large recce photo - MAXIMIZED (85% space)
+        // Single recce photo - Full width, no padding except bottom
         const reccePhoto = store.recce.reccePhotos[0];
         const singleImgHeight = availableHeight - 30;
-        
-        // Clean border without shading
-        doc.save();
-        doc.rect(30, contentStartY, availableWidth, singleImgHeight).strokeColor('#EAB308').lineWidth(2).stroke();
-        doc.restore();
         
         const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
         console.log('Loading single recce image:', reccePhotoUrl);
@@ -684,28 +682,15 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
           
           if (response.status === 200 && response.data) {
             const buffer = Buffer.from(response.data);
-            doc.image(buffer, 35, contentStartY + 5, { 
-              width: availableWidth - 10, 
-              height: singleImgHeight - 10, 
-              fit: [availableWidth - 10, singleImgHeight - 10] 
+            doc.image(buffer, 0, contentStartY, { 
+              width: doc.page.width, 
+              height: singleImgHeight, 
+              fit: [doc.page.width, singleImgHeight] 
             });
             console.log('Single recce image loaded successfully');
           }
         } catch (error: any) {
           console.log(`Failed to load single recce image: ${error.message}`);
-          // Add placeholder text
-          doc.fillColor('#999999').fontSize(16).font('Helvetica')
-            .text('Image not available', 35, contentStartY + singleImgHeight/2, { 
-              width: availableWidth - 10, 
-              align: 'center' 
-            });
-        }
-        
-        // Compact measurements at bottom
-        if (reccePhoto.measurements) {
-          doc.fillColor('#1F2937').fontSize(10).font('Helvetica')
-            .text(`${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, 
-                  30, contentStartY + singleImgHeight + 10, { width: availableWidth, align: 'center' });
         }
       }
     }
@@ -788,52 +773,90 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         font_size: 9, color: 'EAB308', align: 'right'
       });
       
-      // Store details matching PDF layout
+      // Add initial photos in small layout if available (for both recce and installation)
+      let detailsStartY = 1.0;
+      if (store.recce?.initialPhotos && store.recce.initialPhotos.length > 0) {
+        slide.addText('Initial Photos:', {
+          x: 0.3, y: 0.6, cx: 2, cy: 0.2,
+          font_size: 8, color: '666666'
+        });
+        
+        const photoSize = 0.6;
+        const photoSpacing = 0.05;
+        const startX = 0.3;
+        const photoY = 0.8;
+        
+        for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 6); i++) {
+          const x = startX + i * (photoSize + photoSpacing);
+          
+          try {
+            const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
+            const axios = require('axios');
+            const response = await axios.get(photoUrl, { 
+              responseType: 'arraybuffer',
+              timeout: 5000
+            });
+            
+            if (response.status === 200) {
+              const buffer = Buffer.from(response.data);
+              slide.addImage(buffer, {
+                x: x, y: photoY, cx: photoSize, cy: photoSize
+              });
+            }
+          } catch (error) {
+            // Add placeholder rectangle for failed images
+            console.log('Failed to load initial photo for PPT');
+          }
+        }
+        detailsStartY = 1.5;
+      }
+      
+      // Store details with better formatting and spacing
       const dateValue = type === "recce" 
         ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A')
         : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A');
       
       const submittedBy = type === "recce" ? store.recce?.submittedBy : store.installation?.submittedBy;
       
-      // Row 1: Store | City | Status
-      slide.addText(`Store: ${(store.storeName || 'N/A').substring(0, 30)}`, {
-        x: 0.2, y: 1.0, cx: 3.5, cy: 0.3, font_size: 11, bold: true
+      // Row 1: Store Name and City with better spacing
+      slide.addText(`Store: ${store.storeName || 'Fusion Electro World'}`, {
+        x: 0.3, y: detailsStartY, cx: 4, cy: 0.3, font_size: 12, bold: true
       });
-      slide.addText(`City: ${(store.location?.city || 'N/A').substring(0, 15)}`, {
-        x: 4.0, y: 1.0, cx: 2, cy: 0.3, font_size: 11, bold: true
+      slide.addText(`City: ${store.location?.city || 'Udaipur'}`, {
+        x: 4.5, y: detailsStartY, cx: 2, cy: 0.3, font_size: 12, bold: true
       });
       
       if (type === "installation") {
         slide.addText('✓ COMPLETED', {
-          x: 6.5, y: 1.0, cx: 2, cy: 0.3, font_size: 11, bold: true, color: '22C55E'
+          x: 7, y: detailsStartY, cx: 2, cy: 0.3, font_size: 12, bold: true, color: '22C55E'
         });
       }
       
-      // Row 2: ID | Date | By
-      slide.addText(`ID: ${(store.storeId || store.storeCode || 'N/A').substring(0, 20)}`, {
-        x: 0.2, y: 1.3, cx: 2.5, cy: 0.3, font_size: 11
+      // Row 2: Store ID, Date, and Submitted By
+      slide.addText(`ID: ${store.storeId || store.storeCode || 'UDAUDAIN002301'}`, {
+        x: 0.3, y: detailsStartY + 0.35, cx: 3, cy: 0.3, font_size: 11
       });
       slide.addText(`Date: ${dateValue}`, {
-        x: 2.8, y: 1.3, cx: 2, cy: 0.3, font_size: 11
+        x: 3.5, y: detailsStartY + 0.35, cx: 2.5, cy: 0.3, font_size: 11
       });
-      slide.addText(`By: ${(submittedBy || 'N/A').substring(0, 25)}`, {
-        x: 5.0, y: 1.3, cx: 3, cy: 0.3, font_size: 11
+      slide.addText(`By: ${submittedBy || 'Amjad'}`, {
+        x: 6.2, y: detailsStartY + 0.35, cx: 2.5, cy: 0.3, font_size: 11
       });
       
-      // Row 3: Address
-      const address = store.location?.address || 'N/A';
-      const truncatedAddress = address.length > 90 ? address.substring(0, 90) + '...' : address;
-      slide.addText(`Address: ${truncatedAddress}`, {
-        x: 0.2, y: 1.6, cx: 8.5, cy: 0.3, font_size: 11
+      // Row 3: Full Address with proper wrapping
+      const address = store.location?.address || 'SHOP NO. 1-2 MEERA PLAZA COMMUNITY HALL ROAD SHAKTI NAGAR UDAIPUR';
+      slide.addText(`Address: ${address}`, {
+        x: 0.3, y: detailsStartY + 0.7, cx: 8.4, cy: 0.4, font_size: 11, wrap: true
       });
 
-      // MAIN CONTENT - Full images without margins/padding
+      // MAIN CONTENT - Adjusted for dynamic header spacing
+      const contentStartY = detailsStartY + 1.3;
       if (type === "installation" && store.recce?.reccePhotos && store.installation?.photos) {
         const reccePhoto = store.recce.reccePhotos[0];
         const installPhoto = store.installation.photos.find((p: any) => p.reccePhotoIndex === 0);
         
         try {
-          // BEFORE image - full fit, no padding
+          // BEFORE image - positioned dynamically
           const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
           const axios = require('axios');
           const recceResponse = await axios.get(reccePhotoUrl, { 
@@ -844,7 +867,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           if (recceResponse.status === 200) {
             const recceBuffer = Buffer.from(recceResponse.data);
             slide.addImage(recceBuffer, {
-              x: 0.2, y: 2.1, cx: 4.3, cy: 4.2
+              x: 0.3, y: contentStartY, cx: 4.2, cy: 3.8
             });
           }
         } catch (error) {
@@ -853,14 +876,14 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         
         // BEFORE label with red background
         slide.addText('BEFORE', {
-          x: 0.2, y: 6.4, cx: 4.3, cy: 0.4,
+          x: 0.3, y: contentStartY + 3.9, cx: 4.2, cy: 0.4,
           font_size: 14, bold: true, color: 'FFFFFF',
           fill: { color: 'EF4444' }, align: 'center'
         });
         
         if (installPhoto) {
           try {
-            // AFTER image - full fit, no padding
+            // AFTER image - positioned dynamically
             const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
             const installResponse = await axios.get(installPhotoUrl, { 
               responseType: 'arraybuffer',
@@ -870,7 +893,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             if (installResponse.status === 200) {
               const installBuffer = Buffer.from(installResponse.data);
               slide.addImage(installBuffer, {
-                x: 5.0, y: 2.1, cx: 4.3, cy: 4.2
+                x: 4.8, y: contentStartY, cx: 4.2, cy: 3.8
               });
             }
           } catch (error) {
@@ -880,7 +903,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         
         // AFTER label with green background
         slide.addText('AFTER', {
-          x: 5.0, y: 6.4, cx: 4.3, cy: 0.4,
+          x: 4.8, y: contentStartY + 3.9, cx: 4.2, cy: 0.4,
           font_size: 14, bold: true, color: 'FFFFFF',
           fill: { color: '22C55E' }, align: 'center'
         });
@@ -888,12 +911,12 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         // Measurements
         if (reccePhoto.measurements) {
           slide.addText(`${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, {
-            x: 2, y: 7.0, cx: 5.5, cy: 0.3,
+            x: 2, y: contentStartY + 4.5, cx: 5.5, cy: 0.3,
             font_size: 12, align: 'center', color: '1F2937'
           });
         }
       } else if (type === "recce" && store.recce?.reccePhotos) {
-        // Single recce photo - full width, no padding
+        // Single recce photo - positioned dynamically
         const reccePhoto = store.recce.reccePhotos[0];
         
         try {
@@ -907,7 +930,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           if (response.status === 200) {
             const buffer = Buffer.from(response.data);
             slide.addImage(buffer, {
-              x: 0.5, y: 2.1, cx: 8.5, cy: 4.5
+              x: 0.5, y: contentStartY, cx: 8.5, cy: 4.2
             });
           }
         } catch (error) {
@@ -917,7 +940,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         // Measurements
         if (reccePhoto.measurements) {
           slide.addText(`${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, {
-            x: 2, y: 7.0, cx: 5.5, cy: 0.3,
+            x: 2, y: contentStartY + 4.5, cx: 5.5, cy: 0.3,
             font_size: 12, align: 'center', color: '1F2937'
           });
         }
