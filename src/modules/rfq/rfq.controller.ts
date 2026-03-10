@@ -196,7 +196,7 @@ async function generateCombinedRFQ(validStores: Array<{ store: any; client: any 
     currentRow++;
   }
 
-  // Transportation
+  // Transportation row (without amount)
   const transportRow = rfqSheet.getRow(currentRow);
   for (let col = 1; col <= 7; col++) {
     transportRow.getCell(col).border = {
@@ -209,18 +209,11 @@ async function generateCombinedRFQ(validStores: Array<{ store: any; client: any 
   transportRow.getCell(1).value = serialNo++;
   transportRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
   transportRow.getCell(2).value = 'TRANSPORTATION';
-  transportRow.getCell(4).value = 1;
-  transportRow.getCell(4).alignment = { horizontal: 'center', vertical: 'middle' };
-  const transportAmount = grandTotal * 0.05;
-  transportRow.getCell(5).value = parseFloat(transportAmount.toFixed(2));
-  transportRow.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
-  transportRow.getCell(6).value = 1.5;
-  transportRow.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
-  transportRow.getCell(7).value = parseFloat((transportAmount * 1.5).toFixed(2));
-  transportRow.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
-  transportRow.getCell(7).numFmt = '#,##0.00';
-  grandTotal += (transportAmount * 1.5);
-  currentRow += 4;
+  transportRow.getCell(4).value = '';
+  transportRow.getCell(5).value = '';
+  transportRow.getCell(6).value = '';
+  transportRow.getCell(7).value = '';
+  currentRow += 2;
 
   // Totals section
   rfqSheet.getCell(`A${currentRow}`).value = 'Amount in Words: Rupees Only';
@@ -402,12 +395,8 @@ function calculateLineItems(store: any, client: any) {
 
     const { width, height, unit } = measurements;
 
-    // Convert to feet
-    let widthFeet = unit === "inches" ? width / 12 : width;
-    let heightFeet = unit === "inches" ? height / 12 : height;
-    
-    // Calculate square footage: Width(feet) * Height(feet)
-    const areaSqft = widthFeet * heightFeet;
+    // Calculate square footage: Width(inch) * Height(inch) / 4400
+    const areaSqft = (width * height) / 4400;
 
     for (const elem of elements) {
       const clientElement = client.elements.find((e: any) => e.elementId.toString() === elem.elementId);
@@ -431,8 +420,8 @@ function calculateLineItems(store: any, client: any) {
       existing.measurements.push({
         width: unit === "inches" ? width : width * 12,
         height: unit === "inches" ? height : height * 12,
-        widthFeet: widthFeet,
-        heightFeet: heightFeet,
+        widthFeet: unit === "inches" ? width / 12 : width,
+        heightFeet: unit === "inches" ? height / 12 : height,
         quantity: elemQuantity,
         sqft: areaSqft * elemQuantity
       });
