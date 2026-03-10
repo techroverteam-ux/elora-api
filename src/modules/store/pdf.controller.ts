@@ -972,6 +972,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           // AFTER 1
           try {
             const installPhoto1Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[0].installationPhoto.replace(/\s+/g, '%20')}`;
+            const axios = require('axios');
             const installResponse1 = await axios.get(installPhoto1Url, { 
               responseType: 'arraybuffer',
               timeout: 10000
@@ -990,6 +991,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           // AFTER 2
           try {
             const installPhoto2Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[1].installationPhoto.replace(/\s+/g, '%20')}`;
+            const axios = require('axios');
             const installResponse2 = await axios.get(installPhoto2Url, { 
               responseType: 'arraybuffer',
               timeout: 10000
@@ -1046,6 +1048,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           if (installPhoto) {
             try {
               const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
+              const axios = require('axios');
               const installResponse = await axios.get(installPhotoUrl, { 
                 responseType: 'arraybuffer',
                 timeout: 10000
