@@ -183,7 +183,7 @@ async function generateCombinedRFQ(validStores: Array<{ store: any; client: any 
       row.getCell(2).value = item.elementName;
       row.getCell(2).alignment = { vertical: 'middle' };
       
-      row.getCell(3).value = item.quantity;
+      row.getCell(3).value = `${item.quantity} (${parseFloat(item.totalSqft.toFixed(2))} Sq.Ft)`;
       row.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
       
       row.getCell(4).value = 'Sq.Ft';
@@ -295,89 +295,152 @@ async function generateCombinedRFQ(validStores: Array<{ store: any; client: any 
   rfqSheet.getCell(`A${currentRow}`).value = 'Authorized Signatory';
   rfqSheet.getCell(`A${currentRow}`).alignment = { horizontal: 'right' };
 
-  // Create Details Sheet
+  // Create Details Sheet with Detailed Measurements
   const detailsSheet = workbook.addWorksheet("Store Details");
   
   // Company Header for Details Sheet
-  detailsSheet.mergeCells('A1:H2');
-  detailsSheet.getCell('A1').value = 'ELORA TECH SOLUTIONS';
-  detailsSheet.getCell('A1').font = { bold: true, size: 18, color: { argb: 'FF1F2937' } };
+  detailsSheet.mergeCells('A1:U2');
+  detailsSheet.getCell('A1').value = 'ELORA TECH SOLUTIONS - DETAILED MEASUREMENTS';
+  detailsSheet.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FF1F2937' } };
   detailsSheet.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
   detailsSheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
   detailsSheet.getRow(1).height = 30;
-  
-  // Details Header
-  detailsSheet.mergeCells('A4:H4');
-  detailsSheet.getCell('A4').value = 'STORE & CLIENT DETAILS';
-  detailsSheet.getCell('A4').font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
-  detailsSheet.getCell('A4').alignment = { horizontal: 'center', vertical: 'middle' };
-  detailsSheet.getCell('A4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF3B82F6' } };
-  detailsSheet.getRow(4).height = 25;
 
-  // Set column widths for details sheet
+  // Set column widths for detailed measurements
   detailsSheet.columns = [
-    { header: "Store ID", key: "storeId", width: 15 },
-    { header: "Store Name", key: "storeName", width: 25 },
-    { header: "Client Name", key: "clientName", width: 20 },
-    { header: "Client GST", key: "clientGST", width: 20 },
-    { header: "Address", key: "address", width: 30 },
-    { header: "City", key: "city", width: 15 },
-    { header: "State", key: "state", width: 15 },
-    { header: "Status", key: "status", width: 15 }
+    { width: 6 },   // A - S.No
+    { width: 12 },  // B - Client Code
+    { width: 12 },  // C - Store Code
+    { width: 20 },  // D - Store Name
+    { width: 15 },  // E - City
+    { width: 25 },  // F - Address
+    { width: 12 },  // G - Mobile No
+    { width: 20 },  // H - Element
+    { width: 10 },  // I - Width (Inch)
+    { width: 10 },  // J - Height (Inch)
+    { width: 10 },  // K - Width (feet)
+    { width: 10 },  // L - Height (feet)
+    { width: 8 },   // M - QTY
+    { width: 10 },  // N - Sq.Ft
+    { width: 12 },  // O - Rate
+    { width: 12 },  // P - Amount
+    { width: 10 },  // Q - Tax
+    { width: 12 }   // R - Total
   ];
 
-  // Style header row (row 6)
-  const headerRow = detailsSheet.getRow(6);
-  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-  headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F2937" } };
-  headerRow.height = 25;
+  // Headers for detailed measurements (row 4)
+  const detailHeaders = [
+    'S.No', 'Client Code', 'Store Code', 'Store Name', 'City', 'Address', 'Mobile No', 
+    'Element', 'Width\n(Inch)', 'Height\n(Inch)', 'Width\n(feet)', 'Height\n(feet)', 
+    'QTY', 'Sq.Ft', 'Rate', 'Amount', 'Tax', 'Total'
+  ];
   
-  // Add borders to header
-  for (let col = 1; col <= 8; col++) {
-    headerRow.getCell(col).border = {
+  detailHeaders.forEach((header, index) => {
+    const cell = detailsSheet.getCell(4, index + 1);
+    cell.value = header;
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
+    cell.border = {
       top: { style: 'medium' },
       left: { style: 'thin' },
       bottom: { style: 'medium' },
       right: { style: 'thin' }
     };
-    headerRow.getCell(col).alignment = { horizontal: 'center', vertical: 'middle' };
-  }
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  });
+  detailsSheet.getRow(4).height = 35;
 
-  // Populate Details data starting from row 7
-  let detailRow = 7;
+  // Populate detailed measurement data
+  let detailRowNum = 5;
+  let serialNo2 = 1;
+  
   for (const { store, client } of validStores) {
-    const row = detailsSheet.getRow(detailRow);
+    const lineItems = calculateLineItems(store.recce, client);
     
-    // Alternate row colors
-    const isEvenRow = (detailRow - 7) % 2 === 0;
-    const rowColor = isEvenRow ? 'FFF9FAFB' : 'FFFFFFFF';
-    
-    // Add borders and styling
-    for (let col = 1; col <= 8; col++) {
-      const cell = row.getCell(col);
-      cell.border = {
-        top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-        left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-        bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-        right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
-      };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowColor } };
-      cell.alignment = { vertical: 'middle' };
+    for (const item of lineItems) {
+      for (const measurement of item.measurements) {
+        const row = detailsSheet.getRow(detailRowNum);
+        
+        // Alternate row colors
+        const isEvenRow = (detailRowNum - 5) % 2 === 0;
+        const rowColor = isEvenRow ? 'FFF9FAFB' : 'FFFFFFFF';
+        
+        // Style all cells
+        for (let col = 1; col <= 18; col++) {
+          const cell = row.getCell(col);
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
+          };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowColor } };
+          cell.alignment = { vertical: 'middle' };
+        }
+        
+        const taxAmount = (measurement.sqft * item.rate) * 0.18;
+        const totalAmount = (measurement.sqft * item.rate) + taxAmount;
+        
+        // Populate data
+        row.getCell(1).value = serialNo2++; // S.No
+        row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+        
+        row.getCell(2).value = client.clientName?.substring(0, 8) || '-'; // Client Code
+        row.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
+        
+        row.getCell(3).value = store.storeId || store.storeCode || '-'; // Store Code
+        row.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
+        
+        row.getCell(4).value = store.storeName || '-'; // Store Name
+        
+        row.getCell(5).value = store.location?.city || '-'; // City
+        row.getCell(5).alignment = { horizontal: 'center', vertical: 'middle' };
+        
+        row.getCell(6).value = store.location?.address || '-'; // Address
+        
+        row.getCell(7).value = store.contactNumber || '-'; // Mobile No
+        row.getCell(7).alignment = { horizontal: 'center', vertical: 'middle' };
+        
+        row.getCell(8).value = item.elementName; // Element
+        
+        row.getCell(9).value = parseFloat(measurement.width.toFixed(2)); // Width (Inch)
+        row.getCell(9).alignment = { horizontal: 'center', vertical: 'middle' };
+        
+        row.getCell(10).value = parseFloat(measurement.height.toFixed(2)); // Height (Inch)
+        row.getCell(10).alignment = { horizontal: 'center', vertical: 'middle' };
+        
+        row.getCell(11).value = parseFloat(measurement.widthFeet.toFixed(2)); // Width (feet)
+        row.getCell(11).alignment = { horizontal: 'center', vertical: 'middle' };
+        
+        row.getCell(12).value = parseFloat(measurement.heightFeet.toFixed(2)); // Height (feet)
+        row.getCell(12).alignment = { horizontal: 'center', vertical: 'middle' };
+        
+        row.getCell(13).value = measurement.quantity; // QTY
+        row.getCell(13).alignment = { horizontal: 'center', vertical: 'middle' };
+        
+        row.getCell(14).value = parseFloat(measurement.sqft.toFixed(2)); // Sq.Ft
+        row.getCell(14).alignment = { horizontal: 'right', vertical: 'middle' };
+        
+        row.getCell(15).value = parseFloat(item.rate.toFixed(2)); // Rate
+        row.getCell(15).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(15).numFmt = '₹#,##0.00';
+        
+        row.getCell(16).value = parseFloat((measurement.sqft * item.rate).toFixed(2)); // Amount
+        row.getCell(16).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(16).numFmt = '₹#,##0.00';
+        
+        row.getCell(17).value = parseFloat(taxAmount.toFixed(2)); // Tax
+        row.getCell(17).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(17).numFmt = '₹#,##0.00';
+        
+        row.getCell(18).value = parseFloat(totalAmount.toFixed(2)); // Total
+        row.getCell(18).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(18).numFmt = '₹#,##0.00';
+        
+        row.height = 20;
+        detailRowNum++;
+      }
     }
-    
-    row.getCell(1).value = store.storeId || store.storeCode || '-';
-    row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
-    
-    row.getCell(2).value = store.storeName || '-';
-    row.getCell(3).value = client.clientName || '-';
-    row.getCell(4).value = client.gstNumber || '-';
-    row.getCell(5).value = store.location?.address || '-';
-    row.getCell(6).value = store.location?.city || '-';
-    row.getCell(7).value = store.location?.state || '-';
-    row.getCell(8).value = store.currentStatus || '-';
-    
-    row.height = 20;
-    detailRow++;
   }
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
@@ -388,7 +451,7 @@ function calculateLineItems(recce: any, client: any) {
     return [];
   }
 
-  const elementMap = new Map<string, { quantity: number; area: number; rate: number; name: string }>();
+  const elementMap = new Map<string, { quantity: number; totalSqft: number; rate: number; name: string; measurements: any[] }>();
 
   for (const photo of recce.reccePhotos) {
     const { measurements, elements } = photo;
@@ -398,7 +461,7 @@ function calculateLineItems(recce: any, client: any) {
 
     let areaSqft = 0;
     if (unit === "inches") {
-      areaSqft = (width * height) / 144;
+      areaSqft = (width * height) / 144; // Convert inches to sq ft
     } else if (unit === "feet") {
       areaSqft = width * height;
     }
@@ -411,24 +474,34 @@ function calculateLineItems(recce: any, client: any) {
       if (!elementMap.has(key)) {
         elementMap.set(key, {
           quantity: 0,
-          area: 0,
+          totalSqft: 0,
           rate: clientElement.customRate || 0,
-          name: clientElement.elementName || "Unknown"
+          name: clientElement.elementName || "Unknown",
+          measurements: []
         });
       }
 
       const existing = elementMap.get(key)!;
       existing.quantity += elem.quantity || 1;
-      existing.area += areaSqft;
+      existing.totalSqft += areaSqft * (elem.quantity || 1);
+      existing.measurements.push({
+        width: unit === "inches" ? width : width * 12,
+        height: unit === "inches" ? height : height * 12,
+        widthFeet: unit === "inches" ? width / 12 : width,
+        heightFeet: unit === "inches" ? height / 12 : height,
+        quantity: elem.quantity || 1,
+        sqft: areaSqft * (elem.quantity || 1)
+      });
     }
   }
 
   return Array.from(elementMap.values()).map(item => ({
     elementName: item.name,
     quantity: item.quantity,
-    area: item.area,
+    totalSqft: item.totalSqft,
     rate: item.rate,
-    amount: item.area * item.rate
+    amount: item.totalSqft * item.rate,
+    measurements: item.measurements
   }));
 }
 
