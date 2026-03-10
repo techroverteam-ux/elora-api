@@ -494,19 +494,62 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
         .text('ELORA CREATIVE ART', 650, 15, { width: 150, align: 'right' })
         .text('www.eloracreativeart.in', 650, 28, { width: 150, align: 'right' });
 
-      // Add initial photos in small layout if available (for both recce and installation)
+      // SIDE-BY-SIDE Layout: Store Details (Left) + Initial Photos (Right)
+      doc.fillColor('#000000').fontSize(10);
+      let y = 50;
+      
+      const dateValue = type === "recce" 
+        ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A')
+        : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A');
+      
+      const submittedBy = type === "recce" ? store.recce?.submittedBy : store.installation?.submittedBy;
+      
+      // LEFT SIDE: Store Details Box (400px width)
+      doc.save();
+      doc.rect(30, y - 5, 400, 65).strokeColor('#EAB308').lineWidth(1).stroke();
+      doc.restore();
+      
+      // Store details in left box
+      doc.font('Helvetica-Bold').text('Store:', 40, y, { width: 60 });
+      doc.font('Helvetica').text(store.storeName || 'Fusion Electro World', 100, y, { width: 320 });
+      
+      y += 15;
+      doc.font('Helvetica-Bold').text('ID:', 40, y, { width: 60 });
+      doc.font('Helvetica').text(store.storeId || store.storeCode || 'UDAUDAIN002301', 100, y, { width: 150 });
+      doc.font('Helvetica-Bold').text('City:', 260, y, { width: 40 });
+      doc.font('Helvetica').text(store.location?.city || 'Udaipur', 300, y, { width: 130 });
+      
+      y += 15;
+      doc.font('Helvetica-Bold').text('Date:', 40, y, { width: 60 });
+      doc.font('Helvetica').text(dateValue, 100, y, { width: 150 });
+      doc.font('Helvetica-Bold').text('By:', 260, y, { width: 30 });
+      doc.font('Helvetica').text(submittedBy || 'Amjad', 290, y, { width: 140 });
+      
+      y += 15;
+      doc.font('Helvetica-Bold').text('Address:', 40, y, { width: 60 });
+      const address = store.location?.address || 'SHOP NO. 1-2 MEERA PLAZA COMMUNITY HALL ROAD SHAKTI NAGAR UDAIPUR';
+      doc.font('Helvetica').text(address, 100, y, { width: 330, height: 15 });
+      
+      if (type === "installation") {
+        doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 350, 50, { width: 80 });
+      }
+
+      // RIGHT SIDE: Initial Photos (if available)
       if (store.recce?.initialPhotos && store.recce.initialPhotos.length > 0) {
-        const photoSize = 60;
+        const photoSize = 50;
         const photoSpacing = 5;
-        const startX = 30;
-        let photoY = 45;
+        const rightStartX = 450;
+        let photoY = 50;
         
         doc.fillColor('#666666').fontSize(8).font('Helvetica')
-          .text('Initial Photos:', startX, photoY - 12);
+          .text('Initial Photos:', rightStartX, photoY - 12);
         
+        // Arrange photos in 2 rows of 3
         for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 6); i++) {
-          const col = i % 6;
-          const x = startX + col * (photoSize + photoSpacing);
+          const col = i % 3;
+          const row = Math.floor(i / 3);
+          const x = rightStartX + col * (photoSize + photoSpacing);
+          const currentY = photoY + row * (photoSize + photoSpacing);
           
           try {
             const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
@@ -518,7 +561,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             
             if (response.status === 200) {
               const buffer = Buffer.from(response.data);
-              doc.image(buffer, x, photoY, { 
+              doc.image(buffer, x, currentY, { 
                 width: photoSize, 
                 height: photoSize, 
                 fit: [photoSize, photoSize] 
@@ -526,168 +569,197 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             }
           } catch (error) {
             doc.save();
-            doc.rect(x, photoY, photoSize, photoSize).strokeColor('#CCCCCC').stroke();
+            doc.rect(x, currentY, photoSize, photoSize).strokeColor('#CCCCCC').stroke();
             doc.restore();
           }
         }
-        photoY += photoSize + 10;
       }
-
-      // WELL-FORMATTED Store Details - Professional Layout
-      doc.fillColor('#000000').fontSize(10);
-      let y = store.recce?.initialPhotos && store.recce.initialPhotos.length > 0 ? 120 : 50;
-      
-      const dateValue = type === "recce" 
-        ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A')
-        : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A');
-      
-      const submittedBy = type === "recce" ? store.recce?.submittedBy : store.installation?.submittedBy;
-      
-      // Create a bordered info box
-      doc.save();
-      doc.rect(30, y - 5, 740, 65).strokeColor('#EAB308').lineWidth(1).stroke();
-      doc.restore();
-      
-      // Row 1: Store Name and City
-      doc.font('Helvetica-Bold').text('Store:', 40, y, { width: 60 });
-      doc.font('Helvetica').text(store.storeName || 'Fusion Electro World', 100, y, { width: 250 });
-      doc.font('Helvetica-Bold').text('City:', 400, y, { width: 40 });
-      doc.font('Helvetica').text(store.location?.city || 'Udaipur', 440, y, { width: 150 });
-      
-      if (type === "installation") {
-        doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 620, y, { width: 140 });
-      }
-      
-      y += 18;
-      // Row 2: Store ID and Date
-      doc.fillColor('#000000').font('Helvetica-Bold').text('ID:', 40, y, { width: 60 });
-      doc.font('Helvetica').text(store.storeId || store.storeCode || 'UDAUDAIN002301', 100, y, { width: 200 });
-      doc.font('Helvetica-Bold').text('Date:', 400, y, { width: 40 });
-      doc.font('Helvetica').text(dateValue, 440, y, { width: 150 });
-      doc.font('Helvetica-Bold').text('By:', 620, y, { width: 30 });
-      doc.font('Helvetica').text(submittedBy || 'Amjad', 650, y, { width: 120 });
-      
-      y += 18;
-      // Row 3: Address - Full width with proper wrapping
-      doc.font('Helvetica-Bold').text('Address:', 40, y, { width: 60 });
-      const address = store.location?.address || 'SHOP NO. 1-2 MEERA PLAZA COMMUNITY HALL ROAD SHAKTI NAGAR UDAIPUR';
-      doc.font('Helvetica').text(address, 100, y, { width: 670, height: 20 });
 
       // Professional separator line
       doc.save();
-      doc.strokeColor('#EAB308').lineWidth(2).moveTo(30, y + 25).lineTo(770, y + 25).stroke();
+      doc.strokeColor('#EAB308').lineWidth(2).moveTo(30, 125).lineTo(770, 125).stroke();
       doc.restore();
 
-      // MAIN CONTENT AREA (75% of page)
-      const contentStartY = y + 35;
+      // MAIN CONTENT AREA
+      const contentStartY = 135;
       const availableHeight = doc.page.height - contentStartY - 30;
       const availableWidth = doc.page.width - 60;
 
       if (type === "installation" && store.recce?.reccePhotos && store.installation?.photos) {
-        // Before/After Layout - Full width, no padding except bottom
-        const imgWidth = (doc.page.width) / 2; // Full half width each
-        const imgHeight = availableHeight - 20; // Leave space for bottom labels
-        
+        // Installation: Show multiple after images if available
         const reccePhoto = store.recce.reccePhotos[0];
-        const installPhoto = store.installation.photos.find((p: any) => p.reccePhotoIndex === 0);
+        const installPhotos = store.installation.photos.filter((p: any) => p.reccePhotoIndex === 0);
         
-        // BEFORE (Left) - No padding, full edge to edge
-        const beforeX = 0;
-        
-        // Load recce image from URL
-        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
-        console.log('Loading recce image:', reccePhotoUrl);
-        try {
-          const axios = require('axios');
-          const response = await axios.get(reccePhotoUrl, { 
-            responseType: 'arraybuffer',
-            timeout: 10000,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (compatible; PDF-Generator)'
-            }
-          });
+        if (installPhotos.length >= 2) {
+          // Three images: Before + After1 + After2
+          const imgWidth = doc.page.width / 3;
+          const imgHeight = availableHeight - 20;
           
-          if (response.status === 200 && response.data) {
-            const buffer = Buffer.from(response.data);
-            doc.image(buffer, beforeX, contentStartY, { 
-              width: imgWidth, 
-              height: imgHeight, 
-              fit: [imgWidth, imgHeight] 
-            });
-            console.log('Recce image loaded successfully');
-          }
-        } catch (error: any) {
-          console.log(`Failed to load recce image: ${error.message}`);
-        }
-        
-        // AFTER (Right) - No padding, full edge to edge
-        const afterX = imgWidth;
-        
-        if (installPhoto) {
-          const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
-          console.log('Loading installation image:', installPhotoUrl);
+          // BEFORE (Left)
+          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
           try {
             const axios = require('axios');
-            const response = await axios.get(installPhotoUrl, { 
+            const response = await axios.get(reccePhotoUrl, { 
               responseType: 'arraybuffer',
-              timeout: 10000,
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (compatible; PDF-Generator)'
-              }
+              timeout: 10000
             });
             
-            if (response.status === 200 && response.data) {
+            if (response.status === 200) {
               const buffer = Buffer.from(response.data);
-              doc.image(buffer, afterX, contentStartY, { 
+              doc.image(buffer, 0, contentStartY, { 
                 width: imgWidth, 
                 height: imgHeight, 
                 fit: [imgWidth, imgHeight] 
               });
-              console.log('Installation image loaded successfully');
             }
           } catch (error: any) {
-            console.log(`Failed to load installation image: ${error.message}`);
+            console.log(`Failed to load recce image: ${error.message}`);
           }
+          
+          // AFTER 1 (Middle)
+          const installPhoto1Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[0].installationPhoto.replace(/\s+/g, '%20')}`;
+          try {
+            const axios = require('axios');
+            const response = await axios.get(installPhoto1Url, { 
+              responseType: 'arraybuffer',
+              timeout: 10000
+            });
+            
+            if (response.status === 200) {
+              const buffer = Buffer.from(response.data);
+              doc.image(buffer, imgWidth, contentStartY, { 
+                width: imgWidth, 
+                height: imgHeight, 
+                fit: [imgWidth, imgHeight] 
+              });
+            }
+          } catch (error: any) {
+            console.log(`Failed to load installation image 1: ${error.message}`);
+          }
+          
+          // AFTER 2 (Right)
+          const installPhoto2Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[1].installationPhoto.replace(/\s+/g, '%20')}`;
+          try {
+            const axios = require('axios');
+            const response = await axios.get(installPhoto2Url, { 
+              responseType: 'arraybuffer',
+              timeout: 10000
+            });
+            
+            if (response.status === 200) {
+              const buffer = Buffer.from(response.data);
+              doc.image(buffer, imgWidth * 2, contentStartY, { 
+                width: imgWidth, 
+                height: imgHeight, 
+                fit: [imgWidth, imgHeight] 
+              });
+            }
+          } catch (error: any) {
+            console.log(`Failed to load installation image 2: ${error.message}`);
+          }
+          
+          // Labels
+          doc.save();
+          doc.rect(0, contentStartY + imgHeight, imgWidth, 20).fillOpacity(1).fillAndStroke('#EF4444', '#EF4444');
+          doc.restore();
+          doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
+            .text('BEFORE', 0, contentStartY + imgHeight + 6, { width: imgWidth, align: 'center' });
+          
+          doc.save();
+          doc.rect(imgWidth, contentStartY + imgHeight, imgWidth, 20).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
+          doc.restore();
+          doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
+            .text('AFTER 1', imgWidth, contentStartY + imgHeight + 6, { width: imgWidth, align: 'center' });
+          
+          doc.save();
+          doc.rect(imgWidth * 2, contentStartY + imgHeight, imgWidth, 20).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
+          doc.restore();
+          doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
+            .text('AFTER 2', imgWidth * 2, contentStartY + imgHeight + 6, { width: imgWidth, align: 'center' });
+        } else {
+          // Two images: Before + After
+          const imgWidth = doc.page.width / 2;
+          const imgHeight = availableHeight - 20;
+          
+          const installPhoto = installPhotos[0];
+          
+          // BEFORE (Left)
+          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+          try {
+            const axios = require('axios');
+            const response = await axios.get(reccePhotoUrl, { 
+              responseType: 'arraybuffer',
+              timeout: 10000
+            });
+            
+            if (response.status === 200) {
+              const buffer = Buffer.from(response.data);
+              doc.image(buffer, 0, contentStartY, { 
+                width: imgWidth, 
+                height: imgHeight, 
+                fit: [imgWidth, imgHeight] 
+              });
+            }
+          } catch (error: any) {
+            console.log(`Failed to load recce image: ${error.message}`);
+          }
+          
+          // AFTER (Right)
+          if (installPhoto) {
+            const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
+            try {
+              const axios = require('axios');
+              const response = await axios.get(installPhotoUrl, { 
+                responseType: 'arraybuffer',
+                timeout: 10000
+              });
+              
+              if (response.status === 200) {
+                const buffer = Buffer.from(response.data);
+                doc.image(buffer, imgWidth, contentStartY, { 
+                  width: imgWidth, 
+                  height: imgHeight, 
+                  fit: [imgWidth, imgHeight] 
+                });
+              }
+            } catch (error: any) {
+              console.log(`Failed to load installation image: ${error.message}`);
+            }
+          }
+          
+          // Labels
+          doc.save();
+          doc.rect(0, contentStartY + imgHeight, imgWidth, 20).fillOpacity(1).fillAndStroke('#EF4444', '#EF4444');
+          doc.restore();
+          doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
+            .text('BEFORE', 0, contentStartY + imgHeight + 6, { width: imgWidth, align: 'center' });
+          
+          doc.save();
+          doc.rect(imgWidth, contentStartY + imgHeight, imgWidth, 20).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
+          doc.restore();
+          doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
+            .text('AFTER', imgWidth, contentStartY + imgHeight + 6, { width: imgWidth, align: 'center' });
         }
-        
-        // Labels at bottom with full width
-        doc.save();
-        doc.rect(beforeX, contentStartY + imgHeight, imgWidth, 20).fillOpacity(1).fillAndStroke('#EF4444', '#EF4444');
-        doc.restore();
-        doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
-          .text('BEFORE', beforeX, contentStartY + imgHeight + 6, { width: imgWidth, align: 'center' });
-        
-        doc.save();
-        doc.rect(afterX, contentStartY + imgHeight, imgWidth, 20).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
-        doc.restore();
-        doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
-          .text('AFTER', afterX, contentStartY + imgHeight + 6, { width: imgWidth, align: 'center' });
-        
       } else if (type === "recce" && store.recce?.reccePhotos) {
-        // Single recce photo - Full width, no padding except bottom
+        // Single recce photo - Full width
         const reccePhoto = store.recce.reccePhotos[0];
         const singleImgHeight = availableHeight - 30;
         
         const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
-        console.log('Loading single recce image:', reccePhotoUrl);
         try {
           const axios = require('axios');
           const response = await axios.get(reccePhotoUrl, { 
             responseType: 'arraybuffer',
-            timeout: 10000,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (compatible; PDF-Generator)'
-            }
+            timeout: 10000
           });
           
-          if (response.status === 200 && response.data) {
+          if (response.status === 200) {
             const buffer = Buffer.from(response.data);
             doc.image(buffer, 0, contentStartY, { 
               width: doc.page.width, 
               height: singleImgHeight, 
               fit: [doc.page.width, singleImgHeight] 
             });
-            console.log('Single recce image loaded successfully');
           }
         } catch (error: any) {
           console.log(`Failed to load single recce image: ${error.message}`);
@@ -773,21 +845,59 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         font_size: 9, color: 'EAB308', align: 'right'
       });
       
-      // Add initial photos in small layout if available (for both recce and installation)
-      let detailsStartY = 1.0;
+      // SIDE-BY-SIDE Layout: Store Details (Left) + Initial Photos (Right)
+      const dateValue = type === "recce" 
+        ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A')
+        : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A');
+      
+      const submittedBy = type === "recce" ? store.recce?.submittedBy : store.installation?.submittedBy;
+      
+      // LEFT SIDE: Store Details (compact)
+      slide.addText(`Store: ${store.storeName || 'Fusion Electro World'}`, {
+        x: 0.3, y: 0.7, cx: 4, cy: 0.25, font_size: 11, bold: true
+      });
+      slide.addText(`ID: ${store.storeId || store.storeCode || 'UDAUDAIN002301'}`, {
+        x: 0.3, y: 0.95, cx: 2.5, cy: 0.25, font_size: 10
+      });
+      slide.addText(`City: ${store.location?.city || 'Udaipur'}`, {
+        x: 2.8, y: 0.95, cx: 1.5, cy: 0.25, font_size: 10
+      });
+      slide.addText(`Date: ${dateValue}`, {
+        x: 0.3, y: 1.2, cx: 2.5, cy: 0.25, font_size: 10
+      });
+      slide.addText(`By: ${submittedBy || 'Amjad'}`, {
+        x: 2.8, y: 1.2, cx: 1.5, cy: 0.25, font_size: 10
+      });
+      
+      const address = store.location?.address || 'SHOP NO. 1-2 MEERA PLAZA COMMUNITY HALL ROAD SHAKTI NAGAR UDAIPUR';
+      slide.addText(`Address: ${address}`, {
+        x: 0.3, y: 1.45, cx: 4, cy: 0.4, font_size: 10, wrap: true
+      });
+      
+      if (type === "installation") {
+        slide.addText('✓ COMPLETED', {
+          x: 3.8, y: 0.7, cx: 1, cy: 0.25, font_size: 11, bold: true, color: '22C55E'
+        });
+      }
+
+      // RIGHT SIDE: Initial Photos (if available)
       if (store.recce?.initialPhotos && store.recce.initialPhotos.length > 0) {
         slide.addText('Initial Photos:', {
-          x: 0.3, y: 0.6, cx: 2, cy: 0.2,
+          x: 5.2, y: 0.6, cx: 2, cy: 0.2,
           font_size: 8, color: '666666'
         });
         
-        const photoSize = 0.6;
+        const photoSize = 0.5;
         const photoSpacing = 0.05;
-        const startX = 0.3;
+        const rightStartX = 5.2;
         const photoY = 0.8;
         
+        // Arrange photos in 2 rows of 3
         for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 6); i++) {
-          const x = startX + i * (photoSize + photoSpacing);
+          const col = i % 3;
+          const row = Math.floor(i / 3);
+          const x = rightStartX + col * (photoSize + photoSpacing);
+          const currentY = photoY + row * (photoSize + photoSpacing);
           
           try {
             const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
@@ -800,123 +910,148 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             if (response.status === 200) {
               const buffer = Buffer.from(response.data);
               slide.addImage(buffer, {
-                x: x, y: photoY, cx: photoSize, cy: photoSize
+                x: x, y: currentY, cx: photoSize, cy: photoSize
               });
             }
           } catch (error) {
-            // Add placeholder rectangle for failed images
             console.log('Failed to load initial photo for PPT');
           }
         }
-        detailsStartY = 1.5;
       }
-      
-      // Store details with better formatting and spacing
-      const dateValue = type === "recce" 
-        ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A')
-        : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A');
-      
-      const submittedBy = type === "recce" ? store.recce?.submittedBy : store.installation?.submittedBy;
-      
-      // Row 1: Store Name and City with better spacing
-      slide.addText(`Store: ${store.storeName || 'Fusion Electro World'}`, {
-        x: 0.3, y: detailsStartY, cx: 4, cy: 0.3, font_size: 12, bold: true
-      });
-      slide.addText(`City: ${store.location?.city || 'Udaipur'}`, {
-        x: 4.5, y: detailsStartY, cx: 2, cy: 0.3, font_size: 12, bold: true
-      });
-      
-      if (type === "installation") {
-        slide.addText('✓ COMPLETED', {
-          x: 7, y: detailsStartY, cx: 2, cy: 0.3, font_size: 12, bold: true, color: '22C55E'
-        });
-      }
-      
-      // Row 2: Store ID, Date, and Submitted By
-      slide.addText(`ID: ${store.storeId || store.storeCode || 'UDAUDAIN002301'}`, {
-        x: 0.3, y: detailsStartY + 0.35, cx: 3, cy: 0.3, font_size: 11
-      });
-      slide.addText(`Date: ${dateValue}`, {
-        x: 3.5, y: detailsStartY + 0.35, cx: 2.5, cy: 0.3, font_size: 11
-      });
-      slide.addText(`By: ${submittedBy || 'Amjad'}`, {
-        x: 6.2, y: detailsStartY + 0.35, cx: 2.5, cy: 0.3, font_size: 11
-      });
-      
-      // Row 3: Full Address with proper wrapping
-      const address = store.location?.address || 'SHOP NO. 1-2 MEERA PLAZA COMMUNITY HALL ROAD SHAKTI NAGAR UDAIPUR';
-      slide.addText(`Address: ${address}`, {
-        x: 0.3, y: detailsStartY + 0.7, cx: 8.4, cy: 0.4, font_size: 11, wrap: true
-      });
 
-      // MAIN CONTENT - Adjusted for dynamic header spacing
-      const contentStartY = detailsStartY + 1.3;
+      // MAIN CONTENT - Fixed positioning for new layout
+      const contentStartY = 2.0;
       if (type === "installation" && store.recce?.reccePhotos && store.installation?.photos) {
         const reccePhoto = store.recce.reccePhotos[0];
-        const installPhoto = store.installation.photos.find((p: any) => p.reccePhotoIndex === 0);
+        const installPhotos = store.installation.photos.filter((p: any) => p.reccePhotoIndex === 0);
         
-        try {
-          // BEFORE image - positioned dynamically
-          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
-          const axios = require('axios');
-          const recceResponse = await axios.get(reccePhotoUrl, { 
-            responseType: 'arraybuffer',
-            timeout: 10000
-          });
-          
-          if (recceResponse.status === 200) {
-            const recceBuffer = Buffer.from(recceResponse.data);
-            slide.addImage(recceBuffer, {
-              x: 0.3, y: contentStartY, cx: 4.2, cy: 3.8
-            });
-          }
-        } catch (error) {
-          console.log('Failed to load recce image for PPT');
-        }
-        
-        // BEFORE label with red background
-        slide.addText('BEFORE', {
-          x: 0.3, y: contentStartY + 3.9, cx: 4.2, cy: 0.4,
-          font_size: 14, bold: true, color: 'FFFFFF',
-          fill: { color: 'EF4444' }, align: 'center'
-        });
-        
-        if (installPhoto) {
+        if (installPhotos.length >= 2) {
+          // Three images: Before + After1 + After2
           try {
-            // AFTER image - positioned dynamically
-            const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
-            const installResponse = await axios.get(installPhotoUrl, { 
+            const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+            const axios = require('axios');
+            const recceResponse = await axios.get(reccePhotoUrl, { 
               responseType: 'arraybuffer',
               timeout: 10000
             });
             
-            if (installResponse.status === 200) {
-              const installBuffer = Buffer.from(installResponse.data);
-              slide.addImage(installBuffer, {
-                x: 4.8, y: contentStartY, cx: 4.2, cy: 3.8
+            if (recceResponse.status === 200) {
+              const recceBuffer = Buffer.from(recceResponse.data);
+              slide.addImage(recceBuffer, {
+                x: 0.2, y: contentStartY, cx: 2.8, cy: 3.5
               });
             }
           } catch (error) {
-            console.log('Failed to load installation image for PPT');
+            console.log('Failed to load recce image for PPT');
           }
-        }
-        
-        // AFTER label with green background
-        slide.addText('AFTER', {
-          x: 4.8, y: contentStartY + 3.9, cx: 4.2, cy: 0.4,
-          font_size: 14, bold: true, color: 'FFFFFF',
-          fill: { color: '22C55E' }, align: 'center'
-        });
-        
-        // Measurements
-        if (reccePhoto.measurements) {
-          slide.addText(`${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, {
-            x: 2, y: contentStartY + 4.5, cx: 5.5, cy: 0.3,
-            font_size: 12, align: 'center', color: '1F2937'
+          
+          // AFTER 1
+          try {
+            const installPhoto1Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[0].installationPhoto.replace(/\s+/g, '%20')}`;
+            const installResponse1 = await axios.get(installPhoto1Url, { 
+              responseType: 'arraybuffer',
+              timeout: 10000
+            });
+            
+            if (installResponse1.status === 200) {
+              const installBuffer1 = Buffer.from(installResponse1.data);
+              slide.addImage(installBuffer1, {
+                x: 3.2, y: contentStartY, cx: 2.8, cy: 3.5
+              });
+            }
+          } catch (error) {
+            console.log('Failed to load installation image 1 for PPT');
+          }
+          
+          // AFTER 2
+          try {
+            const installPhoto2Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[1].installationPhoto.replace(/\s+/g, '%20')}`;
+            const installResponse2 = await axios.get(installPhoto2Url, { 
+              responseType: 'arraybuffer',
+              timeout: 10000
+            });
+            
+            if (installResponse2.status === 200) {
+              const installBuffer2 = Buffer.from(installResponse2.data);
+              slide.addImage(installBuffer2, {
+                x: 6.2, y: contentStartY, cx: 2.8, cy: 3.5
+              });
+            }
+          } catch (error) {
+            console.log('Failed to load installation image 2 for PPT');
+          }
+          
+          // Labels
+          slide.addText('BEFORE', {
+            x: 0.2, y: contentStartY + 3.6, cx: 2.8, cy: 0.3,
+            font_size: 12, bold: true, color: 'FFFFFF',
+            fill: { color: 'EF4444' }, align: 'center'
+          });
+          slide.addText('AFTER 1', {
+            x: 3.2, y: contentStartY + 3.6, cx: 2.8, cy: 0.3,
+            font_size: 12, bold: true, color: 'FFFFFF',
+            fill: { color: '22C55E' }, align: 'center'
+          });
+          slide.addText('AFTER 2', {
+            x: 6.2, y: contentStartY + 3.6, cx: 2.8, cy: 0.3,
+            font_size: 12, bold: true, color: 'FFFFFF',
+            fill: { color: '22C55E' }, align: 'center'
+          });
+        } else {
+          // Two images: Before + After
+          const installPhoto = installPhotos[0];
+          
+          try {
+            const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+            const axios = require('axios');
+            const recceResponse = await axios.get(reccePhotoUrl, { 
+              responseType: 'arraybuffer',
+              timeout: 10000
+            });
+            
+            if (recceResponse.status === 200) {
+              const recceBuffer = Buffer.from(recceResponse.data);
+              slide.addImage(recceBuffer, {
+                x: 0.3, y: contentStartY, cx: 4.2, cy: 3.8
+              });
+            }
+          } catch (error) {
+            console.log('Failed to load recce image for PPT');
+          }
+          
+          if (installPhoto) {
+            try {
+              const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
+              const installResponse = await axios.get(installPhotoUrl, { 
+                responseType: 'arraybuffer',
+                timeout: 10000
+              });
+              
+              if (installResponse.status === 200) {
+                const installBuffer = Buffer.from(installResponse.data);
+                slide.addImage(installBuffer, {
+                  x: 4.8, y: contentStartY, cx: 4.2, cy: 3.8
+                });
+              }
+            } catch (error) {
+              console.log('Failed to load installation image for PPT');
+            }
+          }
+          
+          // Labels
+          slide.addText('BEFORE', {
+            x: 0.3, y: contentStartY + 3.9, cx: 4.2, cy: 0.4,
+            font_size: 14, bold: true, color: 'FFFFFF',
+            fill: { color: 'EF4444' }, align: 'center'
+          });
+          slide.addText('AFTER', {
+            x: 4.8, y: contentStartY + 3.9, cx: 4.2, cy: 0.4,
+            font_size: 14, bold: true, color: 'FFFFFF',
+            fill: { color: '22C55E' }, align: 'center'
           });
         }
       } else if (type === "recce" && store.recce?.reccePhotos) {
-        // Single recce photo - positioned dynamically
+        // Single recce photo
         const reccePhoto = store.recce.reccePhotos[0];
         
         try {
@@ -935,14 +1070,6 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           }
         } catch (error) {
           console.log('Failed to load recce image for PPT');
-        }
-        
-        // Measurements
-        if (reccePhoto.measurements) {
-          slide.addText(`${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, {
-            x: 2, y: contentStartY + 4.5, cx: 5.5, cy: 0.3,
-            font_size: 12, align: 'center', color: '1F2937'
-          });
         }
       }
     }
