@@ -485,7 +485,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
       }
 
       const headerColor = type === "recce" ? '#EAB308' : '#22C55E';
-      const title = type === "recce" ? 'RECCE INSPECTION REPORT' : 'INSTALLATION COMPLETION REPORT';
+      const title = type === "recce" ? 'Recce Inspection Report' : 'Installation Completion Report';
       
       doc.fillColor(headerColor).fontSize(16).font('Helvetica-Bold')
         .text(title, 30, 20, { width: doc.page.width - 210, align: 'center' });
@@ -745,7 +745,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
     const titleSlide = pptx.makeNewSlide();
     titleSlide.name = `${type === "recce" ? "Recce" : "Installation"} Report`;
     
-    titleSlide.addText(`${type === "recce" ? "RECCE INSPECTION" : "INSTALLATION COMPLETION"} REPORT`, {
+    titleSlide.addText(`${type === "recce" ? "Recce Inspection" : "Installation Completion"} REPORT`, {
       x: 1, y: 2, cx: 8, cy: 1,
       font_size: 28, bold: true, color: type === "recce" ? 'EAB308' : '22C55E',
       align: 'center'
@@ -771,7 +771,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
       slide.name = `${store.storeName} - ${type}`;
       
       // Header with centered title matching PDF
-      const title = type === "recce" ? 'RECCE INSPECTION REPORT' : 'INSTALLATION COMPLETION REPORT';
+      const title = type === "recce" ? 'Recce Inspection Report' : 'Installation Completion Report';
       slide.addText(title, {
         x: 0.9, y: 0.15, cx: 8.2, cy: 0.6,
         font_size: 20, bold: true, color: type === "recce" ? 'EAB308' : '22C55E',
