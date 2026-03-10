@@ -38,23 +38,29 @@ export const generateCompactInstallationPDF = async (req: Request, res: Response
       .text('ELORA CREATIVE ART', 650, 15, { width: 150, align: 'right' })
       .text('www.eloracreativeart.in', 650, 28, { width: 150, align: 'right' });
 
-    // Compact Store Info (2 rows only)
-    doc.fillColor('#000000').fontSize(9);
+    // Compact Store Info - Fixed Layout
+    doc.fillColor('#000000').fontSize(8);
     let y = 55;
     
-    doc.font('Helvetica-Bold').text('Store:', 30, y, { continued: true, width: 50 });
-    doc.font('Helvetica').text(`${store.storeName} (${store.storeId})`, 80, y, { width: 200 });
-    doc.font('Helvetica-Bold').text('City:', 300, y, { continued: true, width: 40 });
-    doc.font('Helvetica').text(store.location?.city || 'N/A', 340, y, { width: 150 });
-    doc.font('Helvetica-Bold').text('Date:', 500, y, { continued: true, width: 40 });
-    doc.font('Helvetica').text(store.installation.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A', 540, y, { width: 100 });
-    doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 650, y, { width: 150 });
+    // Row 1: Store Name | City | Status
+    doc.font('Helvetica-Bold').text('Store:', 30, y);
+    doc.font('Helvetica').text((store.storeName || 'N/A').substring(0, 25), 70, y);
+    doc.font('Helvetica-Bold').text('City:', 300, y);
+    doc.font('Helvetica').text((store.location?.city || 'N/A').substring(0, 15), 330, y);
+    doc.font('Helvetica-Bold').text('Date:', 450, y);
+    doc.font('Helvetica').text(store.installation.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A', 480, y);
+    doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 600, y);
     
-    y += 15;
-    doc.fillColor('#000000').font('Helvetica-Bold').text('Address:', 30, y, { continued: true, width: 60 });
-    doc.font('Helvetica').text(store.location?.address || 'N/A', 90, y, { width: 400 });
-    doc.font('Helvetica-Bold').text('By:', 500, y, { continued: true, width: 30 });
-    doc.font('Helvetica').text(store.installation.submittedBy || 'N/A', 530, y, { width: 270 });
+    y += 12;
+    // Row 2: Store ID | Address | Submitted By
+    doc.fillColor('#000000').font('Helvetica-Bold').text('ID:', 30, y);
+    doc.font('Helvetica').text((store.storeId || 'N/A').substring(0, 20), 50, y);
+    doc.font('Helvetica-Bold').text('Address:', 180, y);
+    const address = store.location?.address || 'N/A';
+    const truncatedAddress = address.length > 30 ? address.substring(0, 30) + '...' : address;
+    doc.font('Helvetica').text(truncatedAddress, 230, y);
+    doc.font('Helvetica-Bold').text('By:', 450, y);
+    doc.font('Helvetica').text((store.installation.submittedBy || 'N/A').substring(0, 20), 470, y);
 
     // Separator line
     doc.save();
@@ -92,40 +98,32 @@ export const generateCompactInstallationPDF = async (req: Request, res: Response
         const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
         console.log('Loading recce image:', reccePhotoUrl);
         try {
-          const https = require('https');
-          const http = require('http');
-          const client = reccePhotoUrl.startsWith('https') ? https : http;
-          
-          await new Promise((resolve, reject) => {
-            client.get(reccePhotoUrl, (response: any) => {
-              if (response.statusCode === 200) {
-                const chunks: any[] = [];
-                response.on('data', (chunk: any) => chunks.push(chunk));
-                response.on('end', () => {
-                  try {
-                    const buffer = Buffer.concat(chunks);
-                    doc.image(buffer, beforeX + 5, beforeY + 5, { 
-                      width: imgWidth - 10, 
-                      height: imgHeight - 10, 
-                      fit: [imgWidth - 10, imgHeight - 10] 
-                    });
-                    resolve(true);
-                  } catch (err) {
-                    console.log('Error processing recce image:', err);
-                    resolve(false);
-                  }
-                });
-              } else {
-                console.log('Failed to load recce image, status:', response.statusCode);
-                resolve(false);
-              }
-            }).on('error', (err: any) => {
-              console.log('Network error loading recce image:', err.message);
-              resolve(false);
-            });
+          const axios = require('axios');
+          const response = await axios.get(reccePhotoUrl, { 
+            responseType: 'arraybuffer',
+            timeout: 10000,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (compatible; PDF-Generator)'
+            }
           });
-        } catch (error) {
-          console.log(`Failed to load recce image: ${error}`);
+          
+          if (response.status === 200 && response.data) {
+            const buffer = Buffer.from(response.data);
+            doc.image(buffer, beforeX + 5, beforeY + 5, { 
+              width: imgWidth - 10, 
+              height: imgHeight - 10, 
+              fit: [imgWidth - 10, imgHeight - 10] 
+            });
+            console.log('Recce image loaded successfully');
+          }
+        } catch (error: any) {
+          console.log(`Failed to load recce image: ${error.message}`);
+          // Add placeholder text
+          doc.fillColor('#999999').fontSize(12).font('Helvetica')
+            .text('Image not available', beforeX + 5, beforeY + imgHeight/2, { 
+              width: imgWidth - 10, 
+              align: 'center' 
+            });
         }
         
         doc.save();
@@ -145,40 +143,32 @@ export const generateCompactInstallationPDF = async (req: Request, res: Response
           const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
           console.log('Loading installation image:', installPhotoUrl);
           try {
-            const https = require('https');
-            const http = require('http');
-            const client = installPhotoUrl.startsWith('https') ? https : http;
-            
-            await new Promise((resolve, reject) => {
-              client.get(installPhotoUrl, (response: any) => {
-                if (response.statusCode === 200) {
-                  const chunks: any[] = [];
-                  response.on('data', (chunk: any) => chunks.push(chunk));
-                  response.on('end', () => {
-                    try {
-                      const buffer = Buffer.concat(chunks);
-                      doc.image(buffer, afterX + 5, beforeY + 5, { 
-                        width: imgWidth - 10, 
-                        height: imgHeight - 10, 
-                        fit: [imgWidth - 10, imgHeight - 10] 
-                      });
-                      resolve(true);
-                    } catch (err) {
-                      console.log('Error processing installation image:', err);
-                      resolve(false);
-                    }
-                  });
-                } else {
-                  console.log('Failed to load installation image, status:', response.statusCode);
-                  resolve(false);
-                }
-              }).on('error', (err: any) => {
-                console.log('Network error loading installation image:', err.message);
-                resolve(false);
-              });
+            const axios = require('axios');
+            const response = await axios.get(installPhotoUrl, { 
+              responseType: 'arraybuffer',
+              timeout: 10000,
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (compatible; PDF-Generator)'
+              }
             });
-          } catch (error) {
-            console.log(`Failed to load installation image: ${error}`);
+            
+            if (response.status === 200 && response.data) {
+              const buffer = Buffer.from(response.data);
+              doc.image(buffer, afterX + 5, beforeY + 5, { 
+                width: imgWidth - 10, 
+                height: imgHeight - 10, 
+                fit: [imgWidth - 10, imgHeight - 10] 
+              });
+              console.log('Installation image loaded successfully');
+            }
+          } catch (error: any) {
+            console.log(`Failed to load installation image: ${error.message}`);
+            // Add placeholder text
+            doc.fillColor('#999999').fontSize(12).font('Helvetica')
+              .text('Image not available', afterX + 5, beforeY + imgHeight/2, { 
+                width: imgWidth - 10, 
+                align: 'center' 
+              });
           }
         }
         
