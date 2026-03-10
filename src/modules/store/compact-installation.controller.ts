@@ -88,13 +88,19 @@ export const generateCompactInstallationPDF = async (req: Request, res: Response
         doc.rect(beforeX, beforeY, imgWidth, imgHeight + 20).strokeColor('#EF4444').lineWidth(2).stroke();
         doc.restore();
         
-        const reccePhotoPath = path.join(process.cwd(), reccePhoto.photo);
-        if (fs.existsSync(reccePhotoPath)) {
-          doc.image(reccePhotoPath, beforeX + 5, beforeY + 5, { 
-            width: imgWidth - 10, 
-            height: imgHeight - 10, 
-            fit: [imgWidth - 10, imgHeight - 10] 
-          });
+        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${encodeURIComponent(reccePhoto.photo)}`;
+        try {
+          const response = await fetch(reccePhotoUrl);
+          if (response.ok) {
+            const imageBuffer = await response.arrayBuffer();
+            doc.image(Buffer.from(imageBuffer), beforeX + 5, beforeY + 5, { 
+              width: imgWidth - 10, 
+              height: imgHeight - 10, 
+              fit: [imgWidth - 10, imgHeight - 10] 
+            });
+          }
+        } catch (error) {
+          console.log(`Failed to load recce image: ${reccePhotoUrl}`);
         }
         
         doc.save();
@@ -111,13 +117,19 @@ export const generateCompactInstallationPDF = async (req: Request, res: Response
         doc.restore();
         
         if (installPhoto) {
-          const installPhotoPath = path.join(process.cwd(), installPhoto.installationPhoto);
-          if (fs.existsSync(installPhotoPath)) {
-            doc.image(installPhotoPath, afterX + 5, beforeY + 5, { 
-              width: imgWidth - 10, 
-              height: imgHeight - 10, 
-              fit: [imgWidth - 10, imgHeight - 10] 
-            });
+          const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${encodeURIComponent(installPhoto.installationPhoto)}`;
+          try {
+            const response = await fetch(installPhotoUrl);
+            if (response.ok) {
+              const imageBuffer = await response.arrayBuffer();
+              doc.image(Buffer.from(imageBuffer), afterX + 5, beforeY + 5, { 
+                width: imgWidth - 10, 
+                height: imgHeight - 10, 
+                fit: [imgWidth - 10, imgHeight - 10] 
+              });
+            }
+          } catch (error) {
+            console.log(`Failed to load installation image: ${installPhotoUrl}`);
           }
         }
         

@@ -493,43 +493,49 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
         .text('ELORA CREATIVE ART', 650, 15, { width: 150, align: 'right' })
         .text('www.eloracreativeart.in', 650, 28, { width: 150, align: 'right' });
 
-      // ULTRA COMPACT Store Details (2 lines only)
+      // ULTRA COMPACT Store Details (3 lines with better spacing)
       doc.fillColor('#000000').fontSize(9);
-      let y = 50;
-      
-      doc.font('Helvetica-Bold').text('Store:', 30, y, { continued: true, width: 50 });
-      doc.font('Helvetica').text(`${store.storeName} (${store.storeId || store.storeCode})`, 80, y, { width: 200 });
-      doc.font('Helvetica-Bold').text('City:', 300, y, { continued: true, width: 40 });
-      doc.font('Helvetica').text(store.location?.city || 'N/A', 340, y, { width: 150 });
-      doc.font('Helvetica-Bold').text('Date:', 500, y, { continued: true, width: 40 });
+      let y = 45;
       
       const dateValue = type === "recce" 
         ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A')
         : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A');
       
-      doc.font('Helvetica').text(dateValue, 540, y, { width: 100 });
+      // Line 1: Store name and City
+      doc.font('Helvetica-Bold').text('Store:', 30, y, { continued: true, width: 45 });
+      doc.font('Helvetica').text(`${store.storeName}`, 75, y, { width: 280 });
+      doc.font('Helvetica-Bold').text('City:', 370, y, { continued: true, width: 35 });
+      doc.font('Helvetica').text(store.location?.city || 'N/A', 405, y, { width: 120 });
       
       if (type === "installation") {
-        doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 650, y, { width: 150 });
+        doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 650, y, { width: 120 });
       }
-
-      y += 15;
-      doc.fillColor('#000000').font('Helvetica-Bold').text('Address:', 30, y, { continued: true, width: 60 });
-      doc.font('Helvetica').text(store.location?.address || 'N/A', 90, y, { width: 400 });
+      
+      y += 12;
+      // Line 2: Store ID and Date
+      doc.fillColor('#000000').font('Helvetica-Bold').text('ID:', 30, y, { continued: true, width: 25 });
+      doc.font('Helvetica').text(store.storeId || store.storeCode || 'N/A', 55, y, { width: 150 });
+      doc.font('Helvetica-Bold').text('Date:', 220, y, { continued: true, width: 35 });
+      doc.font('Helvetica').text(dateValue, 255, y, { width: 100 });
       
       const submittedBy = type === "recce" ? store.recce?.submittedBy : store.installation?.submittedBy;
-      doc.font('Helvetica-Bold').text('By:', 500, y, { continued: true, width: 30 });
-      doc.font('Helvetica').text(submittedBy || 'N/A', 530, y, { width: 270 });
+      doc.font('Helvetica-Bold').text('By:', 370, y, { continued: true, width: 25 });
+      doc.font('Helvetica').text(submittedBy || 'N/A', 395, y, { width: 375 });
+      
+      y += 12;
+      // Line 3: Address (full width)
+      doc.font('Helvetica-Bold').text('Address:', 30, y, { continued: true, width: 55 });
+      doc.font('Helvetica').text(store.location?.address || 'N/A', 85, y, { width: 685 });
 
       // Minimal separator line
       doc.save();
-      doc.strokeColor('#EAB308').lineWidth(2).moveTo(30, 80).lineTo(770, 80).stroke();
+      doc.strokeColor('#EAB308').lineWidth(2).moveTo(30, y + 18).lineTo(770, y + 18).stroke();
       doc.restore();
 
-      // MAIN CONTENT AREA (85% of page - 510px height)
-      const contentStartY = 95;
-      const availableHeight = doc.page.height - contentStartY - 20; // 485px
-      const availableWidth = doc.page.width - 60; // 740px
+      // MAIN CONTENT AREA (80% of page)
+      const contentStartY = y + 25;
+      const availableHeight = doc.page.height - contentStartY - 20;
+      const availableWidth = doc.page.width - 60;
 
       if (type === "installation" && store.recce?.reccePhotos && store.installation?.photos) {
         // Before/After Layout - MAXIMIZED (85% image space)
@@ -545,13 +551,19 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
         doc.rect(beforeX, contentStartY, imgWidth, imgHeight + 20).strokeColor('#EF4444').lineWidth(2).stroke();
         doc.restore();
         
-        const reccePhotoPath = path.join(process.cwd(), reccePhoto.photo);
-        if (fs.existsSync(reccePhotoPath)) {
-          doc.image(reccePhotoPath, beforeX + 5, contentStartY + 5, { 
-            width: imgWidth - 10, 
-            height: imgHeight - 10, 
-            fit: [imgWidth - 10, imgHeight - 10] 
-          });
+        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${encodeURIComponent(reccePhoto.photo)}`;
+        try {
+          const response = await fetch(reccePhotoUrl);
+          if (response.ok) {
+            const imageBuffer = await response.arrayBuffer();
+            doc.image(Buffer.from(imageBuffer), beforeX + 5, contentStartY + 5, { 
+              width: imgWidth - 10, 
+              height: imgHeight - 10, 
+              fit: [imgWidth - 10, imgHeight - 10] 
+            });
+          }
+        } catch (error) {
+          console.log(`Failed to load recce image: ${reccePhotoUrl}`);
         }
         
         // Clean label without background shading
@@ -568,13 +580,19 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
         doc.restore();
         
         if (installPhoto) {
-          const installPhotoPath = path.join(process.cwd(), installPhoto.installationPhoto);
-          if (fs.existsSync(installPhotoPath)) {
-            doc.image(installPhotoPath, afterX + 5, contentStartY + 5, { 
-              width: imgWidth - 10, 
-              height: imgHeight - 10, 
-              fit: [imgWidth - 10, imgHeight - 10] 
-            });
+          const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${encodeURIComponent(installPhoto.installationPhoto)}`;
+          try {
+            const response = await fetch(installPhotoUrl);
+            if (response.ok) {
+              const imageBuffer = await response.arrayBuffer();
+              doc.image(Buffer.from(imageBuffer), afterX + 5, contentStartY + 5, { 
+                width: imgWidth - 10, 
+                height: imgHeight - 10, 
+                fit: [imgWidth - 10, imgHeight - 10] 
+              });
+            }
+          } catch (error) {
+            console.log(`Failed to load installation image: ${installPhotoUrl}`);
           }
         }
         
@@ -594,7 +612,6 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
       } else if (type === "recce" && store.recce?.reccePhotos) {
         // Single large recce photo - MAXIMIZED (85% space)
         const reccePhoto = store.recce.reccePhotos[0];
-        const photoPath = path.join(process.cwd(), reccePhoto.photo);
         const singleImgHeight = availableHeight - 30;
         
         // Clean border without shading
@@ -602,12 +619,19 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
         doc.rect(30, contentStartY, availableWidth, singleImgHeight).strokeColor('#EAB308').lineWidth(2).stroke();
         doc.restore();
         
-        if (fs.existsSync(photoPath)) {
-          doc.image(photoPath, 35, contentStartY + 5, { 
-            width: availableWidth - 10, 
-            height: singleImgHeight - 10, 
-            fit: [availableWidth - 10, singleImgHeight - 10] 
-          });
+        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${encodeURIComponent(reccePhoto.photo)}`;
+        try {
+          const response = await fetch(reccePhotoUrl);
+          if (response.ok) {
+            const imageBuffer = await response.arrayBuffer();
+            doc.image(Buffer.from(imageBuffer), 35, contentStartY + 5, { 
+              width: availableWidth - 10, 
+              height: singleImgHeight - 10, 
+              fit: [availableWidth - 10, singleImgHeight - 10] 
+            });
+          }
+        } catch (error) {
+          console.log(`Failed to load recce image: ${reccePhotoUrl}`);
         }
         
         // Compact measurements at bottom
@@ -700,11 +724,17 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         const installPhoto = store.installation.photos.find((p: any) => p.reccePhotoIndex === 0);
         
         // Before image (left 42.5%)
-        const reccePhotoPath = path.join(process.cwd(), reccePhoto.photo);
-        if (fs.existsSync(reccePhotoPath)) {
-          slide.addImage(reccePhotoPath, {
-            x: 0.5, y: 1.5, cx: 4, cy: 4.5
-          });
+        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${encodeURIComponent(reccePhoto.photo)}`;
+        try {
+          const response = await fetch(reccePhotoUrl);
+          if (response.ok) {
+            const imageBuffer = await response.arrayBuffer();
+            slide.addImage(Buffer.from(imageBuffer), {
+              x: 0.5, y: 1.5, cx: 4, cy: 4.5
+            });
+          }
+        } catch (error) {
+          console.log(`Failed to load recce image for PPT: ${reccePhotoUrl}`);
         }
         
         slide.addText('BEFORE', {
@@ -714,11 +744,17 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         
         // After image (right 42.5%)
         if (installPhoto) {
-          const installPhotoPath = path.join(process.cwd(), installPhoto.installationPhoto);
-          if (fs.existsSync(installPhotoPath)) {
-            slide.addImage(installPhotoPath, {
-              x: 5.5, y: 1.5, cx: 4, cy: 4.5
-            });
+          const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${encodeURIComponent(installPhoto.installationPhoto)}`;
+          try {
+            const response = await fetch(installPhotoUrl);
+            if (response.ok) {
+              const imageBuffer = await response.arrayBuffer();
+              slide.addImage(Buffer.from(imageBuffer), {
+                x: 5.5, y: 1.5, cx: 4, cy: 4.5
+              });
+            }
+          } catch (error) {
+            console.log(`Failed to load installation image for PPT: ${installPhotoUrl}`);
           }
         }
         
@@ -737,12 +773,18 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
       } else if (type === "recce" && store.recce?.reccePhotos) {
         // Single large image (85% space)
         const reccePhoto = store.recce.reccePhotos[0];
-        const photoPath = path.join(process.cwd(), reccePhoto.photo);
         
-        if (fs.existsSync(photoPath)) {
-          slide.addImage(photoPath, {
-            x: 0.5, y: 1.5, cx: 9, cy: 5
-          });
+        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${encodeURIComponent(reccePhoto.photo)}`;
+        try {
+          const response = await fetch(reccePhotoUrl);
+          if (response.ok) {
+            const imageBuffer = await response.arrayBuffer();
+            slide.addImage(Buffer.from(imageBuffer), {
+              x: 0.5, y: 1.5, cx: 9, cy: 5
+            });
+          }
+        } catch (error) {
+          console.log(`Failed to load recce image for PPT: ${reccePhotoUrl}`);
         }
         
         // Measurements
