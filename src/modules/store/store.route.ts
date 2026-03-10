@@ -28,6 +28,7 @@ import {
   importRecceApproval,
 } from "./store.controller";
 import { generateReccePDF, generateInstallationPDF, generateBulkPDF } from "./pdf.controller";
+import { generateCompactBulkPDF, generateCompactBulkPPT } from "./compact-bulk.controller";
 import { protect } from "../../middlewares/auth.middleware";
 import { checkPermission } from "../../middlewares/rbac.middleware";
 
@@ -574,9 +575,9 @@ router.post("/ppt/bulk", protect, generateBulkPPT);
  *               type: string
  *               format: binary
  */
-router.post("/pdf/bulk", protect, generateBulkPDF);
+router.post("/pdf/bulk", protect, generateCompactBulkPDF);
 
-router.post("/ppt/bulk", protect, generateBulkPPT);
+router.post("/ppt/bulk", protect, generateCompactBulkPPT);
 
 /**
  * @swagger
