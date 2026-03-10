@@ -88,19 +88,44 @@ export const generateCompactInstallationPDF = async (req: Request, res: Response
         doc.rect(beforeX, beforeY, imgWidth, imgHeight + 20).strokeColor('#EF4444').lineWidth(2).stroke();
         doc.restore();
         
-        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${encodeURIComponent(reccePhoto.photo)}`;
+        // Load recce image from URL
+        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+        console.log('Loading recce image:', reccePhotoUrl);
         try {
-          const response = await fetch(reccePhotoUrl);
-          if (response.ok) {
-            const imageBuffer = await response.arrayBuffer();
-            doc.image(Buffer.from(imageBuffer), beforeX + 5, beforeY + 5, { 
-              width: imgWidth - 10, 
-              height: imgHeight - 10, 
-              fit: [imgWidth - 10, imgHeight - 10] 
+          const https = require('https');
+          const http = require('http');
+          const client = reccePhotoUrl.startsWith('https') ? https : http;
+          
+          await new Promise((resolve, reject) => {
+            client.get(reccePhotoUrl, (response: any) => {
+              if (response.statusCode === 200) {
+                const chunks: any[] = [];
+                response.on('data', (chunk: any) => chunks.push(chunk));
+                response.on('end', () => {
+                  try {
+                    const buffer = Buffer.concat(chunks);
+                    doc.image(buffer, beforeX + 5, beforeY + 5, { 
+                      width: imgWidth - 10, 
+                      height: imgHeight - 10, 
+                      fit: [imgWidth - 10, imgHeight - 10] 
+                    });
+                    resolve(true);
+                  } catch (err) {
+                    console.log('Error processing recce image:', err);
+                    resolve(false);
+                  }
+                });
+              } else {
+                console.log('Failed to load recce image, status:', response.statusCode);
+                resolve(false);
+              }
+            }).on('error', (err: any) => {
+              console.log('Network error loading recce image:', err.message);
+              resolve(false);
             });
-          }
+          });
         } catch (error) {
-          console.log(`Failed to load recce image: ${reccePhotoUrl}`);
+          console.log(`Failed to load recce image: ${error}`);
         }
         
         doc.save();
@@ -117,19 +142,43 @@ export const generateCompactInstallationPDF = async (req: Request, res: Response
         doc.restore();
         
         if (installPhoto) {
-          const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${encodeURIComponent(installPhoto.installationPhoto)}`;
+          const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
+          console.log('Loading installation image:', installPhotoUrl);
           try {
-            const response = await fetch(installPhotoUrl);
-            if (response.ok) {
-              const imageBuffer = await response.arrayBuffer();
-              doc.image(Buffer.from(imageBuffer), afterX + 5, beforeY + 5, { 
-                width: imgWidth - 10, 
-                height: imgHeight - 10, 
-                fit: [imgWidth - 10, imgHeight - 10] 
+            const https = require('https');
+            const http = require('http');
+            const client = installPhotoUrl.startsWith('https') ? https : http;
+            
+            await new Promise((resolve, reject) => {
+              client.get(installPhotoUrl, (response: any) => {
+                if (response.statusCode === 200) {
+                  const chunks: any[] = [];
+                  response.on('data', (chunk: any) => chunks.push(chunk));
+                  response.on('end', () => {
+                    try {
+                      const buffer = Buffer.concat(chunks);
+                      doc.image(buffer, afterX + 5, beforeY + 5, { 
+                        width: imgWidth - 10, 
+                        height: imgHeight - 10, 
+                        fit: [imgWidth - 10, imgHeight - 10] 
+                      });
+                      resolve(true);
+                    } catch (err) {
+                      console.log('Error processing installation image:', err);
+                      resolve(false);
+                    }
+                  });
+                } else {
+                  console.log('Failed to load installation image, status:', response.statusCode);
+                  resolve(false);
+                }
+              }).on('error', (err: any) => {
+                console.log('Network error loading installation image:', err.message);
+                resolve(false);
               });
-            }
+            });
           } catch (error) {
-            console.log(`Failed to load installation image: ${installPhotoUrl}`);
+            console.log(`Failed to load installation image: ${error}`);
           }
         }
         
