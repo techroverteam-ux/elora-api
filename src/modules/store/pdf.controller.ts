@@ -763,7 +763,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             .text('AFTER', imgWidth, contentStartY + imgHeight + 6, { width: imgWidth, align: 'center' });
         }
       } else if (type === "recce" && store.recce?.reccePhotos) {
-        // Single recce photo - Full width
+        // Single recce photo - Full width with border
         const reccePhoto = store.recce.reccePhotos[0];
         const singleImgHeight = availableHeight - 30;
         
@@ -777,10 +777,15 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
           
           if (response.status === 200) {
             const buffer = Buffer.from(response.data);
-            doc.image(buffer, 0, contentStartY, { 
-              width: doc.page.width, 
-              height: singleImgHeight, 
-              fit: [doc.page.width, singleImgHeight] 
+            // Add border
+            doc.save();
+            doc.rect(0, contentStartY, doc.page.width, singleImgHeight).strokeColor('#EAB308').lineWidth(3).stroke();
+            doc.restore();
+            
+            doc.image(buffer, 5, contentStartY + 5, { 
+              width: doc.page.width - 10, 
+              height: singleImgHeight - 10, 
+              fit: [doc.page.width - 10, singleImgHeight - 10] 
             });
           }
         } catch (error: any) {
@@ -1093,7 +1098,14 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
       }
     }
 
-    pptx.generate(res);
+    pptx.generate(res, (error: any) => {
+      if (error) {
+        console.error("PPT Generation Error:", error);
+        if (!res.headersSent) {
+          res.status(500).json({ message: "Error generating PPT" });
+        }
+      }
+    });
   } catch (error: any) {
     console.error("Bulk PPT Error:", error);
     if (!res.headersSent) res.status(500).json({ message: "Error generating bulk PPT" });
