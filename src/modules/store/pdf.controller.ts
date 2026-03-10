@@ -534,22 +534,19 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
         doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 350, 50, { width: 80 });
       }
 
-      // RIGHT SIDE: Initial Photos (if available)
+      // RIGHT SIDE: Initial Photos (if available) - Single line, bigger size
       if (store.recce?.initialPhotos && store.recce.initialPhotos.length > 0) {
-        const photoSize = 50;
-        const photoSpacing = 5;
+        const photoSize = 60;
+        const photoSpacing = 8;
         const rightStartX = 450;
         let photoY = 50;
         
         doc.fillColor('#666666').fontSize(8).font('Helvetica')
           .text('Initial Photos:', rightStartX, photoY - 12);
         
-        // Arrange photos in 2 rows of 3
-        for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 6); i++) {
-          const col = i % 3;
-          const row = Math.floor(i / 3);
-          const x = rightStartX + col * (photoSize + photoSpacing);
-          const currentY = photoY + row * (photoSize + photoSpacing);
+        // Arrange photos in single row
+        for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 5); i++) {
+          const x = rightStartX + i * (photoSize + photoSpacing);
           
           try {
             const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
@@ -561,7 +558,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             
             if (response.status === 200) {
               const buffer = Buffer.from(response.data);
-              doc.image(buffer, x, currentY, { 
+              doc.image(buffer, x, photoY, { 
                 width: photoSize, 
                 height: photoSize, 
                 fit: [photoSize, photoSize] 
@@ -569,7 +566,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             }
           } catch (error) {
             doc.save();
-            doc.rect(x, currentY, photoSize, photoSize).strokeColor('#CCCCCC').stroke();
+            doc.rect(x, photoY, photoSize, photoSize).strokeColor('#CCCCCC').stroke();
             doc.restore();
           }
         }
@@ -606,10 +603,15 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             
             if (response.status === 200) {
               const buffer = Buffer.from(response.data);
-              doc.image(buffer, 0, contentStartY, { 
-                width: imgWidth, 
-                height: imgHeight, 
-                fit: [imgWidth, imgHeight] 
+              // Add border
+              doc.save();
+              doc.rect(0, contentStartY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(3).stroke();
+              doc.restore();
+              
+              doc.image(buffer, 5, contentStartY + 5, { 
+                width: imgWidth - 10, 
+                height: imgHeight - 10, 
+                fit: [imgWidth - 10, imgHeight - 10] 
               });
             }
           } catch (error: any) {
@@ -627,10 +629,15 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             
             if (response.status === 200) {
               const buffer = Buffer.from(response.data);
-              doc.image(buffer, imgWidth, contentStartY, { 
-                width: imgWidth, 
-                height: imgHeight, 
-                fit: [imgWidth, imgHeight] 
+              // Add border
+              doc.save();
+              doc.rect(imgWidth, contentStartY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
+              doc.restore();
+              
+              doc.image(buffer, imgWidth + 5, contentStartY + 5, { 
+                width: imgWidth - 10, 
+                height: imgHeight - 10, 
+                fit: [imgWidth - 10, imgHeight - 10] 
               });
             }
           } catch (error: any) {
@@ -648,10 +655,15 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             
             if (response.status === 200) {
               const buffer = Buffer.from(response.data);
-              doc.image(buffer, imgWidth * 2, contentStartY, { 
-                width: imgWidth, 
-                height: imgHeight, 
-                fit: [imgWidth, imgHeight] 
+              // Add border
+              doc.save();
+              doc.rect(imgWidth * 2, contentStartY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
+              doc.restore();
+              
+              doc.image(buffer, imgWidth * 2 + 5, contentStartY + 5, { 
+                width: imgWidth - 10, 
+                height: imgHeight - 10, 
+                fit: [imgWidth - 10, imgHeight - 10] 
               });
             }
           } catch (error: any) {
@@ -694,10 +706,15 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             
             if (response.status === 200) {
               const buffer = Buffer.from(response.data);
-              doc.image(buffer, 0, contentStartY, { 
-                width: imgWidth, 
-                height: imgHeight, 
-                fit: [imgWidth, imgHeight] 
+              // Add border
+              doc.save();
+              doc.rect(0, contentStartY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(3).stroke();
+              doc.restore();
+              
+              doc.image(buffer, 5, contentStartY + 5, { 
+                width: imgWidth - 10, 
+                height: imgHeight - 10, 
+                fit: [imgWidth - 10, imgHeight - 10] 
               });
             }
           } catch (error: any) {
@@ -716,10 +733,15 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
               
               if (response.status === 200) {
                 const buffer = Buffer.from(response.data);
-                doc.image(buffer, imgWidth, contentStartY, { 
-                  width: imgWidth, 
-                  height: imgHeight, 
-                  fit: [imgWidth, imgHeight] 
+                // Add border
+                doc.save();
+                doc.rect(imgWidth, contentStartY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
+                doc.restore();
+                
+                doc.image(buffer, imgWidth + 5, contentStartY + 5, { 
+                  width: imgWidth - 10, 
+                  height: imgHeight - 10, 
+                  fit: [imgWidth - 10, imgHeight - 10] 
                 });
               }
             } catch (error: any) {
@@ -880,24 +902,21 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         });
       }
 
-      // RIGHT SIDE: Initial Photos (if available)
+      // RIGHT SIDE: Initial Photos (if available) - Single line, bigger size
       if (store.recce?.initialPhotos && store.recce.initialPhotos.length > 0) {
         slide.addText('Initial Photos:', {
           x: 5.2, y: 0.6, cx: 2, cy: 0.2,
           font_size: 8, color: '666666'
         });
         
-        const photoSize = 0.5;
-        const photoSpacing = 0.05;
+        const photoSize = 0.6;
+        const photoSpacing = 0.08;
         const rightStartX = 5.2;
         const photoY = 0.8;
         
-        // Arrange photos in 2 rows of 3
-        for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 6); i++) {
-          const col = i % 3;
-          const row = Math.floor(i / 3);
-          const x = rightStartX + col * (photoSize + photoSpacing);
-          const currentY = photoY + row * (photoSize + photoSpacing);
+        // Arrange photos in single row
+        for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 5); i++) {
+          const x = rightStartX + i * (photoSize + photoSpacing);
           
           try {
             const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
@@ -910,7 +929,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             if (response.status === 200) {
               const buffer = Buffer.from(response.data);
               slide.addImage(buffer, {
-                x: x, y: currentY, cx: photoSize, cy: photoSize
+                x: x, y: photoY, cx: photoSize, cy: photoSize
               });
             }
           } catch (error) {
