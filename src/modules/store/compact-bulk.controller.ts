@@ -251,18 +251,18 @@ export const generateCompactBulkPPT = async (req: Request, res: Response) => {
     const color = type === "recce" ? 'EAB308' : '22C55E';
     
     titleSlide.addText(title, {
-      x: 0.5, y: 2, cx: 9, cy: 1,
-      font_size: 28, bold: true, color: color
+      x: 1, y: 2, cx: 8, cy: 1,
+      font_size: 28, bold: true, color: color, align: 'center'
     });
     
     titleSlide.addText(`${stores.length} Stores Report`, {
-      x: 0.5, y: 3.5, cx: 9, cy: 0.8,
-      font_size: 18, color: '1F2937'
+      x: 1, y: 3.5, cx: 8, cy: 0.8,
+      font_size: 18, color: '1F2937', align: 'center'
     });
     
-    titleSlide.addText('ELORA CREATIVE ART', {
-      x: 0.5, y: 5, cx: 9, cy: 0.5,
-      font_size: 14, color: 'EAB308'
+    titleSlide.addText('ELORA CREATIVE ART | www.eloracreativeart.in', {
+      x: 1, y: 5, cx: 8, cy: 0.5,
+      font_size: 14, color: 'EAB308', align: 'center'
     });
 
     // Store slides
@@ -275,17 +275,55 @@ export const generateCompactBulkPPT = async (req: Request, res: Response) => {
       const slide = pptx.makeNewSlide();
       slide.name = `${store.storeName}`;
       
-      // Compact header (top 15%)
-      slide.addText(`${store.storeName} (${store.storeId})`, {
-        x: 0.5, y: 0.2, cx: 9, cy: 0.6,
-        font_size: 16, bold: true, color: '1F2937'
+      // Header with centered title
+      slide.addText(title, {
+        x: 1, y: 0.2, cx: 8, cy: 0.6,
+        font_size: 18, bold: true, color: color, align: 'center'
       });
       
-      slide.addText(`${store.location?.city} | ${type === "recce" ? 
-        (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A') :
-        (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A')}`, {
-        x: 0.5, y: 0.8, cx: 9, cy: 0.4,
-        font_size: 12, color: '6B7280'
+      // Company info
+      slide.addText('ELORA CREATIVE ART | www.eloracreativeart.in', {
+        x: 7, y: 0.1, cx: 2.5, cy: 0.4,
+        font_size: 10, color: 'EAB308', align: 'right'
+      });
+      
+      // Store details in organized layout
+      const dateValue = type === "recce" 
+        ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A')
+        : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A');
+      
+      const submittedBy = type === "recce" ? store.recce?.submittedBy : store.installation?.submittedBy;
+      
+      // Store details row 1
+      slide.addText(`Store: ${(store.storeName || 'N/A').substring(0, 30)}`, {
+        x: 0.3, y: 1.2, cx: 3, cy: 0.3, font_size: 11, bold: true
+      });
+      slide.addText(`City: ${(store.location?.city || 'N/A').substring(0, 15)}`, {
+        x: 3.5, y: 1.2, cx: 2, cy: 0.3, font_size: 11, bold: true
+      });
+      
+      if (type === "installation") {
+        slide.addText('✓ COMPLETED', {
+          x: 6, y: 1.2, cx: 2, cy: 0.3, font_size: 11, bold: true, color: '22C55E'
+        });
+      }
+      
+      // Store details row 2
+      slide.addText(`ID: ${(store.storeId || store.storeCode || 'N/A').substring(0, 20)}`, {
+        x: 0.3, y: 1.5, cx: 2.5, cy: 0.3, font_size: 11
+      });
+      slide.addText(`Date: ${dateValue}`, {
+        x: 3, y: 1.5, cx: 2, cy: 0.3, font_size: 11
+      });
+      slide.addText(`By: ${(submittedBy || 'N/A').substring(0, 20)}`, {
+        x: 5.5, y: 1.5, cx: 2.5, cy: 0.3, font_size: 11
+      });
+      
+      // Address
+      const address = store.location?.address || 'N/A';
+      const truncatedAddress = address.length > 80 ? address.substring(0, 80) + '...' : address;
+      slide.addText(`Address: ${truncatedAddress}`, {
+        x: 0.3, y: 1.8, cx: 8, cy: 0.3, font_size: 11
       });
 
       if (type === "installation" && store.recce?.reccePhotos && store.installation?.photos) {
@@ -293,40 +331,59 @@ export const generateCompactBulkPPT = async (req: Request, res: Response) => {
         const reccePhoto = store.recce.reccePhotos[0];
         const installPhoto = store.installation.photos.find((p: any) => p.reccePhotoIndex === 0);
         
-        const reccePhotoPath = path.join(process.cwd(), reccePhoto.photo);
-        const installPhotoPath = installPhoto ? path.join(process.cwd(), installPhoto.installationPhoto) : null;
+        // BEFORE image with red border effect
+        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+        slide.addImage({
+          path: reccePhotoUrl,
+          x: 0.5, y: 2.5, cx: 4, cy: 3.5
+        });
         
-        if (fs.existsSync(reccePhotoPath)) {
-          slide.addImage(reccePhotoPath, { x: 0.5, y: 1.5, cx: 4, cy: 4 });
-          slide.addText('BEFORE', { x: 0.5, y: 5.7, cx: 4, cy: 0.3, font_size: 12, bold: true, color: 'EF4444' });
+        // BEFORE label with red background
+        slide.addText('BEFORE', {
+          x: 0.5, y: 6, cx: 4, cy: 0.4,
+          font_size: 14, bold: true, color: 'FFFFFF',
+          fill: { color: 'EF4444' }, align: 'center'
+        });
+        
+        if (installPhoto) {
+          // AFTER image with green border effect
+          const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
+          slide.addImage({
+            path: installPhotoUrl,
+            x: 5, y: 2.5, cx: 4, cy: 3.5
+          });
         }
         
-        if (installPhotoPath && fs.existsSync(installPhotoPath)) {
-          slide.addImage(installPhotoPath, { x: 5.5, y: 1.5, cx: 4, cy: 4 });
-          slide.addText('AFTER', { x: 5.5, y: 5.7, cx: 4, cy: 0.3, font_size: 12, bold: true, color: '22C55E' });
-        }
+        // AFTER label with green background
+        slide.addText('AFTER', {
+          x: 5, y: 6, cx: 4, cy: 0.4,
+          font_size: 14, bold: true, color: 'FFFFFF',
+          fill: { color: '22C55E' }, align: 'center'
+        });
         
+        // Measurements
         if (reccePhoto.measurements) {
           slide.addText(`${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, {
-            x: 0.5, y: 6.2, cx: 9, cy: 0.3,
-            font_size: 10, color: '6B7280'
+            x: 2, y: 6.8, cx: 5, cy: 0.3,
+            font_size: 12, align: 'center', color: '1F2937'
           });
         }
       } else if (type === "recce" && store.recce?.reccePhotos) {
-        // Recce photos grid
-        const maxPhotos = Math.min(4, store.recce.reccePhotos.length);
+        // Single recce photo
+        const reccePhoto = store.recce.reccePhotos[0];
+        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
         
-        for (let j = 0; j < maxPhotos; j++) {
-          const reccePhoto = store.recce.reccePhotos[j];
-          const photoPath = path.join(process.cwd(), reccePhoto.photo);
-          
-          if (fs.existsSync(photoPath)) {
-            const x = 0.5 + (j % 2) * 4.5;
-            const y = 1.5 + Math.floor(j / 2) * 2.5;
-            
-            slide.addImage(photoPath, { x: x, y: y, cx: 4, cy: 2 });
-            slide.addText(`Photo ${j + 1}`, { x: x, y: y + 2.2, cx: 4, cy: 0.3, font_size: 10, color: 'EAB308' });
-          }
+        slide.addImage({
+          path: reccePhotoUrl,
+          x: 1, y: 2.5, cx: 7.5, cy: 4
+        });
+        
+        // Measurements
+        if (reccePhoto.measurements) {
+          slide.addText(`${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, {
+            x: 2, y: 6.8, cx: 5, cy: 0.3,
+            font_size: 12, align: 'center', color: '1F2937'
+          });
         }
       }
     }

@@ -487,7 +487,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
       const title = type === "recce" ? 'RECCE INSPECTION REPORT' : 'INSTALLATION COMPLETION REPORT';
       
       doc.fillColor(headerColor).fontSize(16).font('Helvetica-Bold')
-        .text(title, 120, 20, { width: 500, align: 'left' });
+        .text(title, 30, 20, { width: doc.page.width - 210, align: 'center' });
       
       doc.fillColor('#EAB308').fontSize(10).font('Helvetica')
         .text('ELORA CREATIVE ART', 650, 15, { width: 150, align: 'right' })
@@ -505,22 +505,22 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
       
       // Row 1: Store Name | City | Status
       doc.font('Helvetica-Bold').text('Store:', 30, y);
-      doc.font('Helvetica').text((store.storeName || 'N/A').substring(0, 25), 70, y);
-      doc.font('Helvetica-Bold').text('City:', 300, y);
-      doc.font('Helvetica').text((store.location?.city || 'N/A').substring(0, 15), 330, y);
+      doc.font('Helvetica').text((store.storeName || 'N/A').substring(0, 30), 70, y);
+      doc.font('Helvetica-Bold').text('City:', 320, y);
+      doc.font('Helvetica').text((store.location?.city || 'N/A').substring(0, 15), 350, y);
       
       if (type === "installation") {
-        doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 450, y);
+        doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 480, y);
       }
       
       y += 12;
       // Row 2: Store ID | Date | Submitted By
       doc.fillColor('#000000').font('Helvetica-Bold').text('ID:', 30, y);
       doc.font('Helvetica').text((store.storeId || store.storeCode || 'N/A').substring(0, 20), 50, y);
-      doc.font('Helvetica-Bold').text('Date:', 180, y);
-      doc.font('Helvetica').text(dateValue, 210, y);
-      doc.font('Helvetica-Bold').text('By:', 320, y);
-      doc.font('Helvetica').text((submittedBy || 'N/A').substring(0, 25), 340, y);
+      doc.font('Helvetica-Bold').text('Date:', 200, y);
+      doc.font('Helvetica').text(dateValue, 230, y);
+      doc.font('Helvetica-Bold').text('By:', 350, y);
+      doc.font('Helvetica').text((submittedBy || 'N/A').substring(0, 20), 370, y);
       
       y += 12;
       // Row 3: Address (truncated if too long)
@@ -547,10 +547,18 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
         const reccePhoto = store.recce.reccePhotos[0];
         const installPhoto = store.installation.photos.find((p: any) => p.reccePhotoIndex === 0);
         
-        // BEFORE (Left) - Clean borders without shading
+        // BEFORE (Left) - Red border with white padding
         const beforeX = 30;
+        const padding = 15;
+        
+        // Outer red border
         doc.save();
-        doc.rect(beforeX, contentStartY, imgWidth, imgHeight + 20).strokeColor('#EF4444').lineWidth(2).stroke();
+        doc.rect(beforeX, contentStartY, imgWidth, imgHeight + 20).strokeColor('#EF4444').lineWidth(3).stroke();
+        doc.restore();
+        
+        // Inner white padding area
+        doc.save();
+        doc.rect(beforeX + 5, contentStartY + 5, imgWidth - 10, imgHeight + 10).fillOpacity(1).fill('#FFFFFF');
         doc.restore();
         
         // Load recce image from URL
@@ -568,10 +576,10 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
           
           if (response.status === 200 && response.data) {
             const buffer = Buffer.from(response.data);
-            doc.image(buffer, beforeX + 5, contentStartY + 5, { 
-              width: imgWidth - 10, 
-              height: imgHeight - 10, 
-              fit: [imgWidth - 10, imgHeight - 10] 
+            doc.image(buffer, beforeX + padding, contentStartY + padding, { 
+              width: imgWidth - (padding * 2), 
+              height: imgHeight - padding, 
+              fit: [imgWidth - (padding * 2), imgHeight - padding] 
             });
             console.log('Recce image loaded successfully');
           }
@@ -579,8 +587,8 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
           console.log(`Failed to load recce image: ${error.message}`);
           // Add placeholder text
           doc.fillColor('#999999').fontSize(12).font('Helvetica')
-            .text('Image not available', beforeX + 5, contentStartY + imgHeight/2, { 
-              width: imgWidth - 10, 
+            .text('Image not available', beforeX + padding, contentStartY + imgHeight/2, { 
+              width: imgWidth - (padding * 2), 
               align: 'center' 
             });
         }
@@ -592,10 +600,17 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
         doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
           .text('BEFORE', beforeX, contentStartY + imgHeight + 6, { width: imgWidth, align: 'center' });
         
-        // AFTER (Right) - Clean borders without shading
+        // AFTER (Right) - Green border with white padding
         const afterX = beforeX + imgWidth + 20;
+        
+        // Outer green border
         doc.save();
-        doc.rect(afterX, contentStartY, imgWidth, imgHeight + 20).strokeColor('#22C55E').lineWidth(2).stroke();
+        doc.rect(afterX, contentStartY, imgWidth, imgHeight + 20).strokeColor('#22C55E').lineWidth(3).stroke();
+        doc.restore();
+        
+        // Inner white padding area
+        doc.save();
+        doc.rect(afterX + 5, contentStartY + 5, imgWidth - 10, imgHeight + 10).fillOpacity(1).fill('#FFFFFF');
         doc.restore();
         
         if (installPhoto) {
@@ -613,10 +628,10 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             
             if (response.status === 200 && response.data) {
               const buffer = Buffer.from(response.data);
-              doc.image(buffer, afterX + 5, contentStartY + 5, { 
-                width: imgWidth - 10, 
-                height: imgHeight - 10, 
-                fit: [imgWidth - 10, imgHeight - 10] 
+              doc.image(buffer, afterX + padding, contentStartY + padding, { 
+                width: imgWidth - (padding * 2), 
+                height: imgHeight - padding, 
+                fit: [imgWidth - (padding * 2), imgHeight - padding] 
               });
               console.log('Installation image loaded successfully');
             }
@@ -624,8 +639,8 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             console.log(`Failed to load installation image: ${error.message}`);
             // Add placeholder text
             doc.fillColor('#999999').fontSize(12).font('Helvetica')
-              .text('Image not available', afterX + 5, contentStartY + imgHeight/2, { 
-                width: imgWidth - 10, 
+              .text('Image not available', afterX + padding, contentStartY + imgHeight/2, { 
+                width: imgWidth - (padding * 2), 
                 align: 'center' 
               });
           }
