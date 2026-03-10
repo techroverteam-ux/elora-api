@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import Store from "./store.model";
 import fs from "fs";
 import path from "path";
+const axios = require('axios');
 
 export const generateReccePDF = async (req: Request, res: Response) => {
   try {
@@ -746,17 +747,18 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
     
     titleSlide.addText(`${type === "recce" ? "RECCE INSPECTION" : "INSTALLATION COMPLETION"} REPORT`, {
       x: 1, y: 2, cx: 8, cy: 1,
-      font_size: 28, bold: true, color: type === "recce" ? 'EAB308' : '22C55E'
+      font_size: 28, bold: true, color: type === "recce" ? 'EAB308' : '22C55E',
+      align: 'center'
     });
     
     titleSlide.addText(`${stores.length} Stores | ${new Date().toLocaleDateString()}`, {
       x: 1, y: 3.5, cx: 8, cy: 0.5,
-      font_size: 16, color: '1F2937'
+      font_size: 16, color: '1F2937', align: 'center'
     });
     
-    titleSlide.addText('ELORA CREATIVE ART', {
+    titleSlide.addText('ELORA CREATIVE ART | www.eloracreativeart.in', {
       x: 1, y: 5, cx: 8, cy: 0.5,
-      font_size: 14, color: 'EAB308'
+      font_size: 14, color: 'EAB308', align: 'center'
     });
 
     for (let i = 0; i < stores.length; i++) {
@@ -768,96 +770,155 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
       const slide = pptx.makeNewSlide();
       slide.name = `${store.storeName} - ${type}`;
       
-      // COMPACT header (top 15%)
-      slide.addText(`${type === "recce" ? "RECCE" : "INSTALLATION"} - ${store.storeName}`, {
-        x: 0.5, y: 0.2, cx: 9, cy: 0.6,
-        font_size: 18, bold: true, color: type === "recce" ? 'EAB308' : '22C55E'
+      // Header with centered title matching PDF
+      const title = type === "recce" ? 'RECCE INSPECTION REPORT' : 'INSTALLATION COMPLETION REPORT';
+      slide.addText(title, {
+        x: 0.9, y: 0.15, cx: 8.2, cy: 0.6,
+        font_size: 20, bold: true, color: type === "recce" ? 'EAB308' : '22C55E',
+        align: 'center'
       });
       
-      // Compact store details (single line)
+      // Company info - top right
+      slide.addText('ELORA CREATIVE ART', {
+        x: 7.5, y: 0.1, cx: 2, cy: 0.25,
+        font_size: 9, color: 'EAB308', align: 'right'
+      });
+      slide.addText('www.eloracreativeart.in', {
+        x: 7.5, y: 0.3, cx: 2, cy: 0.25,
+        font_size: 9, color: 'EAB308', align: 'right'
+      });
+      
+      // Store details matching PDF layout
       const dateValue = type === "recce" 
         ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A')
         : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A');
       
-      slide.addText(`${store.location?.city} | ${dateValue} | ${type === "recce" ? store.recce?.submittedBy : store.installation?.submittedBy}`, {
-        x: 0.5, y: 0.8, cx: 9, cy: 0.4,
-        font_size: 12, color: '6B7280'
+      const submittedBy = type === "recce" ? store.recce?.submittedBy : store.installation?.submittedBy;
+      
+      // Row 1: Store | City | Status
+      slide.addText(`Store: ${(store.storeName || 'N/A').substring(0, 30)}`, {
+        x: 0.2, y: 1.0, cx: 3.5, cy: 0.3, font_size: 11, bold: true
+      });
+      slide.addText(`City: ${(store.location?.city || 'N/A').substring(0, 15)}`, {
+        x: 4.0, y: 1.0, cx: 2, cy: 0.3, font_size: 11, bold: true
+      });
+      
+      if (type === "installation") {
+        slide.addText('✓ COMPLETED', {
+          x: 6.5, y: 1.0, cx: 2, cy: 0.3, font_size: 11, bold: true, color: '22C55E'
+        });
+      }
+      
+      // Row 2: ID | Date | By
+      slide.addText(`ID: ${(store.storeId || store.storeCode || 'N/A').substring(0, 20)}`, {
+        x: 0.2, y: 1.3, cx: 2.5, cy: 0.3, font_size: 11
+      });
+      slide.addText(`Date: ${dateValue}`, {
+        x: 2.8, y: 1.3, cx: 2, cy: 0.3, font_size: 11
+      });
+      slide.addText(`By: ${(submittedBy || 'N/A').substring(0, 25)}`, {
+        x: 5.0, y: 1.3, cx: 3, cy: 0.3, font_size: 11
+      });
+      
+      // Row 3: Address
+      const address = store.location?.address || 'N/A';
+      const truncatedAddress = address.length > 90 ? address.substring(0, 90) + '...' : address;
+      slide.addText(`Address: ${truncatedAddress}`, {
+        x: 0.2, y: 1.6, cx: 8.5, cy: 0.3, font_size: 11
       });
 
-      // MAIN CONTENT (85% space for images)
+      // MAIN CONTENT - Full images without margins/padding
       if (type === "installation" && store.recce?.reccePhotos && store.installation?.photos) {
         const reccePhoto = store.recce.reccePhotos[0];
         const installPhoto = store.installation.photos.find((p: any) => p.reccePhotoIndex === 0);
         
-        // Before image (left 42.5%)
-        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${encodeURIComponent(reccePhoto.photo)}`;
         try {
-          const response = await fetch(reccePhotoUrl);
-          if (response.ok) {
-            const imageBuffer = await response.arrayBuffer();
-            slide.addImage(Buffer.from(imageBuffer), {
-              x: 0.5, y: 1.5, cx: 4, cy: 4.5
+          // BEFORE image - full fit, no padding
+          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+          const axios = require('axios');
+          const recceResponse = await axios.get(reccePhotoUrl, { 
+            responseType: 'arraybuffer',
+            timeout: 10000
+          });
+          
+          if (recceResponse.status === 200) {
+            const recceBuffer = Buffer.from(recceResponse.data);
+            slide.addImage(recceBuffer, {
+              x: 0.2, y: 2.1, cx: 4.3, cy: 4.2
             });
           }
         } catch (error) {
-          console.log(`Failed to load recce image for PPT: ${reccePhotoUrl}`);
+          console.log('Failed to load recce image for PPT');
         }
         
+        // BEFORE label with red background
         slide.addText('BEFORE', {
-          x: 0.5, y: 6.2, cx: 4, cy: 0.3,
-          font_size: 14, bold: true, color: 'EF4444', align: 'center'
+          x: 0.2, y: 6.4, cx: 4.3, cy: 0.4,
+          font_size: 14, bold: true, color: 'FFFFFF',
+          fill: { color: 'EF4444' }, align: 'center'
         });
         
-        // After image (right 42.5%)
         if (installPhoto) {
-          const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${encodeURIComponent(installPhoto.installationPhoto)}`;
           try {
-            const response = await fetch(installPhotoUrl);
-            if (response.ok) {
-              const imageBuffer = await response.arrayBuffer();
-              slide.addImage(Buffer.from(imageBuffer), {
-                x: 5.5, y: 1.5, cx: 4, cy: 4.5
+            // AFTER image - full fit, no padding
+            const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
+            const installResponse = await axios.get(installPhotoUrl, { 
+              responseType: 'arraybuffer',
+              timeout: 10000
+            });
+            
+            if (installResponse.status === 200) {
+              const installBuffer = Buffer.from(installResponse.data);
+              slide.addImage(installBuffer, {
+                x: 5.0, y: 2.1, cx: 4.3, cy: 4.2
               });
             }
           } catch (error) {
-            console.log(`Failed to load installation image for PPT: ${installPhotoUrl}`);
+            console.log('Failed to load installation image for PPT');
           }
         }
         
+        // AFTER label with green background
         slide.addText('AFTER', {
-          x: 5.5, y: 6.2, cx: 4, cy: 0.3,
-          font_size: 14, bold: true, color: '22C55E', align: 'center'
+          x: 5.0, y: 6.4, cx: 4.3, cy: 0.4,
+          font_size: 14, bold: true, color: 'FFFFFF',
+          fill: { color: '22C55E' }, align: 'center'
         });
         
         // Measurements
         if (reccePhoto.measurements) {
           slide.addText(`${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, {
-            x: 0.5, y: 6.8, cx: 9, cy: 0.3,
-            font_size: 12, color: '1F2937', align: 'center'
+            x: 2, y: 7.0, cx: 5.5, cy: 0.3,
+            font_size: 12, align: 'center', color: '1F2937'
           });
         }
       } else if (type === "recce" && store.recce?.reccePhotos) {
-        // Single large image (85% space)
+        // Single recce photo - full width, no padding
         const reccePhoto = store.recce.reccePhotos[0];
         
-        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${encodeURIComponent(reccePhoto.photo)}`;
         try {
-          const response = await fetch(reccePhotoUrl);
-          if (response.ok) {
-            const imageBuffer = await response.arrayBuffer();
-            slide.addImage(Buffer.from(imageBuffer), {
-              x: 0.5, y: 1.5, cx: 9, cy: 5
+          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+          const axios = require('axios');
+          const response = await axios.get(reccePhotoUrl, { 
+            responseType: 'arraybuffer',
+            timeout: 10000
+          });
+          
+          if (response.status === 200) {
+            const buffer = Buffer.from(response.data);
+            slide.addImage(buffer, {
+              x: 0.5, y: 2.1, cx: 8.5, cy: 4.5
             });
           }
         } catch (error) {
-          console.log(`Failed to load recce image for PPT: ${reccePhotoUrl}`);
+          console.log('Failed to load recce image for PPT');
         }
         
         // Measurements
         if (reccePhoto.measurements) {
           slide.addText(`${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, {
-            x: 0.5, y: 6.8, cx: 9, cy: 0.3,
-            font_size: 12, color: '1F2937', align: 'center'
+            x: 2, y: 7.0, cx: 5.5, cy: 0.3,
+            font_size: 12, align: 'center', color: '1F2937'
           });
         }
       }
