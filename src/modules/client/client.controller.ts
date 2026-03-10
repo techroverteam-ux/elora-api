@@ -55,7 +55,7 @@ export const getClientById = async (req: Request, res: Response) => {
 
 export const createClient = async (req: Request, res: Response) => {
   try {
-    const { clientName, branchName, amount, gstNumber, elements } = req.body;
+    const { clientName, branchName, gstNumber, elements } = req.body;
 
     // Validate that at least one element is provided
     if (!elements || !Array.isArray(elements) || elements.length === 0) {
@@ -74,7 +74,6 @@ export const createClient = async (req: Request, res: Response) => {
       clientCode,
       clientName,
       branchName,
-      amount,
       gstNumber,
       elements,
     });
@@ -88,7 +87,7 @@ export const createClient = async (req: Request, res: Response) => {
 
 export const updateClient = async (req: Request, res: Response) => {
   try {
-    const { clientName, branchName, amount, gstNumber, elements } = req.body;
+    const { clientName, branchName, gstNumber, elements } = req.body;
 
     // Validate that at least one element is provided
     if (!elements || !Array.isArray(elements) || elements.length === 0) {
@@ -103,7 +102,7 @@ export const updateClient = async (req: Request, res: Response) => {
 
     const client = await Client.findByIdAndUpdate(
       req.params.id,
-      { clientName, branchName, amount, gstNumber, elements },
+      { clientName, branchName, gstNumber, elements },
       { new: true, runValidators: true },
     );
 
@@ -140,7 +139,6 @@ export const exportClients = async (req: Request, res: Response) => {
       { header: "Client Code", key: "clientCode", width: 20 },
       { header: "Client Name", key: "clientName", width: 25 },
       { header: "Branch Name", key: "branchName", width: 25 },
-      { header: "Amount", key: "amount", width: 15 },
       { header: "GST Number", key: "gstNumber", width: 20 },
       { header: "Elements Count", key: "elementsCount", width: 15 },
       { header: "Created At", key: "createdAt", width: 20 },
@@ -158,7 +156,6 @@ export const exportClients = async (req: Request, res: Response) => {
         clientCode: client.clientCode,
         clientName: client.clientName,
         branchName: client.branchName,
-        amount: client.amount,
         gstNumber: client.gstNumber,
         elementsCount: client.elements.length,
         createdAt: client.createdAt ? new Date(client.createdAt).toLocaleDateString() : "-",

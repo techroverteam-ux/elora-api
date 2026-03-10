@@ -11,7 +11,6 @@ export interface ClientDocument extends Document {
   clientCode: string;
   clientName: string;
   branchName: string;
-  amount: number;
   gstNumber: string;
   elements: ClientElement[];
   isActive: boolean;
@@ -32,7 +31,6 @@ const ClientSchema = new Schema<ClientDocument>(
     clientCode: { type: String, required: true, unique: true },
     clientName: { type: String, required: true, trim: true },
     branchName: { type: String, required: true, trim: true },
-    amount: { type: Number, required: true, min: 0 },
     gstNumber: { type: String, required: true, trim: true, unique: true },
     elements: [ClientElementSchema],
     isActive: { type: Boolean, default: true },
