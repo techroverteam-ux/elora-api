@@ -63,16 +63,16 @@ async function generateCombinedRFQ(validStores: Array<{ store: any; client: any 
   // Create RFQ Sheet (Invoice Style)
   const rfqSheet = workbook.addWorksheet("RFQ");
   
-  // Set column widths
+  // Set column widths for auto-fit
   rfqSheet.columns = [
-    { width: 6 },   // A - S.No
-    { width: 30 },  // B - Description
-    { width: 10 },  // C - Qty
-    { width: 8 },   // D - Unit
-    { width: 12 },  // E - Rate
-    { width: 15 },  // F - Amount
+    { width: 8 },   // A - S.No
+    { width: 35 },  // B - Description
+    { width: 15 },  // C - Qty
+    { width: 10 },  // D - Unit
+    { width: 15 },  // E - Rate
+    { width: 18 },  // F - Amount
     { width: 15 },  // G - Store ID
-    { width: 20 }   // H - Client
+    { width: 25 }   // H - Client
   ];
 
   let currentRow = 1;
@@ -80,9 +80,15 @@ async function generateCombinedRFQ(validStores: Array<{ store: any; client: any 
   // Company Header
   rfqSheet.mergeCells('A1:H2');
   rfqSheet.getCell('A1').value = 'ELORA TECH SOLUTIONS';
-  rfqSheet.getCell('A1').font = { bold: true, size: 20, color: { argb: 'FF1F2937' } };
+  rfqSheet.getCell('A1').font = { bold: true, size: 20, color: { argb: 'FFFFFFFF' } };
   rfqSheet.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
-  rfqSheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
+  rfqSheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0066CC' } };
+  rfqSheet.getCell('A1').border = {
+    top: { style: 'thick', color: { argb: 'FF0066CC' } },
+    left: { style: 'thick', color: { argb: 'FF0066CC' } },
+    bottom: { style: 'thick', color: { argb: 'FF0066CC' } },
+    right: { style: 'thick', color: { argb: 'FF0066CC' } }
+  };
   rfqSheet.getRow(1).height = 35;
   
   currentRow = 3;
@@ -100,7 +106,13 @@ async function generateCombinedRFQ(validStores: Array<{ store: any; client: any 
   rfqSheet.getCell('A5').value = 'REQUEST FOR QUOTATION';
   rfqSheet.getCell('A5').font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
   rfqSheet.getCell('A5').alignment = { horizontal: 'center', vertical: 'middle' };
-  rfqSheet.getCell('A5').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF3B82F6' } };
+  rfqSheet.getCell('A5').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0066CC' } };
+  rfqSheet.getCell('A5').border = {
+    top: { style: 'thick', color: { argb: 'FF0066CC' } },
+    left: { style: 'thick', color: { argb: 'FF0066CC' } },
+    bottom: { style: 'thick', color: { argb: 'FF0066CC' } },
+    right: { style: 'thick', color: { argb: 'FF0066CC' } }
+  };
   rfqSheet.getRow(5).height = 30;
   
   currentRow = 7;
@@ -138,13 +150,13 @@ async function generateCombinedRFQ(validStores: Array<{ store: any; client: any 
   headers.forEach((header, index) => {
     const cell = rfqSheet.getCell(currentRow, index + 1);
     cell.value = header;
-    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0066CC' } };
     cell.border = {
-      top: { style: 'medium' },
-      left: { style: 'thin' },
-      bottom: { style: 'medium' },
-      right: { style: 'thin' }
+      top: { style: 'thick', color: { argb: 'FF0066CC' } },
+      left: { style: 'thick', color: { argb: 'FF0066CC' } },
+      bottom: { style: 'thick', color: { argb: 'FF0066CC' } },
+      right: { style: 'thick', color: { argb: 'FF0066CC' } }
     };
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
   });
@@ -153,10 +165,13 @@ async function generateCombinedRFQ(validStores: Array<{ store: any; client: any 
 
   let serialNo = 1;
   let grandTotal = 0;
+  const storeSubtotals = new Map<string, { amount: number; tax: number; total: number }>();
 
-  // Populate line items
+  // Populate line items - one row per store-element combination
   for (const { store, client } of validStores) {
     const lineItems = calculateLineItems(store.recce, client);
+    const storeKey = store.storeId || store.storeCode || store._id;
+    let storeAmount = 0;
     
     for (const item of lineItems) {
       const row = rfqSheet.getRow(currentRow);
@@ -169,10 +184,10 @@ async function generateCombinedRFQ(validStores: Array<{ store: any; client: any 
       for (let col = 1; col <= 8; col++) {
         const cell = row.getCell(col);
         cell.border = {
-          top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-          left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-          bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-          right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
+          top: { style: 'thin', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'thin', color: { argb: 'FF000000' } },
+          right: { style: 'thin', color: { argb: 'FF000000' } }
         };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowColor } };
       }
@@ -180,7 +195,7 @@ async function generateCombinedRFQ(validStores: Array<{ store: any; client: any 
       row.getCell(1).value = serialNo++;
       row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
       
-      row.getCell(2).value = item.elementName;
+      row.getCell(2).value = `${item.elementName} - ${store.storeName || store.storeId || 'Store'}`;
       row.getCell(2).alignment = { vertical: 'middle' };
       
       row.getCell(3).value = `${item.quantity} (${parseFloat(item.totalSqft.toFixed(2))} Sq.Ft)`;
@@ -204,9 +219,15 @@ async function generateCombinedRFQ(validStores: Array<{ store: any; client: any 
       row.getCell(8).alignment = { vertical: 'middle' };
       
       row.height = 20;
-      grandTotal += item.amount;
+      storeAmount += item.amount;
       currentRow++;
     }
+    
+    // Store subtotal tracking
+    const storeTax = storeAmount * 0.18;
+    const storeTotal = storeAmount + storeTax;
+    storeSubtotals.set(storeKey, { amount: storeAmount, tax: storeTax, total: storeTotal });
+    grandTotal += storeAmount;
   }
 
   // Subtotal and Total Section
@@ -241,22 +262,34 @@ async function generateCombinedRFQ(validStores: Array<{ store: any; client: any 
   rfqSheet.getCell(`A${currentRow}`).value = 'TOTAL AMOUNT';
   rfqSheet.getCell(`A${currentRow}`).font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
   rfqSheet.getCell(`A${currentRow}`).alignment = { horizontal: 'right', vertical: 'middle' };
-  rfqSheet.getCell(`A${currentRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF3B82F6' } };
+  rfqSheet.getCell(`A${currentRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0066CC' } };
+  rfqSheet.getCell(`A${currentRow}`).border = {
+    top: { style: 'thick', color: { argb: 'FF0066CC' } },
+    left: { style: 'thick', color: { argb: 'FF0066CC' } },
+    bottom: { style: 'thick', color: { argb: 'FF0066CC' } },
+    right: { style: 'thick', color: { argb: 'FF0066CC' } }
+  };
   rfqSheet.getCell(`F${currentRow}`).value = parseFloat(totalAmount.toFixed(2));
   rfqSheet.getCell(`F${currentRow}`).font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
   rfqSheet.getCell(`F${currentRow}`).alignment = { horizontal: 'right', vertical: 'middle' };
   rfqSheet.getCell(`F${currentRow}`).numFmt = '₹#,##0.00';
-  rfqSheet.getCell(`F${currentRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF3B82F6' } };
+  rfqSheet.getCell(`F${currentRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0066CC' } };
+  rfqSheet.getCell(`F${currentRow}`).border = {
+    top: { style: 'thick', color: { argb: 'FF0066CC' } },
+    left: { style: 'thick', color: { argb: 'FF0066CC' } },
+    bottom: { style: 'thick', color: { argb: 'FF0066CC' } },
+    right: { style: 'thick', color: { argb: 'FF0066CC' } }
+  };
   
   // Add borders to total section
   for (let row = currentRow - 2; row <= currentRow; row++) {
-    for (let col = 1; col <= 6; col++) {
+    for (let col = 1; col <= 8; col++) {
       const cell = rfqSheet.getCell(row, col);
       cell.border = {
-        top: { style: 'medium', color: { argb: 'FF3B82F6' } },
-        left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-        bottom: { style: 'medium', color: { argb: 'FF3B82F6' } },
-        right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
+        top: { style: 'thick', color: { argb: 'FF000000' } },
+        left: { style: 'thick', color: { argb: 'FF000000' } },
+        bottom: { style: 'thick', color: { argb: 'FF000000' } },
+        right: { style: 'thick', color: { argb: 'FF000000' } }
       };
     }
   }
@@ -459,9 +492,10 @@ function calculateLineItems(recce: any, client: any) {
 
     const { width, height, unit } = measurements;
 
+    // Fixed square footage calculation: Width(inch) * Height(inch) / 144
     let areaSqft = 0;
     if (unit === "inches") {
-      areaSqft = (width * height) / 144; // Convert inches to sq ft
+      areaSqft = (width * height) / 144; // Correct formula: inches to sq ft
     } else if (unit === "feet") {
       areaSqft = width * height;
     }
@@ -495,6 +529,7 @@ function calculateLineItems(recce: any, client: any) {
     }
   }
 
+  // Return combined measurements per element (no duplicates)
   return Array.from(elementMap.values()).map(item => ({
     elementName: item.name,
     quantity: item.quantity,
