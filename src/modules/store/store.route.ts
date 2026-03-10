@@ -28,7 +28,6 @@ import {
   importRecceApproval,
 } from "./store.controller";
 import { generateReccePDF, generateInstallationPDF, generateBulkPDF } from "./pdf.controller";
-import { generateCompactBulkPDF, generateCompactBulkPPT } from "./compact-bulk.controller";
 import { protect } from "../../middlewares/auth.middleware";
 import { checkPermission } from "../../middlewares/rbac.middleware";
 
@@ -575,44 +574,9 @@ router.post("/ppt/bulk", protect, generateBulkPPT);
  *               type: string
  *               format: binary
  */
-router.post("/pdf/bulk", protect, generateCompactBulkPDF);
+router.post("/pdf/bulk", protect, generateBulkPDF);
 
-/**
- * @swagger
- * /api/v1/stores/ppt/bulk/compact:
- *   post:
- *     summary: Download compact bulk PPT
- *     description: Generate compact multi-page PowerPoint with multiple stores (25% header, 75% images)
- *     tags: [Stores]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - storeIds
- *               - type
- *             properties:
- *               storeIds:
- *                 type: array
- *                 items:
- *                   type: string
- *               type:
- *                 type: string
- *                 enum: [recce, installation]
- *     responses:
- *       200:
- *         description: Compact PPT file with multiple stores
- *         content:
- *           application/vnd.openxmlformats-officedocument.presentationml.presentation:
- *             schema:
- *               type: string
- *               format: binary
- */
-router.post("/ppt/bulk/compact", protect, generateCompactBulkPPT);
+router.post("/ppt/bulk", protect, generateBulkPPT);
 
 /**
  * @swagger
