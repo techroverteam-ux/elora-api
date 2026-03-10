@@ -60,308 +60,249 @@ export const generateRFQ = async (req: Request, res: Response) => {
 async function generateCombinedRFQ(validStores: Array<{ store: any; client: any }>): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   
-  // Create RFQ Sheet (Invoice Style)
+  // Create RFQ Sheet
   const rfqSheet = workbook.addWorksheet("RFQ");
   
-  // Set column widths for auto-fit
   rfqSheet.columns = [
-    { width: 8 },   // A - S.No
-    { width: 35 },  // B - Description
-    { width: 15 },  // C - Qty
-    { width: 10 },  // D - Unit
-    { width: 15 },  // E - Rate
-    { width: 18 },  // F - Amount
-    { width: 15 },  // G - Store ID
-    { width: 25 }   // H - Client
+    { width: 8 }, { width: 35 }, { width: 12 }, { width: 12 }, { width: 15 }, { width: 15 }, { width: 18 }
   ];
 
   let currentRow = 1;
 
   // Company Header
-  rfqSheet.mergeCells('A1:H2');
-  rfqSheet.getCell('A1').value = 'ELORA TECH SOLUTIONS';
-  rfqSheet.getCell('A1').font = { bold: true, size: 20, color: { argb: 'FFFFFFFF' } };
-  rfqSheet.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
-  rfqSheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0066CC' } };
+  rfqSheet.mergeCells('A1:G3');
+  rfqSheet.getCell('A1').value = '( ELORA CREATIVE ART )\nPLOT NO. 55, STREET NO.2, MILKMAN COLONY, JODHPUR. (RAJ.)-342008\nGST NO: 08AXYPK1335R1ZJ';
+  rfqSheet.getCell('A1').font = { bold: true, size: 12, color: { argb: 'FF000000' } };
+  rfqSheet.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  rfqSheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFCC99' } };
   rfqSheet.getCell('A1').border = {
-    top: { style: 'thick', color: { argb: 'FF0066CC' } },
-    left: { style: 'thick', color: { argb: 'FF0066CC' } },
-    bottom: { style: 'thick', color: { argb: 'FF0066CC' } },
-    right: { style: 'thick', color: { argb: 'FF0066CC' } }
+    top: { style: 'thick', color: { argb: 'FF000000' } },
+    left: { style: 'thick', color: { argb: 'FF000000' } },
+    bottom: { style: 'thick', color: { argb: 'FF000000' } },
+    right: { style: 'thick', color: { argb: 'FF000000' } }
   };
-  rfqSheet.getRow(1).height = 35;
-  
-  currentRow = 3;
-  
-  // Company Details
-  rfqSheet.mergeCells('A3:H3');
-  rfqSheet.getCell('A3').value = 'Digital Signage & Display Solutions | GST: 07XXXXX1234X1Z5';
-  rfqSheet.getCell('A3').font = { size: 11, color: { argb: 'FF6B7280' } };
-  rfqSheet.getCell('A3').alignment = { horizontal: 'center' };
-  
-  currentRow = 5;
+  rfqSheet.getRow(1).height = 60;
   
   // RFQ Title
-  rfqSheet.mergeCells('A5:H5');
-  rfqSheet.getCell('A5').value = 'REQUEST FOR QUOTATION';
-  rfqSheet.getCell('A5').font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
+  rfqSheet.mergeCells('A5:G5');
+  rfqSheet.getCell('A5').value = 'Request for quotation(RFQ)';
+  rfqSheet.getCell('A5').font = { bold: true, size: 14, color: { argb: 'FF000000' } };
   rfqSheet.getCell('A5').alignment = { horizontal: 'center', vertical: 'middle' };
-  rfqSheet.getCell('A5').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0066CC' } };
-  rfqSheet.getCell('A5').border = {
-    top: { style: 'thick', color: { argb: 'FF0066CC' } },
-    left: { style: 'thick', color: { argb: 'FF0066CC' } },
-    bottom: { style: 'thick', color: { argb: 'FF0066CC' } },
-    right: { style: 'thick', color: { argb: 'FF0066CC' } }
-  };
-  rfqSheet.getRow(5).height = 30;
-  
-  currentRow = 7;
+  rfqSheet.getCell('A5').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFCC99' } };
+  rfqSheet.getRow(5).height = 25;
 
-  // RFQ Details Section
-  const rfqNumber = `RFQ-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
-  const currentDate = new Date().toLocaleDateString('en-IN', { 
-    day: '2-digit', 
-    month: '2-digit', 
-    year: 'numeric' 
-  });
+  // RFQ Details
+  const rfqNumber = `EX${String(Date.now()).slice(-8)}-${new Date().getFullYear()}-33`;
+  const currentDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
   
-  rfqSheet.getCell('A7').value = 'RFQ Number:';
+  rfqSheet.getCell('A7').value = 'RFQ NO. :';
   rfqSheet.getCell('A7').font = { bold: true };
   rfqSheet.getCell('B7').value = rfqNumber;
-  
   rfqSheet.getCell('E7').value = 'Date:';
   rfqSheet.getCell('E7').font = { bold: true };
   rfqSheet.getCell('F7').value = currentDate;
   
-  rfqSheet.getCell('A8').value = 'Valid Until:';
+  rfqSheet.mergeCells('A8:G8');
+  rfqSheet.getCell('A8').value = 'Quotation For : Inshop Branding';
   rfqSheet.getCell('A8').font = { bold: true };
-  const validUntil = new Date();
-  validUntil.setDate(validUntil.getDate() + 30);
-  rfqSheet.getCell('B8').value = validUntil.toLocaleDateString('en-IN', { 
-    day: '2-digit', 
-    month: '2-digit', 
-    year: 'numeric' 
-  });
   
-  currentRow = 10;
+  const firstClient = validStores[0]?.client;
+  rfqSheet.mergeCells('A9:G9');
+  rfqSheet.getCell('A9').value = `M/S ${firstClient?.clientName || 'CLIENT NAME'}`;
+  rfqSheet.getCell('A9').font = { bold: true };
+  
+  rfqSheet.getCell('A10').value = 'Contact Person name (vendor)';
+  rfqSheet.getCell('A10').font = { bold: true };
+  rfqSheet.getCell('B10').value = 'ELORA TEAM';
+  rfqSheet.getCell('D10').value = 'Contact Person no. (vendor)';
+  rfqSheet.getCell('D10').font = { bold: true };
+  rfqSheet.getCell('E10').value = '9799333000';
+  
+  currentRow = 12;
 
   // Table Headers
-  const headers = ['S.No', 'Description', 'Qty', 'Unit', 'Rate (₹)', 'Amount (₹)', 'Store ID', 'Client'];
+  const headers = ['Sl. No.', 'Description', 'Transport Mode', 'Quantity', 'UOM/Sqft/Km', 'Unit Price', 'Amount'];
   headers.forEach((header, index) => {
     const cell = rfqSheet.getCell(currentRow, index + 1);
     cell.value = header;
-    cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0066CC' } };
+    cell.font = { bold: true, color: { argb: 'FF000000' }, size: 10 };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFCC99' } };
     cell.border = {
-      top: { style: 'thick', color: { argb: 'FF0066CC' } },
-      left: { style: 'thick', color: { argb: 'FF0066CC' } },
-      bottom: { style: 'thick', color: { argb: 'FF0066CC' } },
-      right: { style: 'thick', color: { argb: 'FF0066CC' } }
+      top: { style: 'thick', color: { argb: 'FF000000' } },
+      left: { style: 'thick', color: { argb: 'FF000000' } },
+      bottom: { style: 'thick', color: { argb: 'FF000000' } },
+      right: { style: 'thick', color: { argb: 'FF000000' } }
     };
-    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
   });
-  rfqSheet.getRow(currentRow).height = 25;
+  rfqSheet.getRow(currentRow).height = 30;
   currentRow++;
 
   let serialNo = 1;
   let grandTotal = 0;
-  const storeSubtotals = new Map<string, { amount: number; tax: number; total: number }>();
 
-  // Populate line items - one row per store-element combination
+  // Calculate all line items from database
+  const allLineItems = [];
   for (const { store, client } of validStores) {
-    const lineItems = calculateLineItems(store.recce, client);
-    const storeKey = store.storeId || store.storeCode || store._id;
-    let storeAmount = 0;
-    
-    for (const item of lineItems) {
-      const row = rfqSheet.getRow(currentRow);
-      
-      // Alternate row colors
-      const isEvenRow = (currentRow - 11) % 2 === 0;
-      const rowColor = isEvenRow ? 'FFF9FAFB' : 'FFFFFFFF';
-      
-      // Add borders and styling to all cells
-      for (let col = 1; col <= 8; col++) {
-        const cell = row.getCell(col);
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FF000000' } },
-          left: { style: 'thin', color: { argb: 'FF000000' } },
-          bottom: { style: 'thin', color: { argb: 'FF000000' } },
-          right: { style: 'thin', color: { argb: 'FF000000' } }
-        };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowColor } };
-      }
-      
-      row.getCell(1).value = serialNo++;
-      row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
-      
-      row.getCell(2).value = `${item.elementName} - ${store.storeName || store.storeId || 'Store'}`;
-      row.getCell(2).alignment = { vertical: 'middle' };
-      
-      row.getCell(3).value = `${item.quantity} (${parseFloat(item.totalSqft.toFixed(2))} Sq.Ft)`;
-      row.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
-      
-      row.getCell(4).value = 'Sq.Ft';
-      row.getCell(4).alignment = { horizontal: 'center', vertical: 'middle' };
-      
-      row.getCell(5).value = parseFloat(item.rate.toFixed(2));
-      row.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
-      row.getCell(5).numFmt = '₹#,##0.00';
-      
-      row.getCell(6).value = parseFloat(item.amount.toFixed(2));
-      row.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
-      row.getCell(6).numFmt = '₹#,##0.00';
-      
-      row.getCell(7).value = store.storeId || store.storeCode || '-';
-      row.getCell(7).alignment = { horizontal: 'center', vertical: 'middle' };
-      
-      row.getCell(8).value = client.clientName || '-';
-      row.getCell(8).alignment = { vertical: 'middle' };
-      
-      row.height = 20;
-      storeAmount += item.amount;
-      currentRow++;
-    }
-    
-    // Store subtotal tracking
-    const storeTax = storeAmount * 0.18;
-    const storeTotal = storeAmount + storeTax;
-    storeSubtotals.set(storeKey, { amount: storeAmount, tax: storeTax, total: storeTotal });
-    grandTotal += storeAmount;
+    const lineItems = calculateLineItems(store, client);
+    allLineItems.push(...lineItems);
   }
 
-  // Subtotal and Total Section
-  currentRow++;
-  
-  // Subtotal
-  rfqSheet.mergeCells(`A${currentRow}:E${currentRow}`);
-  rfqSheet.getCell(`A${currentRow}`).value = 'SUBTOTAL';
-  rfqSheet.getCell(`A${currentRow}`).font = { bold: true };
-  rfqSheet.getCell(`A${currentRow}`).alignment = { horizontal: 'right', vertical: 'middle' };
-  rfqSheet.getCell(`F${currentRow}`).value = parseFloat(grandTotal.toFixed(2));
-  rfqSheet.getCell(`F${currentRow}`).font = { bold: true };
-  rfqSheet.getCell(`F${currentRow}`).alignment = { horizontal: 'right', vertical: 'middle' };
-  rfqSheet.getCell(`F${currentRow}`).numFmt = '₹#,##0.00';
-  
-  // GST (18%)
-  currentRow++;
-  const gstAmount = grandTotal * 0.18;
-  rfqSheet.mergeCells(`A${currentRow}:E${currentRow}`);
-  rfqSheet.getCell(`A${currentRow}`).value = 'GST (18%)';
-  rfqSheet.getCell(`A${currentRow}`).font = { bold: true };
-  rfqSheet.getCell(`A${currentRow}`).alignment = { horizontal: 'right', vertical: 'middle' };
-  rfqSheet.getCell(`F${currentRow}`).value = parseFloat(gstAmount.toFixed(2));
-  rfqSheet.getCell(`F${currentRow}`).font = { bold: true };
-  rfqSheet.getCell(`F${currentRow}`).alignment = { horizontal: 'right', vertical: 'middle' };
-  rfqSheet.getCell(`F${currentRow}`).numFmt = '₹#,##0.00';
-  
-  // Total Amount
-  currentRow++;
-  const totalAmount = grandTotal + gstAmount;
-  rfqSheet.mergeCells(`A${currentRow}:E${currentRow}`);
-  rfqSheet.getCell(`A${currentRow}`).value = 'TOTAL AMOUNT';
-  rfqSheet.getCell(`A${currentRow}`).font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
-  rfqSheet.getCell(`A${currentRow}`).alignment = { horizontal: 'right', vertical: 'middle' };
-  rfqSheet.getCell(`A${currentRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0066CC' } };
-  rfqSheet.getCell(`A${currentRow}`).border = {
-    top: { style: 'thick', color: { argb: 'FF0066CC' } },
-    left: { style: 'thick', color: { argb: 'FF0066CC' } },
-    bottom: { style: 'thick', color: { argb: 'FF0066CC' } },
-    right: { style: 'thick', color: { argb: 'FF0066CC' } }
-  };
-  rfqSheet.getCell(`F${currentRow}`).value = parseFloat(totalAmount.toFixed(2));
-  rfqSheet.getCell(`F${currentRow}`).font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
-  rfqSheet.getCell(`F${currentRow}`).alignment = { horizontal: 'right', vertical: 'middle' };
-  rfqSheet.getCell(`F${currentRow}`).numFmt = '₹#,##0.00';
-  rfqSheet.getCell(`F${currentRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0066CC' } };
-  rfqSheet.getCell(`F${currentRow}`).border = {
-    top: { style: 'thick', color: { argb: 'FF0066CC' } },
-    left: { style: 'thick', color: { argb: 'FF0066CC' } },
-    bottom: { style: 'thick', color: { argb: 'FF0066CC' } },
-    right: { style: 'thick', color: { argb: 'FF0066CC' } }
-  };
-  
-  // Add borders to total section
-  for (let row = currentRow - 2; row <= currentRow; row++) {
-    for (let col = 1; col <= 8; col++) {
-      const cell = rfqSheet.getCell(row, col);
+  // Group by element type for RFQ summary
+  const elementGroups = new Map();
+  for (const item of allLineItems) {
+    const key = item.elementName;
+    if (elementGroups.has(key)) {
+      const existing = elementGroups.get(key);
+      existing.quantity += item.quantity;
+      existing.totalSqft += item.totalSqft;
+      existing.amount += item.amount;
+    } else {
+      elementGroups.set(key, { ...item });
+    }
+  }
+
+  // Populate RFQ line items
+  for (const [elementName, item] of elementGroups) {
+    const row = rfqSheet.getRow(currentRow);
+    
+    for (let col = 1; col <= 7; col++) {
+      const cell = row.getCell(col);
       cell.border = {
-        top: { style: 'thick', color: { argb: 'FF000000' } },
-        left: { style: 'thick', color: { argb: 'FF000000' } },
-        bottom: { style: 'thick', color: { argb: 'FF000000' } },
-        right: { style: 'thick', color: { argb: 'FF000000' } }
+        top: { style: 'thin', color: { argb: 'FF000000' } },
+        left: { style: 'thin', color: { argb: 'FF000000' } },
+        bottom: { style: 'thin', color: { argb: 'FF000000' } },
+        right: { style: 'thin', color: { argb: 'FF000000' } }
       };
     }
+    
+    row.getCell(1).value = serialNo++;
+    row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+    row.getCell(2).value = item.elementName;
+    row.getCell(2).alignment = { vertical: 'middle' };
+    row.getCell(3).value = '';
+    row.getCell(4).value = item.quantity;
+    row.getCell(4).alignment = { horizontal: 'center', vertical: 'middle' };
+    row.getCell(5).value = parseFloat(item.totalSqft.toFixed(2));
+    row.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
+    row.getCell(6).value = parseFloat(item.rate.toFixed(2));
+    row.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+    row.getCell(7).value = parseFloat(item.amount.toFixed(2));
+    row.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
+    row.getCell(7).numFmt = '#,##0.00';
+    
+    row.height = 20;
+    grandTotal += item.amount;
+    currentRow++;
   }
+
+  // Transportation
+  const transportRow = rfqSheet.getRow(currentRow);
+  for (let col = 1; col <= 7; col++) {
+    transportRow.getCell(col).border = {
+      top: { style: 'thin', color: { argb: 'FF000000' } },
+      left: { style: 'thin', color: { argb: 'FF000000' } },
+      bottom: { style: 'thin', color: { argb: 'FF000000' } },
+      right: { style: 'thin', color: { argb: 'FF000000' } }
+    };
+  }
+  transportRow.getCell(1).value = serialNo++;
+  transportRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+  transportRow.getCell(2).value = 'TRANSPORTATION';
+  transportRow.getCell(4).value = 1;
+  transportRow.getCell(4).alignment = { horizontal: 'center', vertical: 'middle' };
+  const transportAmount = grandTotal * 0.05;
+  transportRow.getCell(5).value = parseFloat(transportAmount.toFixed(2));
+  transportRow.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
+  transportRow.getCell(6).value = 1.5;
+  transportRow.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+  transportRow.getCell(7).value = parseFloat((transportAmount * 1.5).toFixed(2));
+  transportRow.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
+  transportRow.getCell(7).numFmt = '#,##0.00';
+  grandTotal += (transportAmount * 1.5);
+  currentRow += 4;
+
+  // Totals section
+  rfqSheet.getCell(`A${currentRow}`).value = 'Amount in Words: Rupees Only';
+  rfqSheet.getCell(`A${currentRow}`).font = { bold: true };
+  rfqSheet.getCell(`E${currentRow}`).value = 'Total Amount before tax';
+  rfqSheet.getCell(`E${currentRow}`).font = { bold: true };
+  rfqSheet.getCell(`E${currentRow}`).alignment = { horizontal: 'right' };
+  rfqSheet.getCell(`G${currentRow}`).value = parseFloat(grandTotal.toFixed(2));
+  rfqSheet.getCell(`G${currentRow}`).alignment = { horizontal: 'right' };
+  rfqSheet.getCell(`G${currentRow}`).numFmt = '#,##0.00';
+  
+  currentRow++;
+  const gstAmount = grandTotal * 0.18;
+  rfqSheet.getCell(`E${currentRow}`).value = 'Taxes/GST @ 18%';
+  rfqSheet.getCell(`E${currentRow}`).font = { bold: true };
+  rfqSheet.getCell(`E${currentRow}`).alignment = { horizontal: 'right' };
+  rfqSheet.getCell(`G${currentRow}`).value = parseFloat(gstAmount.toFixed(2));
+  rfqSheet.getCell(`G${currentRow}`).alignment = { horizontal: 'right' };
+  rfqSheet.getCell(`G${currentRow}`).numFmt = '#,##0.00';
+  
+  currentRow++;
+  const totalAmount = grandTotal + gstAmount;
+  rfqSheet.getCell(`E${currentRow}`).value = 'Total Amount After tax';
+  rfqSheet.getCell(`E${currentRow}`).font = { bold: true };
+  rfqSheet.getCell(`E${currentRow}`).alignment = { horizontal: 'right' };
+  rfqSheet.getCell(`G${currentRow}`).value = parseFloat(totalAmount.toFixed(2));
+  rfqSheet.getCell(`G${currentRow}`).font = { bold: true };
+  rfqSheet.getCell(`G${currentRow}`).alignment = { horizontal: 'right' };
+  rfqSheet.getCell(`G${currentRow}`).numFmt = '#,##0.00';
+  rfqSheet.getCell(`G${currentRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFCC99' } };
   
   // Terms & Conditions
   currentRow += 3;
-  rfqSheet.mergeCells(`A${currentRow}:H${currentRow}`);
-  rfqSheet.getCell(`A${currentRow}`).value = 'TERMS & CONDITIONS';
+  rfqSheet.mergeCells(`A${currentRow}:G${currentRow}`);
+  rfqSheet.getCell(`A${currentRow}`).value = 'Terms & Conditions:';
   rfqSheet.getCell(`A${currentRow}`).font = { bold: true, size: 12 };
-  rfqSheet.getCell(`A${currentRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
   
   const terms = [
-    '1. Prices are valid for 30 days from the date of quotation',
-    '2. GST @ 18% will be charged extra as applicable',
-    '3. Payment terms: 50% advance, 50% on completion',
-    '4. Installation and commissioning charges included',
-    '5. Warranty: 1 year on hardware, 6 months on installation'
+    'Billing will be done only on basis of acceptance of this Quotation.',
+    'Delivery deadline:As per requirement Of material',
+    'Payment terms:Due after 30-35 days of submission of invoices & supported documents',
+    'All materials should be as per specified and approved specifications',
+    'All rates are inclusive of sampling,production,installation,packaging and transportation etc. at all locations.',
+    'In case of a missed deadline,company reserves the right to reject the delivery and payment.'
   ];
   
-  terms.forEach((term, index) => {
+  terms.forEach((term) => {
     currentRow++;
-    rfqSheet.mergeCells(`A${currentRow}:H${currentRow}`);
+    rfqSheet.mergeCells(`A${currentRow}:G${currentRow}`);
     rfqSheet.getCell(`A${currentRow}`).value = term;
     rfqSheet.getCell(`A${currentRow}`).font = { size: 10 };
   });
   
-  // Footer
-  currentRow += 2;
-  rfqSheet.mergeCells(`A${currentRow}:H${currentRow}`);
-  rfqSheet.getCell(`A${currentRow}`).value = 'For ELORA TECH SOLUTIONS';
-  rfqSheet.getCell(`A${currentRow}`).font = { bold: true };
-  rfqSheet.getCell(`A${currentRow}`).alignment = { horizontal: 'right' };
-  
+  // Footer signatures
   currentRow += 3;
-  rfqSheet.mergeCells(`A${currentRow}:H${currentRow}`);
-  rfqSheet.getCell(`A${currentRow}`).value = 'Authorized Signatory';
-  rfqSheet.getCell(`A${currentRow}`).alignment = { horizontal: 'right' };
+  rfqSheet.getCell(`A${currentRow}`).value = '(For Vendor use only)';
+  rfqSheet.getCell(`A${currentRow}`).font = { bold: true };
+  rfqSheet.getCell(`E${currentRow}`).value = '(For relame use only)';
+  rfqSheet.getCell(`E${currentRow}`).font = { bold: true };
+  
+  currentRow++;
+  rfqSheet.getCell(`A${currentRow}`).value = 'Prepared By:- ELORA TEAM';
+  rfqSheet.getCell(`E${currentRow}`).value = 'Name of approver:-';
+  
+  currentRow++;
+  rfqSheet.getCell(`A${currentRow}`).value = 'Contact No:- 9799333000';
+  rfqSheet.getCell(`E${currentRow}`).value = 'EMP ID:-';
+  
+  currentRow++;
+  rfqSheet.getCell(`A${currentRow}`).value = 'Signature:-';
+  rfqSheet.getCell(`E${currentRow}`).value = 'Signature:-';
 
-  // Create Details Sheet with Detailed Measurements
+  // Create Details Sheet
   const detailsSheet = workbook.addWorksheet("Store Details");
   
-  // Company Header for Details Sheet
-  detailsSheet.mergeCells('A1:U2');
-  detailsSheet.getCell('A1').value = 'ELORA TECH SOLUTIONS - DETAILED MEASUREMENTS';
-  detailsSheet.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FF1F2937' } };
-  detailsSheet.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
-  detailsSheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
-  detailsSheet.getRow(1).height = 30;
-
-  // Set column widths for detailed measurements
   detailsSheet.columns = [
-    { width: 6 },   // A - S.No
-    { width: 12 },  // B - Client Code
-    { width: 12 },  // C - Store Code
-    { width: 20 },  // D - Store Name
-    { width: 15 },  // E - City
-    { width: 25 },  // F - Address
-    { width: 12 },  // G - Mobile No
-    { width: 20 },  // H - Element
-    { width: 10 },  // I - Width (Inch)
-    { width: 10 },  // J - Height (Inch)
-    { width: 10 },  // K - Width (feet)
-    { width: 10 },  // L - Height (feet)
-    { width: 8 },   // M - QTY
-    { width: 10 },  // N - Sq.Ft
-    { width: 12 },  // O - Rate
-    { width: 12 },  // P - Amount
-    { width: 10 },  // Q - Tax
-    { width: 12 }   // R - Total
+    { width: 6 }, { width: 12 }, { width: 12 }, { width: 20 }, { width: 15 }, { width: 25 }, 
+    { width: 12 }, { width: 20 }, { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 }, 
+    { width: 8 }, { width: 10 }, { width: 12 }, { width: 12 }, { width: 10 }, { width: 12 }
   ];
 
-  // Headers for detailed measurements (row 4)
+  // Headers for detailed measurements
   const detailHeaders = [
     'S.No', 'Client Code', 'Store Code', 'Store Name', 'City', 'Address', 'Mobile No', 
     'Element', 'Width\n(Inch)', 'Height\n(Inch)', 'Width\n(feet)', 'Height\n(feet)', 
@@ -369,136 +310,104 @@ async function generateCombinedRFQ(validStores: Array<{ store: any; client: any 
   ];
   
   detailHeaders.forEach((header, index) => {
-    const cell = detailsSheet.getCell(4, index + 1);
+    const cell = detailsSheet.getCell(1, index + 1);
     cell.value = header;
-    cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
+    cell.font = { bold: true, color: { argb: 'FF000000' }, size: 10 };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFCC99' } };
     cell.border = {
-      top: { style: 'medium' },
-      left: { style: 'thin' },
-      bottom: { style: 'medium' },
-      right: { style: 'thin' }
+      top: { style: 'thick', color: { argb: 'FF000000' } },
+      left: { style: 'thick', color: { argb: 'FF000000' } },
+      bottom: { style: 'thick', color: { argb: 'FF000000' } },
+      right: { style: 'thick', color: { argb: 'FF000000' } }
     };
     cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
   });
-  detailsSheet.getRow(4).height = 35;
+  detailsSheet.getRow(1).height = 35;
 
-  // Populate detailed measurement data
-  let detailRowNum = 5;
+  // Populate detailed data
+  let detailRowNum = 2;
   let serialNo2 = 1;
   
-  for (const { store, client } of validStores) {
-    const lineItems = calculateLineItems(store.recce, client);
-    
-    for (const item of lineItems) {
-      for (const measurement of item.measurements) {
-        const row = detailsSheet.getRow(detailRowNum);
-        
-        // Alternate row colors
-        const isEvenRow = (detailRowNum - 5) % 2 === 0;
-        const rowColor = isEvenRow ? 'FFF9FAFB' : 'FFFFFFFF';
-        
-        // Style all cells
-        for (let col = 1; col <= 18; col++) {
-          const cell = row.getCell(col);
-          cell.border = {
-            top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-            left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-            right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
-          };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowColor } };
-          cell.alignment = { vertical: 'middle' };
-        }
-        
-        const taxAmount = (measurement.sqft * item.rate) * 0.18;
-        const totalAmount = (measurement.sqft * item.rate) + taxAmount;
-        
-        // Populate data
-        row.getCell(1).value = serialNo2++; // S.No
-        row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
-        
-        row.getCell(2).value = client.clientName?.substring(0, 8) || '-'; // Client Code
-        row.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
-        
-        row.getCell(3).value = store.storeId || store.storeCode || '-'; // Store Code
-        row.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
-        
-        row.getCell(4).value = store.storeName || '-'; // Store Name
-        
-        row.getCell(5).value = store.location?.city || '-'; // City
-        row.getCell(5).alignment = { horizontal: 'center', vertical: 'middle' };
-        
-        row.getCell(6).value = store.location?.address || '-'; // Address
-        
-        row.getCell(7).value = store.contactNumber || '-'; // Mobile No
-        row.getCell(7).alignment = { horizontal: 'center', vertical: 'middle' };
-        
-        row.getCell(8).value = item.elementName; // Element
-        
-        row.getCell(9).value = parseFloat(measurement.width.toFixed(2)); // Width (Inch)
-        row.getCell(9).alignment = { horizontal: 'center', vertical: 'middle' };
-        
-        row.getCell(10).value = parseFloat(measurement.height.toFixed(2)); // Height (Inch)
-        row.getCell(10).alignment = { horizontal: 'center', vertical: 'middle' };
-        
-        row.getCell(11).value = parseFloat(measurement.widthFeet.toFixed(2)); // Width (feet)
-        row.getCell(11).alignment = { horizontal: 'center', vertical: 'middle' };
-        
-        row.getCell(12).value = parseFloat(measurement.heightFeet.toFixed(2)); // Height (feet)
-        row.getCell(12).alignment = { horizontal: 'center', vertical: 'middle' };
-        
-        row.getCell(13).value = measurement.quantity; // QTY
-        row.getCell(13).alignment = { horizontal: 'center', vertical: 'middle' };
-        
-        row.getCell(14).value = parseFloat(measurement.sqft.toFixed(2)); // Sq.Ft
-        row.getCell(14).alignment = { horizontal: 'right', vertical: 'middle' };
-        
-        row.getCell(15).value = parseFloat(item.rate.toFixed(2)); // Rate
-        row.getCell(15).alignment = { horizontal: 'right', vertical: 'middle' };
-        row.getCell(15).numFmt = '₹#,##0.00';
-        
-        row.getCell(16).value = parseFloat((measurement.sqft * item.rate).toFixed(2)); // Amount
-        row.getCell(16).alignment = { horizontal: 'right', vertical: 'middle' };
-        row.getCell(16).numFmt = '₹#,##0.00';
-        
-        row.getCell(17).value = parseFloat(taxAmount.toFixed(2)); // Tax
-        row.getCell(17).alignment = { horizontal: 'right', vertical: 'middle' };
-        row.getCell(17).numFmt = '₹#,##0.00';
-        
-        row.getCell(18).value = parseFloat(totalAmount.toFixed(2)); // Total
-        row.getCell(18).alignment = { horizontal: 'right', vertical: 'middle' };
-        row.getCell(18).numFmt = '₹#,##0.00';
-        
-        row.height = 20;
-        detailRowNum++;
+  for (const item of allLineItems) {
+    for (const measurement of item.measurements) {
+      const row = detailsSheet.getRow(detailRowNum);
+      
+      for (let col = 1; col <= 18; col++) {
+        const cell = row.getCell(col);
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'thin', color: { argb: 'FF000000' } },
+          right: { style: 'thin', color: { argb: 'FF000000' } }
+        };
+        cell.alignment = { vertical: 'middle' };
       }
+      
+      const amount = measurement.sqft * item.rate;
+      const taxAmount = amount * 0.18;
+      const totalAmount = amount + taxAmount;
+      
+      row.getCell(1).value = serialNo2++;
+      row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(2).value = item.clientCode;
+      row.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(3).value = item.storeCode;
+      row.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(4).value = item.storeName;
+      row.getCell(5).value = item.city;
+      row.getCell(5).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(6).value = item.address;
+      row.getCell(7).value = item.mobile;
+      row.getCell(7).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(8).value = item.elementName;
+      row.getCell(9).value = Math.round(measurement.width);
+      row.getCell(9).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(10).value = Math.round(measurement.height);
+      row.getCell(10).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(11).value = parseFloat(measurement.widthFeet.toFixed(2));
+      row.getCell(11).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(12).value = parseFloat(measurement.heightFeet.toFixed(2));
+      row.getCell(12).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(13).value = measurement.quantity;
+      row.getCell(13).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(14).value = parseFloat(measurement.sqft.toFixed(2));
+      row.getCell(14).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(15).value = parseFloat(item.rate.toFixed(2));
+      row.getCell(15).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(16).value = parseFloat(amount.toFixed(2));
+      row.getCell(16).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(17).value = parseFloat(taxAmount.toFixed(2));
+      row.getCell(17).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(18).value = parseFloat(totalAmount.toFixed(2));
+      row.getCell(18).alignment = { horizontal: 'right', vertical: 'middle' };
+      
+      row.height = 20;
+      detailRowNum++;
     }
   }
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
-function calculateLineItems(recce: any, client: any) {
-  if (!recce || !recce.reccePhotos || recce.reccePhotos.length === 0) {
+function calculateLineItems(store: any, client: any) {
+  if (!store.recce || !store.recce.reccePhotos || store.recce.reccePhotos.length === 0) {
     return [];
   }
 
   const elementMap = new Map<string, { quantity: number; totalSqft: number; rate: number; name: string; measurements: any[] }>();
 
-  for (const photo of recce.reccePhotos) {
+  for (const photo of store.recce.reccePhotos) {
     const { measurements, elements } = photo;
     if (!measurements || !elements || elements.length === 0) continue;
 
     const { width, height, unit } = measurements;
 
-    // Fixed square footage calculation: Width(inch) * Height(inch) / 144
-    let areaSqft = 0;
-    if (unit === "inches") {
-      areaSqft = (width * height) / 144; // Correct formula: inches to sq ft
-    } else if (unit === "feet") {
-      areaSqft = width * height;
-    }
+    // Convert to feet
+    let widthFeet = unit === "inches" ? width / 12 : width;
+    let heightFeet = unit === "inches" ? height / 12 : height;
+    
+    // Calculate square footage: Width(feet) * Height(feet)
+    const areaSqft = widthFeet * heightFeet;
 
     for (const elem of elements) {
       const clientElement = client.elements.find((e: any) => e.elementId.toString() === elem.elementId);
@@ -516,28 +425,32 @@ function calculateLineItems(recce: any, client: any) {
       }
 
       const existing = elementMap.get(key)!;
-      existing.quantity += elem.quantity || 1;
-      existing.totalSqft += areaSqft * (elem.quantity || 1);
+      const elemQuantity = elem.quantity || 1;
+      existing.quantity += elemQuantity;
+      existing.totalSqft += areaSqft * elemQuantity;
       existing.measurements.push({
         width: unit === "inches" ? width : width * 12,
         height: unit === "inches" ? height : height * 12,
-        widthFeet: unit === "inches" ? width / 12 : width,
-        heightFeet: unit === "inches" ? height / 12 : height,
-        quantity: elem.quantity || 1,
-        sqft: areaSqft * (elem.quantity || 1)
+        widthFeet: widthFeet,
+        heightFeet: heightFeet,
+        quantity: elemQuantity,
+        sqft: areaSqft * elemQuantity
       });
     }
   }
 
-  // Return combined measurements per element (no duplicates)
   return Array.from(elementMap.values()).map(item => ({
     elementName: item.name,
     quantity: item.quantity,
     totalSqft: item.totalSqft,
     rate: item.rate,
     amount: item.totalSqft * item.rate,
-    measurements: item.measurements
+    measurements: item.measurements,
+    clientCode: client.clientName?.substring(0, 8) || '-',
+    storeCode: store.storeId || store.storeCode || '-',
+    storeName: store.storeName || '-',
+    city: store.location?.city || '-',
+    address: store.location?.address || '-',
+    mobile: store.contactNumber || '-'
   }));
 }
-
-
