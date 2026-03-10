@@ -619,6 +619,13 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
       }
     }
 
+    doc.end();
+  } catch (error: any) {
+    console.error("Bulk PDF Error:", error);
+    if (!res.headersSent) res.status(500).json({ message: "Error generating bulk PDF" });
+  }
+};
+
 export const generateBulkPPT = async (req: Request, res: Response) => {
   try {
     const { storeIds, type } = req.body;
