@@ -14,6 +14,7 @@ export interface ClientDocument extends Document {
   gstNumber: string;
   elements: ClientElement[];
   isActive: boolean;
+  enableLocationMapping: boolean;
 }
 
 const ClientElementSchema = new Schema<ClientElement>(
@@ -34,6 +35,7 @@ const ClientSchema = new Schema<ClientDocument>(
     gstNumber: { type: String, required: true, trim: true, unique: true },
     elements: [ClientElementSchema],
     isActive: { type: Boolean, default: true },
+    enableLocationMapping: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

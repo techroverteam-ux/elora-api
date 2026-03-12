@@ -55,7 +55,7 @@ export const getClientById = async (req: Request, res: Response) => {
 
 export const createClient = async (req: Request, res: Response) => {
   try {
-    const { clientName, branchName, gstNumber, elements } = req.body;
+    const { clientName, branchName, gstNumber, elements, enableLocationMapping = false } = req.body;
 
     // Validate that at least one element is provided
     if (!elements || !Array.isArray(elements) || elements.length === 0) {
@@ -76,6 +76,7 @@ export const createClient = async (req: Request, res: Response) => {
       branchName,
       gstNumber,
       elements,
+      enableLocationMapping,
     });
 
     await client.save();
@@ -87,7 +88,7 @@ export const createClient = async (req: Request, res: Response) => {
 
 export const updateClient = async (req: Request, res: Response) => {
   try {
-    const { clientName, branchName, gstNumber, elements } = req.body;
+    const { clientName, branchName, gstNumber, elements, enableLocationMapping } = req.body;
 
     // Validate that at least one element is provided
     if (!elements || !Array.isArray(elements) || elements.length === 0) {
@@ -100,9 +101,14 @@ export const updateClient = async (req: Request, res: Response) => {
       return res.status(400).json({ message: `GST number "${gstNumber}" already exists in the system` });
     }
 
+    const updateData: any = { clientName, branchName, gstNumber, elements };
+    if (enableLocationMapping !== undefined) {
+      updateData.enableLocationMapping = enableLocationMapping;
+    }
+
     const client = await Client.findByIdAndUpdate(
       req.params.id,
-      { clientName, branchName, gstNumber, elements },
+      updateData,
       { new: true, runValidators: true },
     );
 
