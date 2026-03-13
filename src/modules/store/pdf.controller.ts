@@ -83,7 +83,7 @@ export const generateReccePDF = async (req: Request, res: Response) => {
     
     y += 25;
     doc.font('Helvetica-Bold').text('Recce Date:', 50, y, { continued: false, width: 120 });
-    doc.font('Helvetica').text(store.recce.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A', 170, y, { width: 200 });
+    doc.font('Helvetica').text(store.recce.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A', 170, y, { width: 200 });
     doc.font('Helvetica-Bold').text('Submitted By:', 420, y, { continued: false, width: 120 });
     doc.font('Helvetica').text(store.recce.submittedBy || 'N/A', 540, y, { width: 250 });
     
@@ -278,7 +278,7 @@ export const generateInstallationPDF = async (req: Request, res: Response) => {
     
     y += 25;
     doc.font('Helvetica-Bold').text('Completion Date:', 50, y, { continued: false, width: 120 });
-    doc.font('Helvetica').text(store.installation.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A', 170, y, { width: 200 });
+    doc.font('Helvetica').text(store.installation.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A', 170, y, { width: 200 });
     doc.font('Helvetica-Bold').text('Submitted By:', 420, y, { continued: false, width: 120 });
     doc.font('Helvetica').text(store.installation.submittedBy || 'N/A', 540, y, { width: 250 });
     
@@ -443,7 +443,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
     const doc = new PDFDocument({ size: 'A4', margin: 0, layout: 'landscape' });
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${type === "recce" ? "Recce" : "Installation"}_Report_${stores.length}_Stores_${new Date().toISOString().split('T')[0]}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${type === "recce" ? "Recce" : "Installation"}_Report_${stores.length}_Stores_${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/')}.pdf"`);
     doc.pipe(res);
 
     const logoPath = path.join(process.cwd(), "public", "logo.png");
@@ -499,8 +499,8 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
       let y = 50;
       
       const dateValue = type === "recce" 
-        ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A')
-        : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A');
+        ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A')
+        : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A');
       
       const submittedBy = type === "recce" ? store.recce?.submittedBy : store.installation?.submittedBy;
       
@@ -511,23 +511,23 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
       
       // Store details in left box
       doc.font('Helvetica-Bold').text('Store:', 40, y, { width: 60 });
-      doc.font('Helvetica').text(store.storeName || 'Fusion Electro World', 100, y, { width: 320 });
+      doc.font('Helvetica').text(store.storeName || 'N/A', 100, y, { width: 320 });
       
-      y += 15;
+      y += 16; // Increased from 15 to 16
       doc.font('Helvetica-Bold').text('ID:', 40, y, { width: 60 });
-      doc.font('Helvetica').text(store.storeId || store.storeCode || 'UDAUDAIN002301', 100, y, { width: 150 });
+      doc.font('Helvetica').text(store.storeId || store.storeCode || 'N/A', 100, y, { width: 150 });
       doc.font('Helvetica-Bold').text('City:', 260, y, { width: 40 });
-      doc.font('Helvetica').text(store.location?.city || 'Udaipur', 300, y, { width: 130 });
+      doc.font('Helvetica').text(store.location?.city || 'N/A', 300, y, { width: 130 });
       
-      y += 15;
+      y += 16; // Increased from 15 to 16
       doc.font('Helvetica-Bold').text('Date:', 40, y, { width: 60 });
       doc.font('Helvetica').text(dateValue, 100, y, { width: 150 });
       doc.font('Helvetica-Bold').text('By:', 260, y, { width: 30 });
-      doc.font('Helvetica').text(submittedBy || 'Amjad', 290, y, { width: 140 });
+      doc.font('Helvetica').text(submittedBy || 'N/A', 290, y, { width: 140 });
       
-      y += 15;
+      y += 16; // Increased from 15 to 16
       doc.font('Helvetica-Bold').text('Address:', 40, y, { width: 60 });
-      const address = store.location?.address || 'SHOP NO. 1-2 MEERA PLAZA COMMUNITY HALL ROAD SHAKTI NAGAR UDAIPUR';
+      const address = store.location?.address || 'N/A';
       doc.font('Helvetica').text(address, 100, y, { width: 330, height: 15 });
       
       if (type === "installation") {
@@ -536,13 +536,13 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
 
       // RIGHT SIDE: Initial Photos (if available) - Single line, bigger size
       if (store.recce?.initialPhotos && store.recce.initialPhotos.length > 0) {
-        const photoSize = 60;
+        const photoSize = 65; // Increased from 60 to 65
         const photoSpacing = 8;
         const rightStartX = 450;
         let photoY = 50;
         
-        doc.fillColor('#666666').fontSize(8).font('Helvetica')
-          .text('Initial Photos:', rightStartX, photoY - 12);
+        doc.fillColor('#666666').fontSize(9).font('Helvetica-Bold') // Increased font size and made bold
+          .text('Initial Photos:', rightStartX, photoY - 15); // Moved label up slightly
         
         // Arrange photos in single row
         for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 5); i++) {
@@ -550,24 +550,41 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
           
           try {
             const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
-            const axios = require('axios');
+            console.log('Loading initial photo:', photoUrl);
             const response = await axios.get(photoUrl, { 
               responseType: 'arraybuffer',
-              timeout: 5000
+              timeout: 8000, // Increased timeout
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (compatible; PDF-Generator)'
+              }
             });
             
-            if (response.status === 200) {
+            if (response.status === 200 && response.data) {
               const buffer = Buffer.from(response.data);
+              // Add border around initial photos
+              doc.save();
+              doc.rect(x - 2, photoY - 2, photoSize + 4, photoSize + 4).strokeColor('#EAB308').lineWidth(1).stroke();
+              doc.restore();
+              
               doc.image(buffer, x, photoY, { 
                 width: photoSize, 
                 height: photoSize, 
                 fit: [photoSize, photoSize] 
               });
+              console.log(`Initial photo ${i + 1} loaded successfully`);
             }
-          } catch (error) {
+          } catch (error: any) {
+            console.log(`Failed to load initial photo ${i + 1}: ${error.message}`);
+            // Add placeholder with border
             doc.save();
-            doc.rect(x, photoY, photoSize, photoSize).strokeColor('#CCCCCC').stroke();
+            doc.rect(x, photoY, photoSize, photoSize).strokeColor('#CCCCCC').lineWidth(1).stroke();
             doc.restore();
+            // Add "No Image" text
+            doc.fillColor('#999999').fontSize(8).font('Helvetica')
+              .text('No Image', x + 5, photoY + photoSize/2 - 4, { 
+                width: photoSize - 10, 
+                align: 'center' 
+              });
           }
         }
       }
@@ -697,14 +714,17 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
           
           // BEFORE (Left)
           const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+          console.log('Loading BEFORE image:', reccePhotoUrl);
           try {
-            const axios = require('axios');
             const response = await axios.get(reccePhotoUrl, { 
               responseType: 'arraybuffer',
-              timeout: 10000
+              timeout: 10000,
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (compatible; PDF-Generator)'
+              }
             });
             
-            if (response.status === 200) {
+            if (response.status === 200 && response.data) {
               const buffer = Buffer.from(response.data);
               // Add border
               doc.save();
@@ -716,22 +736,36 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
                 height: imgHeight - 10, 
                 fit: [imgWidth - 10, imgHeight - 10] 
               });
+              console.log('BEFORE image loaded successfully');
             }
           } catch (error: any) {
-            console.log(`Failed to load recce image: ${error.message}`);
+            console.log(`Failed to load BEFORE image: ${error.message}`);
+            // Add border even for failed images
+            doc.save();
+            doc.rect(0, contentStartY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(3).stroke();
+            doc.restore();
+            // Add placeholder text
+            doc.fillColor('#999999').fontSize(14).font('Helvetica')
+              .text('BEFORE Image\nNot Available', 5, contentStartY + imgHeight/2 - 20, { 
+                width: imgWidth - 10, 
+                align: 'center' 
+              });
           }
           
           // AFTER (Right)
           if (installPhoto) {
             const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
+            console.log('Loading AFTER image:', installPhotoUrl);
             try {
-              const axios = require('axios');
               const response = await axios.get(installPhotoUrl, { 
                 responseType: 'arraybuffer',
-                timeout: 10000
+                timeout: 10000,
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (compatible; PDF-Generator)'
+                }
               });
               
-              if (response.status === 200) {
+              if (response.status === 200 && response.data) {
                 const buffer = Buffer.from(response.data);
                 // Add border
                 doc.save();
@@ -743,9 +777,20 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
                   height: imgHeight - 10, 
                   fit: [imgWidth - 10, imgHeight - 10] 
                 });
+                console.log('AFTER image loaded successfully');
               }
             } catch (error: any) {
-              console.log(`Failed to load installation image: ${error.message}`);
+              console.log(`Failed to load AFTER image: ${error.message}`);
+              // Add border even for failed images
+              doc.save();
+              doc.rect(imgWidth, contentStartY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
+              doc.restore();
+              // Add placeholder text
+              doc.fillColor('#999999').fontSize(14).font('Helvetica')
+                .text('AFTER Image\nNot Available', imgWidth + 5, contentStartY + imgHeight/2 - 20, { 
+                  width: imgWidth - 10, 
+                  align: 'center' 
+                });
             }
           }
           
@@ -768,14 +813,17 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
         const singleImgHeight = availableHeight - 30;
         
         const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+        console.log('Loading single recce image:', reccePhotoUrl);
         try {
-          const axios = require('axios');
           const response = await axios.get(reccePhotoUrl, { 
             responseType: 'arraybuffer',
-            timeout: 10000
+            timeout: 10000,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (compatible; PDF-Generator)'
+            }
           });
           
-          if (response.status === 200) {
+          if (response.status === 200 && response.data) {
             const buffer = Buffer.from(response.data);
             // Add border
             doc.save();
@@ -787,9 +835,20 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
               height: singleImgHeight - 10, 
               fit: [doc.page.width - 10, singleImgHeight - 10] 
             });
+            console.log('Single recce image loaded successfully');
           }
         } catch (error: any) {
           console.log(`Failed to load single recce image: ${error.message}`);
+          // Add border even for failed images
+          doc.save();
+          doc.rect(0, contentStartY, doc.page.width, singleImgHeight).strokeColor('#EAB308').lineWidth(3).stroke();
+          doc.restore();
+          // Add placeholder text
+          doc.fillColor('#999999').fontSize(16).font('Helvetica')
+            .text('Recce Image\nNot Available', 5, contentStartY + singleImgHeight/2 - 20, { 
+              width: doc.page.width - 10, 
+              align: 'center' 
+            });
         }
       }
     }
@@ -819,30 +878,28 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "No stores found" });
     }
 
-    const officegen = require('officegen');
-    const pptx = officegen('pptx');
-
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
-    res.setHeader('Content-Disposition', `attachment; filename="${type === "recce" ? "Recce" : "Installation"}_Report_${stores.length}_Stores_${new Date().toISOString().split('T')[0]}.pptx"`);
+    const PptxGenJS = require('pptxgenjs');
+    const pptx = new PptxGenJS();
+    
+    pptx.layout = 'LAYOUT_WIDE';
 
     // Title slide
-    const titleSlide = pptx.makeNewSlide();
-    titleSlide.name = `${type === "recce" ? "Recce" : "Installation"} Report`;
+    const titleSlide = pptx.addSlide();
     
     titleSlide.addText(`${type === "recce" ? "Recce Inspection" : "Installation Completion"} REPORT`, {
-      x: 1, y: 2, cx: 8, cy: 1,
-      font_size: 28, bold: true, color: type === "recce" ? 'EAB308' : '22C55E',
+      x: 1, y: 2, w: 8, h: 1,
+      fontSize: 28, bold: true, color: type === "recce" ? 'EAB308' : '22C55E',
       align: 'center'
     });
     
-    titleSlide.addText(`${stores.length} Stores | ${new Date().toLocaleDateString()}`, {
-      x: 1, y: 3.5, cx: 8, cy: 0.5,
-      font_size: 16, color: '1F2937', align: 'center'
+    titleSlide.addText(`${stores.length} Stores | ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/')}`, {
+      x: 1, y: 3.5, w: 8, h: 0.5,
+      fontSize: 16, color: '1F2937', align: 'center'
     });
     
     titleSlide.addText('ELORA CREATIVE ART | www.eloracreativeart.in', {
-      x: 1, y: 5, cx: 8, cy: 0.5,
-      font_size: 14, color: 'EAB308', align: 'center'
+      x: 1, y: 5, w: 8, h: 0.5,
+      fontSize: 14, color: 'EAB308', align: 'center'
     });
 
     for (let i = 0; i < stores.length; i++) {
@@ -851,67 +908,66 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
       if (type === "recce" && !store.recce) continue;
       if (type === "installation" && !store.installation) continue;
 
-      const slide = pptx.makeNewSlide();
-      slide.name = `${store.storeName} - ${type}`;
+      const slide = pptx.addSlide();
       
       // Header with centered title matching PDF
       const title = type === "recce" ? 'Recce Inspection Report' : 'Installation Completion Report';
       slide.addText(title, {
-        x: 0.9, y: 0.15, cx: 8.2, cy: 0.6,
-        font_size: 20, bold: true, color: type === "recce" ? 'EAB308' : '22C55E',
+        x: 0.9, y: 0.15, w: 8.2, h: 0.6,
+        fontSize: 20, bold: true, color: type === "recce" ? 'EAB308' : '22C55E',
         align: 'center'
       });
       
       // Company info - top right
       slide.addText('ELORA CREATIVE ART', {
-        x: 7.5, y: 0.1, cx: 2, cy: 0.25,
-        font_size: 9, color: 'EAB308', align: 'right'
+        x: 7.5, y: 0.1, w: 2, h: 0.25,
+        fontSize: 9, color: 'EAB308', align: 'right'
       });
       slide.addText('www.eloracreativeart.in', {
-        x: 7.5, y: 0.3, cx: 2, cy: 0.25,
-        font_size: 9, color: 'EAB308', align: 'right'
+        x: 7.5, y: 0.3, w: 2, h: 0.25,
+        fontSize: 9, color: 'EAB308', align: 'right'
       });
       
       // SIDE-BY-SIDE Layout: Store Details (Left) + Initial Photos (Right)
       const dateValue = type === "recce" 
-        ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A')
-        : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A');
+        ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A')
+        : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A');
       
       const submittedBy = type === "recce" ? store.recce?.submittedBy : store.installation?.submittedBy;
       
       // LEFT SIDE: Store Details (compact)
       slide.addText(`Store: ${store.storeName || 'Fusion Electro World'}`, {
-        x: 0.3, y: 0.7, cx: 4, cy: 0.25, font_size: 11, bold: true
+        x: 0.3, y: 0.7, w: 4, h: 0.25, fontSize: 11, bold: true
       });
       slide.addText(`ID: ${store.storeId || store.storeCode || 'UDAUDAIN002301'}`, {
-        x: 0.3, y: 0.95, cx: 2.5, cy: 0.25, font_size: 10
+        x: 0.3, y: 0.95, w: 2.5, h: 0.25, fontSize: 10
       });
       slide.addText(`City: ${store.location?.city || 'Udaipur'}`, {
-        x: 2.8, y: 0.95, cx: 1.5, cy: 0.25, font_size: 10
+        x: 2.8, y: 0.95, w: 1.5, h: 0.25, fontSize: 10
       });
       slide.addText(`Date: ${dateValue}`, {
-        x: 0.3, y: 1.2, cx: 2.5, cy: 0.25, font_size: 10
+        x: 0.3, y: 1.2, w: 2.5, h: 0.25, fontSize: 10
       });
       slide.addText(`By: ${submittedBy || 'Amjad'}`, {
-        x: 2.8, y: 1.2, cx: 1.5, cy: 0.25, font_size: 10
+        x: 2.8, y: 1.2, w: 1.5, h: 0.25, fontSize: 10
       });
       
       const address = store.location?.address || 'SHOP NO. 1-2 MEERA PLAZA COMMUNITY HALL ROAD SHAKTI NAGAR UDAIPUR';
       slide.addText(`Address: ${address}`, {
-        x: 0.3, y: 1.45, cx: 4, cy: 0.4, font_size: 10, wrap: true
+        x: 0.3, y: 1.45, w: 4, h: 0.4, fontSize: 10
       });
       
       if (type === "installation") {
         slide.addText('✓ COMPLETED', {
-          x: 3.8, y: 0.7, cx: 1, cy: 0.25, font_size: 11, bold: true, color: '22C55E'
+          x: 3.8, y: 0.7, w: 1, h: 0.25, fontSize: 11, bold: true, color: '22C55E'
         });
       }
 
       // RIGHT SIDE: Initial Photos (if available) - Single line, bigger size
       if (store.recce?.initialPhotos && store.recce.initialPhotos.length > 0) {
         slide.addText('Initial Photos:', {
-          x: 5.2, y: 0.6, cx: 2, cy: 0.2,
-          font_size: 8, color: '666666'
+          x: 5.2, y: 0.6, w: 2, h: 0.2,
+          fontSize: 8, color: '666666'
         });
         
         const photoSize = 0.6;
@@ -925,7 +981,6 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           
           try {
             const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
-            const axios = require('axios');
             const response = await axios.get(photoUrl, { 
               responseType: 'arraybuffer',
               timeout: 5000
@@ -933,9 +988,8 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             
             if (response.status === 200) {
               const buffer = Buffer.from(response.data);
-              slide.addImage(buffer, {
-                x: x, y: photoY, cx: photoSize, cy: photoSize
-              });
+              const base64 = `data:image/jpeg;base64,${buffer.toString('base64')}`;
+              slide.addImage({ data: base64, x: x, y: photoY, w: photoSize, h: photoSize });
             }
           } catch (error) {
             console.log('Failed to load initial photo for PPT');
@@ -953,7 +1007,6 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           // Three images: Before + After1 + After2
           try {
             const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
-            const axios = require('axios');
             const recceResponse = await axios.get(reccePhotoUrl, { 
               responseType: 'arraybuffer',
               timeout: 10000
@@ -961,9 +1014,8 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             
             if (recceResponse.status === 200) {
               const recceBuffer = Buffer.from(recceResponse.data);
-              slide.addImage(recceBuffer, {
-                x: 0.2, y: contentStartY, cx: 2.8, cy: 3.5
-              });
+              const base64 = `data:image/jpeg;base64,${recceBuffer.toString('base64')}`;
+              slide.addImage({ data: base64, x: 0.2, y: contentStartY, w: 2.8, h: 3.5 });
             }
           } catch (error) {
             console.log('Failed to load recce image for PPT');
@@ -972,7 +1024,6 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           // AFTER 1
           try {
             const installPhoto1Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[0].installationPhoto.replace(/\s+/g, '%20')}`;
-            const axios = require('axios');
             const installResponse1 = await axios.get(installPhoto1Url, { 
               responseType: 'arraybuffer',
               timeout: 10000
@@ -980,9 +1031,8 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             
             if (installResponse1.status === 200) {
               const installBuffer1 = Buffer.from(installResponse1.data);
-              slide.addImage(installBuffer1, {
-                x: 3.2, y: contentStartY, cx: 2.8, cy: 3.5
-              });
+              const base64 = `data:image/jpeg;base64,${installBuffer1.toString('base64')}`;
+              slide.addImage({ data: base64, x: 3.2, y: contentStartY, w: 2.8, h: 3.5 });
             }
           } catch (error) {
             console.log('Failed to load installation image 1 for PPT');
@@ -991,7 +1041,6 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           // AFTER 2
           try {
             const installPhoto2Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[1].installationPhoto.replace(/\s+/g, '%20')}`;
-            const axios = require('axios');
             const installResponse2 = await axios.get(installPhoto2Url, { 
               responseType: 'arraybuffer',
               timeout: 10000
@@ -999,9 +1048,8 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             
             if (installResponse2.status === 200) {
               const installBuffer2 = Buffer.from(installResponse2.data);
-              slide.addImage(installBuffer2, {
-                x: 6.2, y: contentStartY, cx: 2.8, cy: 3.5
-              });
+              const base64 = `data:image/jpeg;base64,${installBuffer2.toString('base64')}`;
+              slide.addImage({ data: base64, x: 6.2, y: contentStartY, w: 2.8, h: 3.5 });
             }
           } catch (error) {
             console.log('Failed to load installation image 2 for PPT');
@@ -1009,18 +1057,18 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           
           // Labels
           slide.addText('BEFORE', {
-            x: 0.2, y: contentStartY + 3.6, cx: 2.8, cy: 0.3,
-            font_size: 12, bold: true, color: 'FFFFFF',
+            x: 0.2, y: contentStartY + 3.6, w: 2.8, h: 0.3,
+            fontSize: 12, bold: true, color: 'FFFFFF',
             fill: { color: 'EF4444' }, align: 'center'
           });
           slide.addText('AFTER 1', {
-            x: 3.2, y: contentStartY + 3.6, cx: 2.8, cy: 0.3,
-            font_size: 12, bold: true, color: 'FFFFFF',
+            x: 3.2, y: contentStartY + 3.6, w: 2.8, h: 0.3,
+            fontSize: 12, bold: true, color: 'FFFFFF',
             fill: { color: '22C55E' }, align: 'center'
           });
           slide.addText('AFTER 2', {
-            x: 6.2, y: contentStartY + 3.6, cx: 2.8, cy: 0.3,
-            font_size: 12, bold: true, color: 'FFFFFF',
+            x: 6.2, y: contentStartY + 3.6, w: 2.8, h: 0.3,
+            fontSize: 12, bold: true, color: 'FFFFFF',
             fill: { color: '22C55E' }, align: 'center'
           });
         } else {
@@ -1029,7 +1077,6 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           
           try {
             const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
-            const axios = require('axios');
             const recceResponse = await axios.get(reccePhotoUrl, { 
               responseType: 'arraybuffer',
               timeout: 10000
@@ -1037,9 +1084,8 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             
             if (recceResponse.status === 200) {
               const recceBuffer = Buffer.from(recceResponse.data);
-              slide.addImage(recceBuffer, {
-                x: 0.3, y: contentStartY, cx: 4.2, cy: 3.8
-              });
+              const base64 = `data:image/jpeg;base64,${recceBuffer.toString('base64')}`;
+              slide.addImage({ data: base64, x: 0.3, y: contentStartY, w: 4.2, h: 3.8 });
             }
           } catch (error) {
             console.log('Failed to load recce image for PPT');
@@ -1048,7 +1094,6 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           if (installPhoto) {
             try {
               const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
-              const axios = require('axios');
               const installResponse = await axios.get(installPhotoUrl, { 
                 responseType: 'arraybuffer',
                 timeout: 10000
@@ -1056,9 +1101,8 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
               
               if (installResponse.status === 200) {
                 const installBuffer = Buffer.from(installResponse.data);
-                slide.addImage(installBuffer, {
-                  x: 4.8, y: contentStartY, cx: 4.2, cy: 3.8
-                });
+                const base64 = `data:image/jpeg;base64,${installBuffer.toString('base64')}`;
+                slide.addImage({ data: base64, x: 4.8, y: contentStartY, w: 4.2, h: 3.8 });
               }
             } catch (error) {
               console.log('Failed to load installation image for PPT');
@@ -1067,13 +1111,13 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           
           // Labels
           slide.addText('BEFORE', {
-            x: 0.3, y: contentStartY + 3.9, cx: 4.2, cy: 0.4,
-            font_size: 14, bold: true, color: 'FFFFFF',
+            x: 0.3, y: contentStartY + 3.9, w: 4.2, h: 0.4,
+            fontSize: 14, bold: true, color: 'FFFFFF',
             fill: { color: 'EF4444' }, align: 'center'
           });
           slide.addText('AFTER', {
-            x: 4.8, y: contentStartY + 3.9, cx: 4.2, cy: 0.4,
-            font_size: 14, bold: true, color: 'FFFFFF',
+            x: 4.8, y: contentStartY + 3.9, w: 4.2, h: 0.4,
+            fontSize: 14, bold: true, color: 'FFFFFF',
             fill: { color: '22C55E' }, align: 'center'
           });
         }
@@ -1083,7 +1127,6 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         
         try {
           const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
-          const axios = require('axios');
           const response = await axios.get(reccePhotoUrl, { 
             responseType: 'arraybuffer',
             timeout: 10000
@@ -1091,9 +1134,8 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           
           if (response.status === 200) {
             const buffer = Buffer.from(response.data);
-            slide.addImage(buffer, {
-              x: 0.5, y: contentStartY, cx: 8.5, cy: 4.2
-            });
+            const base64 = `data:image/jpeg;base64,${buffer.toString('base64')}`;
+            slide.addImage({ data: base64, x: 0.5, y: contentStartY, w: 8.5, h: 4.2 });
           }
         } catch (error) {
           console.log('Failed to load recce image for PPT');
@@ -1101,14 +1143,11 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
       }
     }
 
-    pptx.generate(res, (error: any) => {
-      if (error) {
-        console.error("PPT Generation Error:", error);
-        if (!res.headersSent) {
-          res.status(500).json({ message: "Error generating PPT" });
-        }
-      }
-    });
+    const buffer = await pptx.write('nodebuffer');
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
+    res.setHeader('Content-Disposition', `attachment; filename="${type === "recce" ? "Recce" : "Installation"}_Report_${stores.length}_Stores_${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/')}.pptx"`);
+    res.send(buffer);
   } catch (error: any) {
     console.error("Bulk PPT Error:", error);
     if (!res.headersSent) res.status(500).json({ message: "Error generating bulk PPT" });

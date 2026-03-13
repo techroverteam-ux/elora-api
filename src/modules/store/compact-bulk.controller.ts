@@ -59,12 +59,12 @@ export const generateCompactBulkPDF = async (req: Request, res: Response) => {
         .text('www.eloracreativeart.in', 650, 22, { width: 120, align: 'right' });
 
       // Store Info with better spacing
-      doc.fillColor('#000000').fontSize(9);
+      doc.fillColor('#000000').fontSize(10); // Increased from 9 to 10
       let y = 40;
       
       const dateValue = type === "recce" 
-        ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A')
-        : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A');
+        ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A')
+        : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A');
       
       const submittedBy = type === "recce" ? store.recce?.submittedBy : store.installation?.submittedBy;
       
@@ -78,7 +78,7 @@ export const generateCompactBulkPDF = async (req: Request, res: Response) => {
         doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 480, y);
       }
       
-      y += 12;
+      y += 14; // Increased from 12 to 14
       // Row 2: ID | Date | By
       doc.fillColor('#000000').font('Helvetica-Bold').text('ID:', 20, y);
       doc.font('Helvetica').text((store.storeId || store.storeCode || 'N/A').substring(0, 20), 45, y);
@@ -87,7 +87,7 @@ export const generateCompactBulkPDF = async (req: Request, res: Response) => {
       doc.font('Helvetica-Bold').text('By:', 350, y);
       doc.font('Helvetica').text((submittedBy || 'N/A').substring(0, 25), 375, y);
       
-      y += 12;
+      y += 14; // Increased from 12 to 14
       // Row 3: Address
       doc.font('Helvetica-Bold').text('Address:', 20, y);
       const address = store.location?.address || 'N/A';
@@ -132,13 +132,36 @@ export const generateCompactBulkPDF = async (req: Request, res: Response) => {
           doc.rect(beforeX + 5, rowY + 5, imgWidth - 10, imgHeight + 10).fillOpacity(1).fill('#FFFFFF');
           doc.restore();
           
-          const reccePhotoPath = path.join(process.cwd(), reccePhoto.photo);
-          if (fs.existsSync(reccePhotoPath)) {
-            doc.image(reccePhotoPath, beforeX + 15, rowY + 15, { 
-              width: imgWidth - 30, 
-              height: imgHeight - 20, 
-              fit: [imgWidth - 30, imgHeight - 20] 
+          // Load recce image from URL
+          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+          console.log('Loading recce image:', reccePhotoUrl);
+          try {
+            const axios = require('axios');
+            const response = await axios.get(reccePhotoUrl, { 
+              responseType: 'arraybuffer',
+              timeout: 10000,
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (compatible; PDF-Generator)'
+              }
             });
+            
+            if (response.status === 200 && response.data) {
+              const buffer = Buffer.from(response.data);
+              doc.image(buffer, beforeX + 15, rowY + 15, { 
+                width: imgWidth - 30, 
+                height: imgHeight - 20, 
+                fit: [imgWidth - 30, imgHeight - 20] 
+              });
+              console.log('Recce image loaded successfully');
+            }
+          } catch (error: any) {
+            console.log(`Failed to load recce image: ${error.message}`);
+            // Add placeholder text
+            doc.fillColor('#999999').fontSize(12).font('Helvetica')
+              .text('Image not available', beforeX + 15, rowY + imgHeight/2, { 
+                width: imgWidth - 30, 
+                align: 'center' 
+              });
           }
           
           doc.save();
@@ -160,13 +183,36 @@ export const generateCompactBulkPDF = async (req: Request, res: Response) => {
           doc.restore();
           
           if (installPhoto) {
-            const installPhotoPath = path.join(process.cwd(), installPhoto.installationPhoto);
-            if (fs.existsSync(installPhotoPath)) {
-              doc.image(installPhotoPath, afterX + 15, rowY + 15, { 
-                width: imgWidth - 30, 
-                height: imgHeight - 20, 
-                fit: [imgWidth - 30, imgHeight - 20] 
+            // Load installation image from URL
+            const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
+            console.log('Loading installation image:', installPhotoUrl);
+            try {
+              const axios = require('axios');
+              const response = await axios.get(installPhotoUrl, { 
+                responseType: 'arraybuffer',
+                timeout: 10000,
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (compatible; PDF-Generator)'
+                }
               });
+              
+              if (response.status === 200 && response.data) {
+                const buffer = Buffer.from(response.data);
+                doc.image(buffer, afterX + 15, rowY + 15, { 
+                  width: imgWidth - 30, 
+                  height: imgHeight - 20, 
+                  fit: [imgWidth - 30, imgHeight - 20] 
+                });
+                console.log('Installation image loaded successfully');
+              }
+            } catch (error: any) {
+              console.log(`Failed to load installation image: ${error.message}`);
+              // Add placeholder text
+              doc.fillColor('#999999').fontSize(12).font('Helvetica')
+                .text('Image not available', afterX + 15, rowY + imgHeight/2, { 
+                  width: imgWidth - 30, 
+                  align: 'center' 
+                });
             }
           }
           
@@ -208,13 +254,36 @@ export const generateCompactBulkPDF = async (req: Request, res: Response) => {
           doc.rect(x, y, imgWidth, imgHeight + 15).strokeColor('#EAB308').lineWidth(1).stroke();
           doc.restore();
           
-          const photoPath = path.join(process.cwd(), reccePhoto.photo);
-          if (fs.existsSync(photoPath)) {
-            doc.image(photoPath, x + 2, y + 2, { 
-              width: imgWidth - 4, 
-              height: imgHeight - 4, 
-              fit: [imgWidth - 4, imgHeight - 4] 
+          // Load recce photo from URL
+          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+          console.log('Loading recce photo for grid:', reccePhotoUrl);
+          try {
+            const axios = require('axios');
+            const response = await axios.get(reccePhotoUrl, { 
+              responseType: 'arraybuffer',
+              timeout: 10000,
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (compatible; PDF-Generator)'
+              }
             });
+            
+            if (response.status === 200 && response.data) {
+              const buffer = Buffer.from(response.data);
+              doc.image(buffer, x + 2, y + 2, { 
+                width: imgWidth - 4, 
+                height: imgHeight - 4, 
+                fit: [imgWidth - 4, imgHeight - 4] 
+              });
+              console.log('Recce photo loaded successfully for grid');
+            }
+          } catch (error: any) {
+            console.log(`Failed to load recce photo for grid: ${error.message}`);
+            // Add placeholder text
+            doc.fillColor('#999999').fontSize(10).font('Helvetica')
+              .text('Image not available', x + 2, y + imgHeight/2, { 
+                width: imgWidth - 4, 
+                align: 'center' 
+              });
           }
           
           doc.save();
@@ -227,7 +296,7 @@ export const generateCompactBulkPDF = async (req: Request, res: Response) => {
 
       // Footer
       doc.fillColor('#6B7280').fontSize(6).font('Helvetica')
-        .text(`Generated: ${new Date().toLocaleDateString()} | ELORA CREATIVE ART`, 
+        .text(`Generated: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/')} | ELORA CREATIVE ART`, 
               20, doc.page.height - 20, { width: 760, align: 'center' });
     }
 
@@ -308,8 +377,8 @@ export const generateCompactBulkPPT = async (req: Request, res: Response) => {
       
       // Store details in organized layout
       const dateValue = type === "recce" 
-        ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString() : 'N/A')
-        : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A');
+        ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A')
+        : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A');
       
       const submittedBy = type === "recce" ? store.recce?.submittedBy : store.installation?.submittedBy;
       

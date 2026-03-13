@@ -48,7 +48,7 @@ export const generateCompactInstallationPDF = async (req: Request, res: Response
     doc.font('Helvetica-Bold').text('City:', 300, y);
     doc.font('Helvetica').text((store.location?.city || 'N/A').substring(0, 15), 330, y);
     doc.font('Helvetica-Bold').text('Date:', 450, y);
-    doc.font('Helvetica').text(store.installation.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A', 480, y);
+    doc.font('Helvetica').text(store.installation.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A', 480, y);
     doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 600, y);
     
     y += 12;
@@ -203,7 +203,7 @@ export const generateCompactInstallationPDF = async (req: Request, res: Response
 
     // Footer
     doc.fillColor('#6B7280').fontSize(8).font('Helvetica')
-      .text(`Generated on ${new Date().toLocaleDateString()} | ELORA CREATIVE ART`, 
+      .text(`Generated on ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/')} | ELORA CREATIVE ART`, 
             30, doc.page.height - 25, { width: 740, align: 'center' });
 
     doc.end();
@@ -244,7 +244,7 @@ export const generateCompactInstallationPPT = async (req: Request, res: Response
       font_size: 16, color: '1F2937'
     });
     
-    slide1.addText(`${store.location?.city} | ${store.installation.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString() : 'N/A'}`, {
+    slide1.addText(`${store.location?.city} | ${store.installation.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A'}`, {
       x: 0.5, y: 1.8, cx: 9, cy: 0.4,
       font_size: 12, color: '6B7280'
     });
