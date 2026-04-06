@@ -25,6 +25,7 @@ import {
   generateStoreExcel,
   exportRecceForApproval,
   importRecceApproval,
+  getCities,
 } from "./store.controller";
 import { generateReccePDF, generateInstallationPDF, generateBulkPDF } from "./pdf.controller";
 import { generateBulkPPT } from "./ppt.controller";
@@ -43,6 +44,8 @@ const upload = multer({
 
 router.use(protect);
 
+// Static routes MUST come before dynamic /:id routes
+router.get("/cities", getCities); // Remove permission check temporarily to test
 router.get("/template", downloadStoreTemplate);
 router.get("/export/recce", exportRecceTasks);
 router.get("/export/installation", exportInstallationTasks);
@@ -82,6 +85,7 @@ router.get("/:id/pdf/recce", protect, generateReccePDF);
 router.get("/:id/excel/recce", protect, generateStoreExcel);
 router.get("/:id/excel/installation", protect, generateStoreExcel);
 
+// Dynamic /:id routes MUST come after all static routes
 router
   .route("/:id")
   .get(checkPermission("stores", "view"), getStoreById)

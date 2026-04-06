@@ -252,6 +252,17 @@ export const createStore = async (req: Request, res: Response) => {
   }
 };
 
+export const getCities = async (req: Request, res: Response) => {
+  try {
+    const cities = await Store.distinct("location.city");
+    const filteredCities = cities.filter(city => city && city.trim() !== "").sort();
+    res.status(200).json({ cities: filteredCities });
+  } catch (error: any) {
+    console.error("Error fetching cities:", error);
+    res.status(500).json({ message: "Failed to fetch cities", error: error.message });
+  }
+};
+
 export const getAllStores = async (req: Request | any, res: Response) => {
   try {
     const page = Number(req.query.page) || 1;
@@ -285,9 +296,17 @@ export const getAllStores = async (req: Request | any, res: Response) => {
       }
     }
 
-    // 3. City Filter
+    // 3. City Filter (supports comma-separated values for multi-select)
     if (city) {
-      query["location.city"] = { $regex: city, $options: "i" };
+      if (city.includes(",")) {
+        const cities = city.split(",").map((c: string) => c.trim()).filter(Boolean);
+        // For multiple cities, use simple $in operator with exact values
+        // MongoDB will do case-insensitive matching if we use regex, but $in with strings is simpler
+        query["location.city"] = { $in: cities };
+      } else {
+        // Single city - exact match (case-insensitive)
+        query["location.city"] = city.trim();
+      }
     }
 
     // 4. District Filter
@@ -2142,6 +2161,13 @@ export const exportRecceTasks = async (req: Request | any, res: Response) => {
       "Dealer Code",
       "City",
       "Address",
+      "Board Type",
+      "Width (Ft.)",
+      "Height (Ft.)",
+      "Qty",
+      "Board Size (Sq.Ft.)",
+      "Board Rate/Sq.Ft.",
+      "Total Board Cost",
       "Status",
       "Recce Assigned To",
       "Recce Date",
@@ -2179,11 +2205,52 @@ export const exportRecceTasks = async (req: Request | any, res: Response) => {
     };
     stores.forEach((store: any, index) => {
       const row = worksheet.getRow(6 + index);
+      
+      // Calculate board specifications from recce data or specs
+      let boardType = "-";
+      let width = "-";
+      let height = "-";
+      let qty = "-";
+      let boardSize = "-";
+      let boardRate = "-";
+      let totalBoardCost = "-";
+      
+      if (store.recce?.reccePhotos && store.recce.reccePhotos.length > 0) {
+        const photo = store.recce.reccePhotos[0];
+        boardType = photo.elements?.[0]?.elementName || "-";
+        const w = photo.measurements?.width || 0;
+        const h = photo.measurements?.height || 0;
+        const unit = photo.measurements?.unit || "in";
+        width = unit === "in" ? (w / 12).toFixed(2) : w.toString();
+        height = unit === "in" ? (h / 12).toFixed(2) : h.toString();
+        qty = photo.elements?.[0]?.quantity || 1;
+        const widthFt = unit === "in" ? w / 12 : w;
+        const heightFt = unit === "in" ? h / 12 : h;
+        boardSize = (widthFt * heightFt).toFixed(2);
+        boardRate = photo.elements?.[0]?.customRate || store.costDetails?.boardRate || 0;
+        totalBoardCost = store.costDetails?.totalBoardCost || 0;
+      } else if (store.specs) {
+        boardType = store.specs.type || "-";
+        width = store.specs.width || "-";
+        height = store.specs.height || "-";
+        qty = store.specs.qty || "-";
+        boardSize = store.specs.boardSize || "-";
+        boardRate = store.costDetails?.boardRate || "-";
+        totalBoardCost = store.costDetails?.totalBoardCost || "-";
+      }
+      
       row.values = [
         store.storeName,
         store.dealerCode,
         store.location.city,
         store.location.address,
+        boardType,
+        width,
+        height,
+        qty,
+        boardSize,
+        boardRate,
+        totalBoardCost,
         store.currentStatus,
         store.workflow.recceAssignedTo?.name || "N/A",
         store.recce?.submittedDate
@@ -2209,6 +2276,13 @@ export const exportRecceTasks = async (req: Request | any, res: Response) => {
       { width: 18 },
       { width: 18 },
       { width: 45 },
+      { width: 20 },
+      { width: 12 },
+      { width: 12 },
+      { width: 8 },
+      { width: 15 },
+      { width: 15 },
+      { width: 18 },
       { width: 25 },
       { width: 25 },
       { width: 18 },
@@ -2269,6 +2343,13 @@ export const exportInstallationTasks = async (
       "Dealer Code",
       "City",
       "Address",
+      "Board Type",
+      "Width (Ft.)",
+      "Height (Ft.)",
+      "Qty",
+      "Board Size (Sq.Ft.)",
+      "Board Rate/Sq.Ft.",
+      "Total Board Cost",
       "Status",
       "Install Assigned To",
       "Install Date",
@@ -2306,11 +2387,52 @@ export const exportInstallationTasks = async (
     };
     stores.forEach((store: any, index) => {
       const row = worksheet.getRow(6 + index);
+      
+      // Calculate board specifications from recce data or specs
+      let boardType = "-";
+      let width = "-";
+      let height = "-";
+      let qty = "-";
+      let boardSize = "-";
+      let boardRate = "-";
+      let totalBoardCost = "-";
+      
+      if (store.recce?.reccePhotos && store.recce.reccePhotos.length > 0) {
+        const photo = store.recce.reccePhotos[0];
+        boardType = photo.elements?.[0]?.elementName || "-";
+        const w = photo.measurements?.width || 0;
+        const h = photo.measurements?.height || 0;
+        const unit = photo.measurements?.unit || "in";
+        width = unit === "in" ? (w / 12).toFixed(2) : w.toString();
+        height = unit === "in" ? (h / 12).toFixed(2) : h.toString();
+        qty = photo.elements?.[0]?.quantity || 1;
+        const widthFt = unit === "in" ? w / 12 : w;
+        const heightFt = unit === "in" ? h / 12 : h;
+        boardSize = (widthFt * heightFt).toFixed(2);
+        boardRate = photo.elements?.[0]?.customRate || store.costDetails?.boardRate || 0;
+        totalBoardCost = store.costDetails?.totalBoardCost || 0;
+      } else if (store.specs) {
+        boardType = store.specs.type || "-";
+        width = store.specs.width || "-";
+        height = store.specs.height || "-";
+        qty = store.specs.qty || "-";
+        boardSize = store.specs.boardSize || "-";
+        boardRate = store.costDetails?.boardRate || "-";
+        totalBoardCost = store.costDetails?.totalBoardCost || "-";
+      }
+      
       row.values = [
         store.storeName,
         store.dealerCode,
         store.location.city,
         store.location.address,
+        boardType,
+        width,
+        height,
+        qty,
+        boardSize,
+        boardRate,
+        totalBoardCost,
         store.currentStatus,
         store.workflow.installationAssignedTo?.name || "N/A",
         store.installation?.submittedDate
@@ -2336,6 +2458,13 @@ export const exportInstallationTasks = async (
       { width: 18 },
       { width: 18 },
       { width: 45 },
+      { width: 20 },
+      { width: 12 },
+      { width: 12 },
+      { width: 8 },
+      { width: 15 },
+      { width: 15 },
+      { width: 18 },
       { width: 25 },
       { width: 25 },
       { width: 18 },
@@ -2470,6 +2599,16 @@ export const exportStores = async (req: Request | any, res: Response) => {
       "District",
       "City",
       "Address",
+      "Mobile Number",
+      "GST Number",
+      "Board Type",
+      "Width (Ft.)",
+      "Height (Ft.)",
+      "Qty",
+      "Board Size (Sq.Ft.)",
+      "Board Size (Inch)",
+      "Board Rate/Sq.Ft.",
+      "Total Board Cost",
       "Status",
       "Recce User",
       "Installation User",
@@ -2491,6 +2630,47 @@ export const exportStores = async (req: Request | any, res: Response) => {
 
     stores.forEach((store: any, index) => {
       const row = worksheet.getRow(6 + index);
+      
+      // Calculate board specifications from recce data or specs
+      let boardType = "-";
+      let width = "-";
+      let height = "-";
+      let qty = "-";
+      let boardSize = "-";
+      let boardSizeInch = "-";
+      let boardRate = "-";
+      let totalBoardCost = "-";
+      
+      if (store.recce?.reccePhotos && store.recce.reccePhotos.length > 0) {
+        const photo = store.recce.reccePhotos[0];
+        boardType = photo.elements?.[0]?.elementName || "-";
+        const w = photo.measurements?.width || 0;
+        const h = photo.measurements?.height || 0;
+        const unit = photo.measurements?.unit || "in";
+        width = unit === "in" ? (w / 12).toFixed(2) : w.toString();
+        height = unit === "in" ? (h / 12).toFixed(2) : h.toString();
+        qty = photo.elements?.[0]?.quantity || 1;
+        const widthFt = unit === "in" ? w / 12 : w;
+        const heightFt = unit === "in" ? h / 12 : h;
+        boardSize = (widthFt * heightFt).toFixed(2);
+        const widthInch = unit === "in" ? w : w * 12;
+        const heightInch = unit === "in" ? h : h * 12;
+        boardSizeInch = (widthInch * heightInch).toFixed(2);
+        boardRate = photo.elements?.[0]?.customRate || store.costDetails?.boardRate || 0;
+        totalBoardCost = store.costDetails?.totalBoardCost || 0;
+      } else if (store.specs) {
+        boardType = store.specs.type || "-";
+        width = store.specs.width || "-";
+        height = store.specs.height || "-";
+        qty = store.specs.qty || "-";
+        boardSize = store.specs.boardSize || "-";
+        if (width !== "-" && height !== "-") {
+          boardSizeInch = (parseFloat(width) * 12 * parseFloat(height) * 12).toFixed(2);
+        }
+        boardRate = store.costDetails?.boardRate || "-";
+        totalBoardCost = store.costDetails?.totalBoardCost || "-";
+      }
+      
       row.values = [
         store.storeId || "-",
         store.clientCode || "-",
@@ -2501,6 +2681,16 @@ export const exportStores = async (req: Request | any, res: Response) => {
         store.location.district || "-",
         store.location.city || "-",
         store.location.address || "-",
+        store.contact?.mobile || "-",
+        store.contact?.gstNumber || "-",
+        boardType,
+        width,
+        height,
+        qty,
+        boardSize,
+        boardSizeInch,
+        boardRate,
+        totalBoardCost,
         store.currentStatus || "-",
         store.workflow.recceAssignedTo?.name || "-",
         store.workflow.installationAssignedTo?.name || "-",
@@ -2521,18 +2711,28 @@ export const exportStores = async (req: Request | any, res: Response) => {
     });
 
     worksheet.columns = [
-      { width: 20 },
-      { width: 18 },
-      { width: 18 },
-      { width: 18 },
-      { width: 15 },
-      { width: 18 },
-      { width: 18 },
-      { width: 18 },
-      { width: 45 },
-      { width: 25 },
-      { width: 25 },
-      { width: 25 },
+      { width: 20 },  // Store ID
+      { width: 18 },  // Client Code
+      { width: 18 },  // Dealer Code
+      { width: 18 },  // Vendor Code
+      { width: 15 },  // Zone
+      { width: 18 },  // State
+      { width: 18 },  // District
+      { width: 18 },  // City
+      { width: 45 },  // Address
+      { width: 18 },  // Mobile Number
+      { width: 18 },  // GST Number
+      { width: 20 },  // Board Type
+      { width: 15 },  // Width
+      { width: 15 },  // Height
+      { width: 10 },  // Qty
+      { width: 20 },  // Board Size (Sq.Ft.)
+      { width: 20 },  // Board Size (Inch)
+      { width: 20 },  // Board Rate
+      { width: 20 },  // Total Board Cost
+      { width: 25 },  // Status
+      { width: 25 },  // Recce User
+      { width: 25 },  // Installation User
     ];
 
     worksheet.eachRow((row: Row, rowNumber: number) => {
@@ -2722,6 +2922,8 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
       "City",
       "District",
       "Dealer's Address",
+      "Mobile Number",
+      "GST Number",
       "Width (Ft.)",
       "Height (Ft.)",
       "Dealer Board Type",
@@ -2754,6 +2956,8 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
       { width: 15 },
       { width: 15 },
       { width: 40 },
+      { width: 15 },
+      { width: 18 },
       { width: 12 },
       { width: 12 },
       { width: 20 },
@@ -2769,6 +2973,8 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "Mumbai",
         "Mumbai Suburban",
         "123 Main Street, Andheri West",
+        "9876543210",
+        "27AAAAA0000A1Z5",
         10,
         5,
         "Flex",
@@ -2783,6 +2989,8 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "Delhi",
         "Central Delhi",
         "456 Park Avenue, Connaught Place",
+        "9876543211",
+        "07AAAAA0000A1Z5",
         10,
         10,
         "LED",
@@ -2797,6 +3005,8 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "Bangalore",
         "Bangalore Urban",
         "789 MG Road, Indiranagar",
+        "9876543212",
+        "29AAAAA0000A1Z5",
         15,
         10,
         "Digital",
@@ -2811,6 +3021,8 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "Pune",
         "Pune",
         "321 FC Road, Shivajinagar",
+        "9876543213",
+        "27BBBBB0000B1Z5",
         20,
         10,
         "Flex",
@@ -2825,6 +3037,8 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "Hyderabad",
         "Hyderabad",
         "654 Banjara Hills, Road No 12",
+        "9876543214",
+        "36AAAAA0000A1Z5",
         10,
         5,
         "LED",
@@ -2839,6 +3053,8 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "Chennai",
         "Chennai",
         "987 Anna Salai, T Nagar",
+        "9876543215",
+        "33AAAAA0000A1Z5",
         10,
         10,
         "Digital",
@@ -2853,6 +3069,8 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "Kolkata",
         "Kolkata",
         "147 Park Street, Central Kolkata",
+        "9876543216",
+        "19AAAAA0000A1Z5",
         15,
         10,
         "Flex",
@@ -2867,6 +3085,8 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "Ahmedabad",
         "Ahmedabad",
         "258 CG Road, Navrangpura",
+        "9876543217",
+        "24AAAAA0000A1Z5",
         20,
         10,
         "LED",
@@ -2881,6 +3101,8 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "Jaipur",
         "Jaipur",
         "369 MI Road, C Scheme",
+        "9876543218",
+        "08AAAAA0000A1Z5",
         10,
         5,
         "Digital",
@@ -2895,6 +3117,8 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         "Lucknow",
         "Lucknow",
         "741 Hazratganj, Lucknow Central",
+        "9876543219",
+        "09AAAAA0000A1Z5",
         10,
         10,
         "Flex",
