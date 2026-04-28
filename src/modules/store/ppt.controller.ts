@@ -123,10 +123,10 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         fontSize: 8, color: GOLD, align: 'right'
       });
 
-      // ===== STORE INFO BOX (LEFT SIDE) =====
+      // ===== STORE INFO BOX (LEFT SIDE - 20%) =====
       const infoBoxX = 0.1;
       const infoBoxY = 0.75;
-      const infoBoxW = 6.5;
+      const infoBoxW = 2.3;
       const infoBoxH = 1.0;
 
       // Draw border
@@ -196,14 +196,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         fontSize: 11, color: '000000'
       });
 
-      reportSlide.addText('By:', {
-        x: rightColX, y: infoY, w: 0.8, h: 0.18,
-        fontSize: 11, bold: true, color: '000000'
-      });
-      reportSlide.addText(submittedBy || 'N/A', {
-        x: rightValueX, y: infoY, w: 1.2, h: 0.18,
-        fontSize: 11, color: '000000'
-      });
+
 
       // Row 4: Address (spanning both columns)
       infoY += 0.23;
@@ -217,11 +210,13 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         fontSize: 11, color: '000000'
       });
 
-      // ===== INITIAL PHOTOS SECTION (RIGHT SIDE, SAME VERTICAL POSITION) =====
+      // ===== 4 LAYOUT IMAGES SECTION (RIGHT SIDE - 80%) =====
+      // Load layout images (initial photos + measurement photos)
+      let layoutImagesBase64: string[] = [];
+      
       // Load initial photos
-      let initialPhotosBase64: string[] = [];
       if (store.recce?.initialPhotos && store.recce.initialPhotos.length > 0) {
-        for (let j = 0; j < Math.min(store.recce.initialPhotos.length, 3); j++) {
+        for (let j = 0; j < Math.min(store.recce.initialPhotos.length, 2); j++) {
           try {
             const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[j].replace(/\s+/g, '%20')}`;
             const response = await axios.get(photoUrl, {
@@ -231,55 +226,77 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             });
             if (response.status === 200) {
               const base64 = `data:image/jpeg;base64,${Buffer.from(response.data).toString('base64')}`;
-              initialPhotosBase64.push(base64);
+              layoutImagesBase64.push(base64);
+            }
+          } catch (error: any) {
+          }
+        }
+      }
+      
+      // Load pre-recce measurement photo
+      if (currentReccePhoto) {
+        try {
+          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
+          const response = await axios.get(reccePhotoUrl, {
+            responseType: 'arraybuffer',
+            timeout: 10000,
+            headers: { 'User-Agent': 'Mozilla/5.0' }
+          });
+          if (response.status === 200) {
+            const base64 = `data:image/jpeg;base64,${Buffer.from(response.data).toString('base64')}`;
+            layoutImagesBase64.push(base64);
+          }
+        } catch (error: any) {
+        }
+      }
+      
+      // Load post-installation photo
+      if (type === "installation" && store.installation?.photos) {
+        const installPhotos = store.installation.photos.filter((p: any) => p.reccePhotoIndex === boardIndex);
+        if (installPhotos.length > 0) {
+          try {
+            const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhotos[0].installationPhoto.replace(/\s+/g, '%20')}`;
+            const response = await axios.get(installPhotoUrl, {
+              responseType: 'arraybuffer',
+              timeout: 10000,
+              headers: { 'User-Agent': 'Mozilla/5.0' }
+            });
+            if (response.status === 200) {
+              const base64 = `data:image/jpeg;base64,${Buffer.from(response.data).toString('base64')}`;
+              layoutImagesBase64.push(base64);
             }
           } catch (error: any) {
           }
         }
       }
 
-      // Label
-      reportSlide.addText('Initial Photos:', {
-        x: 6.8, y: 0.75, w: 2.0, h: 0.25,
+      // Display 4 layout images in 2x2 grid (80% of slide width)
+      const layoutStartX = 2.5;
+      const layoutWidth = 9.19; // 80% of slide width
+      const imageSize = (layoutWidth - 0.2) / 2; // 2 images per row with spacing
+      const imageSpacing = 0.1;
+      
+      reportSlide.addText('Layout Images:', {
+        x: layoutStartX, y: 0.75, w: layoutWidth, h: 0.15,
         fontSize: 9, bold: true, color: GOLD
       });
 
-      // Photo 1
-      if (initialPhotosBase64.length > 0) {
+      // Display up to 4 images in 2x2 grid
+      for (let i = 0; i < Math.min(layoutImagesBase64.length, 4); i++) {
+        const row = Math.floor(i / 2);
+        const col = i % 2;
+        const x = layoutStartX + col * (imageSize + imageSpacing);
+        const y = 0.93 + row * (imageSize + imageSpacing);
+        
         reportSlide.addShape(prs.ShapeType.rect, {
-          x: 7.79, y: 0.93, w: 0.82, h: 0.82,
+          x: x, y: y, w: imageSize, h: imageSize,
           fill: { color: 'FFFFFF' },
           line: { color: GOLD, width: 1 }
         });
+        
         reportSlide.addImage({
-          data: initialPhotosBase64[0],
-          x: 7.81, y: 0.95, w: 0.78, h: 0.78
-        });
-      }
-
-      // Photo 2
-      if (initialPhotosBase64.length > 1) {
-        reportSlide.addShape(prs.ShapeType.rect, {
-          x: 9.60, y: 0.93, w: 0.82, h: 0.82,
-          fill: { color: 'FFFFFF' },
-          line: { color: GOLD, width: 1 }
-        });
-        reportSlide.addImage({
-          data: initialPhotosBase64[1],
-          x: 9.62, y: 0.95, w: 0.78, h: 0.78
-        });
-      }
-
-      // Photo 3
-      if (initialPhotosBase64.length > 2) {
-        reportSlide.addShape(prs.ShapeType.rect, {
-          x: 11.42, y: 0.93, w: 0.82, h: 0.82,
-          fill: { color: 'FFFFFF' },
-          line: { color: GOLD, width: 1 }
-        });
-        reportSlide.addImage({
-          data: initialPhotosBase64[2],
-          x: 11.44, y: 0.95, w: 0.78, h: 0.78
+          data: layoutImagesBase64[i],
+          x: x + 0.02, y: y + 0.02, w: imageSize - 0.04, h: imageSize - 0.04
         });
       }
 

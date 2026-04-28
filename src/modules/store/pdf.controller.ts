@@ -84,8 +84,7 @@ export const generateReccePDF = async (req: Request, res: Response) => {
     y += 25;
     doc.font('Helvetica-Bold').text('Recce Date:', 50, y, { continued: false, width: 120 });
     doc.font('Helvetica').text(store.recce.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A', 170, y, { width: 200 });
-    doc.font('Helvetica-Bold').text('Submitted By:', 420, y, { continued: false, width: 120 });
-    doc.font('Helvetica').text(store.recce.submittedBy || 'N/A', 540, y, { width: 250 });
+
     
     y += 25;
     doc.font('Helvetica-Bold').text('Notes:', 50, y, { continued: false, width: 120 });
@@ -279,8 +278,7 @@ export const generateInstallationPDF = async (req: Request, res: Response) => {
     y += 25;
     doc.font('Helvetica-Bold').text('Completion Date:', 50, y, { continued: false, width: 120 });
     doc.font('Helvetica').text(store.installation.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A', 170, y, { width: 200 });
-    doc.font('Helvetica-Bold').text('Submitted By:', 420, y, { continued: false, width: 120 });
-    doc.font('Helvetica').text(store.installation.submittedBy || 'N/A', 540, y, { width: 250 });
+
     
     y += 25;
     doc.font('Helvetica-Bold').text('Status:', 50, y, { continued: false, width: 120 });
@@ -515,89 +513,113 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
       
       const submittedBy = type === "recce" ? store.recce?.submittedBy : store.installation?.submittedBy;
       
-      // LEFT SIDE: Store Details Box (400px width)
+      // LEFT SIDE: Store Details Box (20% width - 160px)
       doc.save();
-      doc.rect(30, y - 5, 400, 65).strokeColor('#EAB308').lineWidth(1).stroke();
+      doc.rect(30, y - 5, 160, 65).strokeColor('#EAB308').lineWidth(1).stroke();
       doc.restore();
       
       // Store details in left box
       doc.font('Helvetica-Bold').text('Store:', 40, y, { width: 60 });
-      doc.font('Helvetica').text(store.storeName || 'N/A', 100, y, { width: 320 });
+      doc.font('Helvetica').text(store.storeName || 'N/A', 100, y, { width: 90 });
       
-      y += 16; // Increased from 15 to 16
+      y += 16;
       doc.font('Helvetica-Bold').text('ID:', 40, y, { width: 60 });
-      doc.font('Helvetica').text(store.storeId || store.storeCode || 'N/A', 100, y, { width: 150 });
-      doc.font('Helvetica-Bold').text('City:', 260, y, { width: 40 });
-      doc.font('Helvetica').text(store.location?.city || 'N/A', 300, y, { width: 130 });
+      doc.font('Helvetica').text(store.storeId || store.storeCode || 'N/A', 100, y, { width: 90 });
       
-      y += 16; // Increased from 15 to 16
+      y += 16;
+      doc.font('Helvetica-Bold').text('City:', 40, y, { width: 60 });
+      doc.font('Helvetica').text(store.location?.city || 'N/A', 100, y, { width: 90 });
+      
+      y += 16;
       doc.font('Helvetica-Bold').text('Date:', 40, y, { width: 60 });
-      doc.font('Helvetica').text(dateValue, 100, y, { width: 150 });
-      doc.font('Helvetica-Bold').text('By:', 260, y, { width: 30 });
-      doc.font('Helvetica').text(submittedBy || 'N/A', 290, y, { width: 140 });
-      
-      y += 16; // Increased from 15 to 16
-      doc.font('Helvetica-Bold').text('Address:', 40, y, { width: 60 });
-      const address = store.location?.address || 'N/A';
-      doc.font('Helvetica').text(address, 100, y, { width: 330, height: 15 });
+      doc.font('Helvetica').text(dateValue, 100, y, { width: 90 });
       
       if (type === "installation") {
-        doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 350, 50, { width: 80 });
+        doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 40, y + 16, { width: 150 });
       }
 
-      // RIGHT SIDE: Initial Photos (if available) - Single line, bigger size
+      // RIGHT SIDE: 4 Layout Images (80% width) - 2x2 grid
+      const layoutStartX = 210; // 80% of page starts here
+      const layoutWidth = 560; // 80% of remaining width
+      const imageSize = (layoutWidth - 20) / 2; // 2 images per row with spacing
+      const imageSpacing = 10;
+      
+      doc.fillColor('#666666').fontSize(9).font('Helvetica-Bold')
+        .text('Layout Images:', layoutStartX, 50 - 15);
+      
+      // Load and display layout images
+      let layoutImages: Buffer[] = [];
+      
+      // Load initial photos
       if (store.recce?.initialPhotos && store.recce.initialPhotos.length > 0) {
-        const photoSize = 65; // Increased from 60 to 65
-        const photoSpacing = 8;
-        const rightStartX = 450;
-        let photoY = 50;
-        
-        doc.fillColor('#666666').fontSize(9).font('Helvetica-Bold') // Increased font size and made bold
-          .text('Initial Photos:', rightStartX, photoY - 15); // Moved label up slightly
-        
-        // Arrange photos in single row
-        for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 5); i++) {
-          const x = rightStartX + i * (photoSize + photoSpacing);
-          
+        for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 2); i++) {
           try {
             const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
-            console.log('Loading initial photo:', photoUrl);
             const response = await axios.get(photoUrl, { 
               responseType: 'arraybuffer',
-              timeout: 8000, // Increased timeout
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (compatible; PDF-Generator)'
-              }
+              timeout: 8000,
+              headers: { 'User-Agent': 'Mozilla/5.0' }
             });
-            
-            if (response.status === 200 && response.data) {
-              const buffer = Buffer.from(response.data);
-              // Add border around initial photos
-              doc.save();
-              doc.rect(x - 2, photoY - 2, photoSize + 4, photoSize + 4).strokeColor('#EAB308').lineWidth(1).stroke();
-              doc.restore();
-              
-              doc.image(buffer, x, photoY, { 
-                width: photoSize, 
-                height: photoSize, 
-                fit: [photoSize, photoSize] 
-              });
-              console.log(`Initial photo ${i + 1} loaded successfully`);
+            if (response.status === 200) {
+              layoutImages.push(Buffer.from(response.data));
             }
           } catch (error: any) {
-            console.log(`Failed to load initial photo ${i + 1}: ${error.message}`);
-            // Add placeholder with border
-            doc.save();
-            doc.rect(x, photoY, photoSize, photoSize).strokeColor('#CCCCCC').lineWidth(1).stroke();
-            doc.restore();
-            // Add "No Image" text
-            doc.fillColor('#999999').fontSize(8).font('Helvetica')
-              .text('No Image', x + 5, photoY + photoSize/2 - 4, { 
-                width: photoSize - 10, 
-                align: 'center' 
-              });
           }
         }
+      }
+      
+      // Load pre-recce measurement photo
+      if (currentReccePhoto) {
+        try {
+          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
+          const response = await axios.get(reccePhotoUrl, {
+            responseType: 'arraybuffer',
+            timeout: 10000,
+            headers: { 'User-Agent': 'Mozilla/5.0' }
+          });
+          if (response.status === 200) {
+            layoutImages.push(Buffer.from(response.data));
+          }
+        } catch (error: any) {
+        }
+      }
+      
+      // Load post-installation photo
+      if (type === "installation" && store.installation?.photos) {
+        const installPhotos = store.installation.photos.filter((p: any) => p.reccePhotoIndex === boardIndex);
+        if (installPhotos.length > 0) {
+          try {
+            const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhotos[0].installationPhoto.replace(/\s+/g, '%20')}`;
+            const response = await axios.get(installPhotoUrl, {
+              responseType: 'arraybuffer',
+              timeout: 10000,
+              headers: { 'User-Agent': 'Mozilla/5.0' }
+            });
+            if (response.status === 200) {
+              layoutImages.push(Buffer.from(response.data));
+            }
+          } catch (error: any) {
+          }
+        }
+      }
+
+      // Display up to 4 images in 2x2 grid
+      for (let i = 0; i < Math.min(layoutImages.length, 4); i++) {
+        const row = Math.floor(i / 2);
+        const col = i % 2;
+        const x = layoutStartX + col * (imageSize + imageSpacing);
+        const y = 50 + row * (imageSize + imageSpacing);
+        
+        // Add border
+        doc.save();
+        doc.rect(x - 2, y - 2, imageSize + 4, imageSize + 4).strokeColor('#EAB308').lineWidth(1).stroke();
+        doc.restore();
+        
+        doc.image(layoutImages[i], x, y, { 
+          width: imageSize, 
+          height: imageSize, 
+          fit: [imageSize, imageSize] 
+        });
       }
 
       // Professional separator line
@@ -968,10 +990,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         x: 2.8, y: 0.95, w: 1.5, h: 0.25, fontSize: 10
       });
       slide.addText(`Date: ${dateValue}`, {
-        x: 0.3, y: 1.2, w: 2.5, h: 0.25, fontSize: 10
-      });
-      slide.addText(`By: ${submittedBy || 'Amjad'}`, {
-        x: 2.8, y: 1.2, w: 1.5, h: 0.25, fontSize: 10
+        x: 0.3, y: 1.2, w: 4, h: 0.25, fontSize: 10
       });
       
       const address = store.location?.address || 'SHOP NO. 1-2 MEERA PLAZA COMMUNITY HALL ROAD SHAKTI NAGAR UDAIPUR';
