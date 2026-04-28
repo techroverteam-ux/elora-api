@@ -472,7 +472,14 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
       if (type === "recce" && !store.recce) continue;
       if (type === "installation" && !store.installation) continue;
 
-      doc.addPage();
+      // Process each measurement board (recce photo) for this store
+      const reccePhotos = store.recce?.reccePhotos || [];
+      const boardCount = Math.max(1, reccePhotos.length); // At least 1 page per store
+      
+      for (let boardIndex = 0; boardIndex < boardCount; boardIndex++) {
+        const currentReccePhoto = reccePhotos[boardIndex];
+        
+        doc.addPage();
       
       // Clean white background without shading
       doc.save();
@@ -484,8 +491,12 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
         doc.image(logoPath, 30, 15, { width: 80, height: 25 });
       }
 
+      // Header with board number if multiple boards
+      let title = type === "recce" ? 'Recce Inspection Report' : 'Installation Completion Report';
+      if (reccePhotos.length > 1) {
+        title += ` - Board ${boardIndex + 1}/${reccePhotos.length}`;
+      }
       const headerColor = type === "recce" ? '#EAB308' : '#22C55E';
-      const title = type === "recce" ? 'Recce Inspection Report' : 'Installation Completion Report';
       
       doc.fillColor(headerColor).fontSize(16).font('Helvetica-Bold')
         .text(title, 30, 20, { width: doc.page.width - 210, align: 'center' });
@@ -599,10 +610,8 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
       const availableHeight = doc.page.height - contentStartY - 30;
       const availableWidth = doc.page.width - 60;
 
-      if (type === "installation" && store.recce?.reccePhotos && store.installation?.photos) {
-        // Installation: Show multiple after images if available
-        const reccePhoto = store.recce.reccePhotos[0];
-        const installPhotos = store.installation.photos.filter((p: any) => p.reccePhotoIndex === 0);
+      if (type === "installation" && currentReccePhoto && store.installation?.photos) {
+        const installPhotos = store.installation.photos.filter((p: any) => p.reccePhotoIndex === boardIndex);
         
         if (installPhotos.length >= 2) {
           // Three images: Before + After1 + After2
@@ -610,7 +619,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
           const imgHeight = availableHeight - 20;
           
           // BEFORE (Left)
-          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
           try {
             const axios = require('axios');
             const response = await axios.get(reccePhotoUrl, { 
@@ -713,7 +722,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
           const installPhoto = installPhotos[0];
           
           // BEFORE (Left)
-          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
           console.log('Loading BEFORE image:', reccePhotoUrl);
           try {
             const response = await axios.get(reccePhotoUrl, { 
@@ -807,12 +816,11 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
           doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
             .text('AFTER', imgWidth, contentStartY + imgHeight + 6, { width: imgWidth, align: 'center' });
         }
-      } else if (type === "recce" && store.recce?.reccePhotos) {
+      } else if (type === "recce" && currentReccePhoto) {
         // Single recce photo - Full width with border
-        const reccePhoto = store.recce.reccePhotos[0];
         const singleImgHeight = availableHeight - 30;
         
-        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
         console.log('Loading single recce image:', reccePhotoUrl);
         try {
           const response = await axios.get(reccePhotoUrl, { 
@@ -851,7 +859,9 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             });
         }
       }
-    }
+      
+      } // End of board loop
+    } // End of store loop
 
     doc.end();
   } catch (error: any) {
@@ -881,7 +891,9 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
     const PptxGenJS = require('pptxgenjs');
     const pptx = new PptxGenJS();
     
-    pptx.layout = 'LAYOUT_WIDE';
+    // Set A4 dimensions for PPT (client requirement)
+    pptx.defineLayout({ name: 'A4', width: 11.69, height: 8.27 });
+    pptx.layout = 'A4';
 
     // Title slide
     const titleSlide = pptx.addSlide();
@@ -908,23 +920,33 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
       if (type === "recce" && !store.recce) continue;
       if (type === "installation" && !store.installation) continue;
 
-      const slide = pptx.addSlide();
+      // Process each measurement board (recce photo) for this store
+      const reccePhotos = store.recce?.reccePhotos || [];
+      const boardCount = Math.max(1, reccePhotos.length); // At least 1 slide per store
       
-      // Header with centered title matching PDF
-      const title = type === "recce" ? 'Recce Inspection Report' : 'Installation Completion Report';
+      for (let boardIndex = 0; boardIndex < boardCount; boardIndex++) {
+        const currentReccePhoto = reccePhotos[boardIndex];
+        
+        const slide = pptx.addSlide();
+      
+      // Header with board number if multiple boards
+      let title = type === "recce" ? 'Recce Inspection Report' : 'Installation Completion Report';
+      if (reccePhotos.length > 1) {
+        title += ` - Board ${boardIndex + 1}/${reccePhotos.length}`;
+      }
       slide.addText(title, {
-        x: 0.9, y: 0.15, w: 8.2, h: 0.6,
+        x: 0.9, y: 0.15, w: 9.89, h: 0.6,
         fontSize: 20, bold: true, color: type === "recce" ? 'EAB308' : '22C55E',
         align: 'center'
       });
       
       // Company info - top right
       slide.addText('ELORA CREATIVE ART', {
-        x: 7.5, y: 0.1, w: 2, h: 0.25,
+        x: 9.5, y: 0.1, w: 2, h: 0.25,
         fontSize: 9, color: 'EAB308', align: 'right'
       });
       slide.addText('www.eloracreativeart.in', {
-        x: 7.5, y: 0.3, w: 2, h: 0.25,
+        x: 9.5, y: 0.3, w: 2, h: 0.25,
         fontSize: 9, color: 'EAB308', align: 'right'
       });
       
@@ -999,14 +1021,13 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
 
       // MAIN CONTENT - Fixed positioning for new layout
       const contentStartY = 2.0;
-      if (type === "installation" && store.recce?.reccePhotos && store.installation?.photos) {
-        const reccePhoto = store.recce.reccePhotos[0];
-        const installPhotos = store.installation.photos.filter((p: any) => p.reccePhotoIndex === 0);
+      if (type === "installation" && currentReccePhoto && store.installation?.photos) {
+        const installPhotos = store.installation.photos.filter((p: any) => p.reccePhotoIndex === boardIndex);
         
         if (installPhotos.length >= 2) {
           // Three images: Before + After1 + After2
           try {
-            const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+            const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
             const recceResponse = await axios.get(reccePhotoUrl, { 
               responseType: 'arraybuffer',
               timeout: 10000
@@ -1076,7 +1097,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           const installPhoto = installPhotos[0];
           
           try {
-            const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+            const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
             const recceResponse = await axios.get(reccePhotoUrl, { 
               responseType: 'arraybuffer',
               timeout: 10000
@@ -1121,12 +1142,11 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             fill: { color: '22C55E' }, align: 'center'
           });
         }
-      } else if (type === "recce" && store.recce?.reccePhotos) {
+      } else if (type === "recce" && currentReccePhoto) {
         // Single recce photo
-        const reccePhoto = store.recce.reccePhotos[0];
         
         try {
-          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
           const response = await axios.get(reccePhotoUrl, { 
             responseType: 'arraybuffer',
             timeout: 10000
@@ -1135,13 +1155,15 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           if (response.status === 200) {
             const buffer = Buffer.from(response.data);
             const base64 = `data:image/jpeg;base64,${buffer.toString('base64')}`;
-            slide.addImage({ data: base64, x: 0.5, y: contentStartY, w: 8.5, h: 4.2 });
+            slide.addImage({ data: base64, x: 0.5, y: contentStartY, w: 10.69, h: 4.2 });
           }
         } catch (error) {
           console.log('Failed to load recce image for PPT');
         }
       }
-    }
+      
+      } // End of board loop
+    } // End of store loop
 
     const buffer = await pptx.write('nodebuffer');
     

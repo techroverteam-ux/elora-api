@@ -25,9 +25,9 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
     const PptxGenJS = require('pptxgenjs');
     const prs = new PptxGenJS();
     
-    // Set slide dimensions: 13.33 x 7.5 inches (16:9 widescreen)
-    prs.defineLayout({ name: 'CUSTOM', width: 13.33, height: 7.5 });
-    prs.layout = 'CUSTOM';
+    // Set A4 dimensions for PPT (client requirement)
+    prs.defineLayout({ name: 'A4', width: 11.69, height: 8.27 });
+    prs.layout = 'A4';
 
     const CREAM_BG = 'F5F0E8';
     const GOLD = 'D4A017';
@@ -81,9 +81,16 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         continue;
       }
 
-      // SLIDE 2+ - INSTALLATION/RECCE REPORT SLIDE
-      const reportSlide = prs.addSlide();
-      reportSlide.background = { color: CREAM_BG };
+      // Process each measurement board (recce photo) for this store
+      const reccePhotos = store.recce?.reccePhotos || [];
+      const boardCount = Math.max(1, reccePhotos.length); // At least 1 slide per store
+      
+      for (let boardIndex = 0; boardIndex < boardCount; boardIndex++) {
+        const currentReccePhoto = reccePhotos[boardIndex];
+        
+        // SLIDE 2+ - INSTALLATION/RECCE REPORT SLIDE
+        const reportSlide = prs.addSlide();
+        reportSlide.background = { color: CREAM_BG };
 
       // ===== TOP INFO SECTION (y: 0 to y: 1.85) =====
 
@@ -95,8 +102,11 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         });
       }
 
-      // Title
-      const titleText = type === "recce" ? 'Recce Inspection Report' : 'Installation Completion Report';
+      // Title with board number if multiple boards
+      let titleText = type === "recce" ? 'Recce Inspection Report' : 'Installation Completion Report';
+      if (reccePhotos.length > 1) {
+        titleText += ` - Board ${boardIndex + 1}/${reccePhotos.length}`;
+      }
       const titleColor = type === "recce" ? GOLD : GREEN;
       reportSlide.addText(titleText, {
         x: 2.4, y: 0.1, w: 5.5, h: 0.45,
@@ -275,29 +285,16 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
 
       // ===== GOLD SEPARATOR LINE (FULL WIDTH) =====
       reportSlide.addShape(prs.ShapeType.line, {
-        x: 0, y: 1.85, w: 13.33, h: 0,
+        x: 0, y: 1.85, w: 11.69, h: 0,
         line: { color: GOLD, width: 2 }
       });
 
       // ===== BEFORE/AFTER SECTION =====
-      // Load before image
+      // Load before image for current board
       let beforeImageBase64 = '';
-      if (type === "installation" && store.recce?.reccePhotos && store.recce.reccePhotos[0]) {
+      if (currentReccePhoto) {
         try {
-          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.reccePhotos[0].photo.replace(/\s+/g, '%20')}`;
-          const response = await axios.get(reccePhotoUrl, {
-            responseType: 'arraybuffer',
-            timeout: 10000,
-            headers: { 'User-Agent': 'Mozilla/5.0' }
-          });
-          if (response.status === 200) {
-            beforeImageBase64 = `data:image/jpeg;base64,${Buffer.from(response.data).toString('base64')}`;
-          }
-        } catch (error: any) {
-        }
-      } else if (type === "recce" && store.recce?.reccePhotos && store.recce.reccePhotos[0]) {
-        try {
-          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.reccePhotos[0].photo.replace(/\s+/g, '%20')}`;
+          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
           const response = await axios.get(reccePhotoUrl, {
             responseType: 'arraybuffer',
             timeout: 10000,
@@ -310,10 +307,10 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         }
       }
 
-      // Load after image
+      // Load after image for current board
       let afterImageBase64 = '';
       if (type === "installation" && store.installation?.photos) {
-        const installPhotos = store.installation.photos.filter((p: any) => p.reccePhotoIndex === 0);
+        const installPhotos = store.installation.photos.filter((p: any) => p.reccePhotoIndex === boardIndex);
         if (installPhotos.length > 0) {
           try {
             const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhotos[0].installationPhoto.replace(/\s+/g, '%20')}`;
@@ -330,55 +327,57 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         }
       }
 
-      // BEFORE image: x: 0, y: 1.9, w: 6.665, h: 5.6
+      // BEFORE image: x: 0, y: 1.9, w: 5.845, h: 5.6
       if (beforeImageBase64) {
         reportSlide.addImage({
           data: beforeImageBase64,
-          x: 0, y: 1.9, w: 6.665, h: 5.6
+          x: 0, y: 1.9, w: 5.845, h: 5.6
         });
       }
 
-      // AFTER image: x: 6.665, y: 1.9, w: 6.665, h: 5.6
+      // AFTER image: x: 5.845, y: 1.9, w: 5.845, h: 5.6
       if (afterImageBase64) {
         reportSlide.addImage({
           data: afterImageBase64,
-          x: 6.665, y: 1.9, w: 6.665, h: 5.6
+          x: 5.845, y: 1.9, w: 5.845, h: 5.6
         });
       }
 
-      // BEFORE label bar: x: 0, y: 7.0, w: 6.665, h: 0.4
+      // BEFORE label bar: x: 0, y: 7.0, w: 5.845, h: 0.4
       reportSlide.addShape(prs.ShapeType.rect, {
-        x: 0, y: 7.0, w: 6.665, h: 0.4,
+        x: 0, y: 7.0, w: 5.845, h: 0.4,
         fill: { color: RED }
       });
       reportSlide.addText('BEFORE', {
-        x: 0, y: 7.0, w: 6.665, h: 0.4,
+        x: 0, y: 7.0, w: 5.845, h: 0.4,
         fontSize: 14, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle'
       });
 
-      // AFTER label bar: x: 6.665, y: 7.0, w: 6.665, h: 0.4
+      // AFTER label bar: x: 5.845, y: 7.0, w: 5.845, h: 0.4
       reportSlide.addShape(prs.ShapeType.rect, {
-        x: 6.665, y: 7.0, w: 6.665, h: 0.4,
+        x: 5.845, y: 7.0, w: 5.845, h: 0.4,
         fill: { color: GREEN }
       });
       reportSlide.addText('AFTER', {
-        x: 6.665, y: 7.0, w: 6.665, h: 0.4,
+        x: 5.845, y: 7.0, w: 5.845, h: 0.4,
         fontSize: 14, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle'
       });
 
       // Border rectangles around images
       reportSlide.addShape(prs.ShapeType.rect, {
-        x: 0.0, y: 1.88, w: 6.665, h: 5.52,
+        x: 0.0, y: 1.88, w: 5.845, h: 5.52,
         fill: { type: 'none' },
         line: { color: 'EF4444', width: 2.5 }
       });
 
       reportSlide.addShape(prs.ShapeType.rect, {
-        x: 6.665, y: 1.88, w: 6.665, h: 5.52,
+        x: 5.845, y: 1.88, w: 5.845, h: 5.52,
         fill: { type: 'none' },
         line: { color: '22C55E', width: 2.5 }
       });
-    }
+      
+      } // End of board loop
+    } // End of store loop
 
     const buffer = await prs.write('nodebuffer');
 
