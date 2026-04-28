@@ -4,189 +4,203 @@ import fs from "fs";
 import path from "path";
 const axios = require('axios');
 
+// ====== HELPER: Draw store details header (top 20%) on every content slide ======
+const drawStoreDetailsHeader = (doc: any, store: any, type: 'recce' | 'installation', boardInfo?: string) => {
+  const logoPath = path.join(process.cwd(), "public", "logo.png");
+  const headerColor = type === "recce" ? '#EAB308' : '#22C55E';
+
+  // Background
+  doc.save();
+  doc.rect(0, 0, doc.page.width, doc.page.height).fillOpacity(1).fill('#FFFEF5');
+  doc.restore();
+
+  // Logo
+  if (fs.existsSync(logoPath)) {
+    doc.image(logoPath, 40, 15, { width: 80, height: 24 });
+  }
+
+  // Title
+  let title = type === "recce" ? 'RECCE INSPECTION REPORT' : 'INSTALLATION COMPLETION REPORT';
+  if (boardInfo) title += ` - ${boardInfo}`;
+  doc.fillColor(headerColor).fontSize(18).font('Helvetica-Bold')
+    .text(title, 160, 18, { width: 500, align: 'center' });
+
+  // Company info (top right)
+  doc.fillColor('#EAB308').fontSize(9).font('Helvetica')
+    .text('ELORA CREATIVE ART', 650, 12, { width: 150, align: 'right' })
+    .text('www.eloracreativeart.in', 650, 24, { width: 150, align: 'right' });
+
+  // Separator line
+  doc.save();
+  doc.strokeColor('#B45309').lineWidth(2).moveTo(30, 50).lineTo(770, 50).stroke();
+  doc.restore();
+
+  // Store details box (full width, compact, top 20% area)
+  const boxY = 58;
+  const boxH = 72;
+  doc.save();
+  doc.rect(30, boxY, 740, boxH).strokeColor('#B45309').lineWidth(1).stroke();
+  doc.restore();
+
+  const dateValue = type === "recce"
+    ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A')
+    : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A');
+
+  let y = boxY + 8;
+  doc.fillColor('#000000').fontSize(9).font('Helvetica-Bold');
+  doc.text('Dealer Code:', 40, y, { width: 80 });
+  doc.font('Helvetica').text(store.dealerCode || 'N/A', 120, y, { width: 180 });
+
+  doc.font('Helvetica-Bold').text('Store Name:', 310, y, { width: 80 });
+  doc.font('Helvetica').text(store.storeName || 'N/A', 390, y, { width: 200 });
+
+  doc.font('Helvetica-Bold').text('Store ID:', 600, y, { width: 60 });
+  doc.font('Helvetica').text(store.storeId || store.storeCode || 'N/A', 660, y, { width: 100 });
+
+  y += 18;
+  doc.font('Helvetica-Bold').text('City:', 40, y, { width: 80 });
+  doc.font('Helvetica').text(store.location?.city || 'N/A', 120, y, { width: 180 });
+
+  doc.font('Helvetica-Bold').text('State:', 310, y, { width: 80 });
+  doc.font('Helvetica').text(store.location?.state || 'N/A', 390, y, { width: 200 });
+
+  doc.font('Helvetica-Bold').text('Date:', 600, y, { width: 60 });
+  doc.font('Helvetica').text(dateValue, 660, y, { width: 100 });
+
+  y += 18;
+  doc.font('Helvetica-Bold').text('Address:', 40, y, { width: 80 });
+  doc.font('Helvetica').text(store.location?.address || 'N/A', 120, y, { width: 640 });
+
+  if (type === 'installation') {
+    y += 18;
+    doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 600, y, { width: 150 });
+  }
+
+  // Bottom separator of header area
+  doc.save();
+  doc.strokeColor('#B45309').lineWidth(1).moveTo(30, boxY + boxH + 4).lineTo(770, boxY + boxH + 4).stroke();
+  doc.restore();
+
+  return boxY + boxH + 8; // returns content start Y
+};
+
+// ====== HELPER: Load image from URL ======
+const loadImageFromUrl = async (url: string): Promise<Buffer | null> => {
+  try {
+    const response = await axios.get(url, {
+      responseType: 'arraybuffer',
+      timeout: 10000,
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    if (response.status === 200) {
+      return Buffer.from(response.data);
+    }
+  } catch (e) { }
+  return null;
+};
+
+// ====== RECCE PDF ======
 export const generateReccePDF = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const store = await Store.findById(id);
-
     if (!store || !store.recce) {
       return res.status(404).json({ message: "Store or Recce data not found" });
     }
 
     const PDFDocument = require('pdfkit');
     const doc = new PDFDocument({ size: 'A4', margin: 0, layout: 'landscape' });
-
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="RECCE_${store.storeName}_${store.storeId}.pdf"`);
     doc.pipe(res);
 
     const logoPath = path.join(process.cwd(), "public", "logo.png");
 
-    // COVER PAGE
+    // ===== SLIDE 1: COVER PAGE =====
     doc.save();
     doc.rect(0, 0, doc.page.width, doc.page.height).fillOpacity(1).fill('#FFFEF5');
     doc.restore();
-    
+
     doc.fillColor('#EAB308').fontSize(24).font('Helvetica-Bold')
       .text('WE DON\'T JUST PRINT.', 100, 150, { width: 600, align: 'left', lineBreak: false })
       .text('WE INSTALL YOUR BRAND', 100, 185, { width: 600, align: 'left', lineBreak: false })
       .text('INTO THE REAL WORLD.', 100, 220, { width: 600, align: 'left', lineBreak: false });
-    
+
     if (fs.existsSync(logoPath)) {
       doc.image(logoPath, 240, 280, { width: 300, height: 90 });
     }
-    
+
     doc.fillColor('#1F2937').fontSize(12).font('Helvetica')
       .text('We help businesses stand out with custom branding,', 300, 420, { width: 500, align: 'right', lineBreak: false })
       .text('high-quality banner printing, and professional on-site installation.', 200, 438, { width: 600, align: 'right', lineBreak: false });
 
-    // DATA PAGE
-    doc.addPage();
-    doc.save();
-    doc.rect(0, 0, doc.page.width, doc.page.height).fillOpacity(1).fill('#FFFEF5');
-    doc.restore();
-    
-    if (fs.existsSync(logoPath)) {
-      doc.image(logoPath, 40, 20, { width: 100, height: 30 });
-    }
-
-    doc.fillColor('#EAB308').fontSize(20).font('Helvetica-Bold')
-      .text('RECCE INSPECTION REPORT', 40, 70, { width: 760, align: 'center' });
-    
-    doc.save();
-    doc.strokeColor('#B45309').lineWidth(2).moveTo(40, 105).lineTo(800, 105).stroke();
-    doc.restore();
-
-    // Store Details
-    doc.fillColor('#000000').fontSize(10);
-    const startY = 130;
-    
-    doc.save();
-    doc.rect(40, startY, 760, 140).strokeColor('#B45309').lineWidth(1).stroke();
-    doc.restore();
-    
-    let y = startY + 15;
-    doc.font('Helvetica-Bold').text('Dealer Code:', 50, y, { continued: false, width: 120 });
-    doc.font('Helvetica').text(store.dealerCode || 'N/A', 170, y, { width: 200 });
-    doc.font('Helvetica-Bold').text('Store Name:', 420, y, { continued: false, width: 120 });
-    doc.font('Helvetica').text(store.storeName || 'N/A', 540, y, { width: 250 });
-    
-    y += 25;
-    doc.font('Helvetica-Bold').text('City:', 50, y, { continued: false, width: 120 });
-    doc.font('Helvetica').text(store.location.city || 'N/A', 170, y, { width: 200 });
-    doc.font('Helvetica-Bold').text('State:', 420, y, { continued: false, width: 120 });
-    doc.font('Helvetica').text(store.location.state || 'N/A', 540, y, { width: 250 });
-    
-    y += 25;
-    doc.font('Helvetica-Bold').text('Address:', 50, y, { continued: false, width: 120 });
-    doc.font('Helvetica').text(store.location.address || 'N/A', 170, y, { width: 620 });
-    
-    y += 25;
-    doc.font('Helvetica-Bold').text('Recce Date:', 50, y, { continued: false, width: 120 });
-    doc.font('Helvetica').text(store.recce.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A', 170, y, { width: 200 });
-
-    
-    y += 25;
-    doc.font('Helvetica-Bold').text('Notes:', 50, y, { continued: false, width: 120 });
-    doc.font('Helvetica').text(store.recce.notes || 'None', 170, y, { width: 620 });
-
-    // Initial Photos Section
+    // ===== SLIDE 2: STORE DETAILS + 4 INITIAL PHOTOS =====
     if (store.recce.initialPhotos && store.recce.initialPhotos.length > 0) {
       doc.addPage();
-      doc.save();
-      doc.rect(0, 0, doc.page.width, doc.page.height).fillOpacity(1).fill('#FFFEF5');
-      doc.restore();
-      
-      if (fs.existsSync(logoPath)) {
-        doc.image(logoPath, 40, 20, { width: 100, height: 30 });
-      }
+      const contentStartY = drawStoreDetailsHeader(doc, store, 'recce');
 
-      doc.fillColor('#EAB308').fontSize(16).font('Helvetica-Bold')
-        .text('INITIAL STORE PHOTOS', 40, 70, { width: 760, align: 'center' });
-
-      let photoY = 110;
-      const photoWidth = 180;
-      const photoHeight = 135;
+      // Photo grid area: 80% of page
+      const photoY = contentStartY;
+      const photoWidth = 170;
+      const photoHeight = 130;
       const photosPerRow = 4;
       const spacing = 20;
+      const gridStartX = 40;
 
-      for (let i = 0; i < store.recce.initialPhotos.length; i++) {
+      for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 4); i++) {
         const col = i % photosPerRow;
         const row = Math.floor(i / photosPerRow);
-        const x = 40 + col * (photoWidth + spacing);
+        const x = gridStartX + col * (photoWidth + spacing);
         const y = photoY + row * (photoHeight + spacing);
 
-        if (row > 0 && col === 0 && y > 500) {
-          doc.addPage();
-          doc.save();
-          doc.rect(0, 0, doc.page.width, doc.page.height).fillOpacity(1).fill('#FFFEF5');
-          doc.restore();
-          if (fs.existsSync(logoPath)) {
-            doc.image(logoPath, 40, 20, { width: 100, height: 30 });
-          }
-          photoY = 70;
-        }
-
-        const finalY = row > 0 && col === 0 && y > 500 ? photoY : y;
-        const photoPath = path.join(process.cwd(), store.recce.initialPhotos[i]);
-        
         doc.save();
-        doc.rect(x, finalY, photoWidth, photoHeight).strokeColor('#B45309').lineWidth(1).stroke();
+        doc.rect(x, y, photoWidth, photoHeight).strokeColor('#B45309').lineWidth(1).stroke();
         doc.restore();
 
+        const photoPath = path.join(process.cwd(), store.recce.initialPhotos[i]);
         if (fs.existsSync(photoPath)) {
-          doc.image(photoPath, x + 5, finalY + 5, { width: photoWidth - 10, height: photoHeight - 10, fit: [photoWidth - 10, photoHeight - 10] });
+          doc.image(photoPath, x + 5, y + 5, { width: photoWidth - 10, height: photoHeight - 10, fit: [photoWidth - 10, photoHeight - 10] });
         }
       }
     }
 
-    // Recce Photos with Measurements and Elements
+    // ===== SLIDE 3+: STORE DETAILS + RECCE PHOTO (per board) =====
     if (store.recce.reccePhotos && store.recce.reccePhotos.length > 0) {
       for (let i = 0; i < store.recce.reccePhotos.length; i++) {
         const reccePhoto = store.recce.reccePhotos[i];
-        
         doc.addPage();
-        doc.save();
-        doc.rect(0, 0, doc.page.width, doc.page.height).fillOpacity(1).fill('#FFFEF5');
-        doc.restore();
-        
-        if (fs.existsSync(logoPath)) {
-          doc.image(logoPath, 40, 20, { width: 100, height: 30 });
-        }
+        const contentStartY = drawStoreDetailsHeader(doc, store, 'recce', `Board ${i + 1}/${store.recce.reccePhotos.length}`);
 
-        doc.fillColor('#EAB308').fontSize(16).font('Helvetica-Bold')
-          .text(`RECCE PHOTO ${i + 1}`, 40, 70, { width: 760, align: 'center' });
-
-        const photoPath = path.join(process.cwd(), reccePhoto.photo);
-        const imgY = 110;
+        const imgY = contentStartY;
         const imgWidth = 720;
-        const imgHeight = 400;
+        const imgHeight = 380;
 
         doc.save();
         doc.rect(40, imgY, imgWidth, imgHeight).strokeColor('#B45309').lineWidth(2).stroke();
         doc.restore();
 
+        const photoPath = path.join(process.cwd(), reccePhoto.photo);
         if (fs.existsSync(photoPath)) {
           doc.image(photoPath, 45, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
         }
 
         // Measurements
-        const measureY = imgY + imgHeight + 10;
+        const measureY = imgY + imgHeight + 8;
         doc.save();
-        doc.rect(40, measureY, imgWidth, 30).fillOpacity(1).fillAndStroke('#FFFFFF', '#B45309');
+        doc.rect(40, measureY, imgWidth, 25).fillOpacity(1).fillAndStroke('#FFFFFF', '#B45309');
         doc.restore();
-        doc.fillColor('#1F2937').fontSize(12).font('Helvetica-Bold')
-          .text(`Measurements: ${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, 40, measureY + 10, { width: imgWidth, align: 'center' });
+        doc.fillColor('#1F2937').fontSize(11).font('Helvetica-Bold')
+          .text(`Measurements: ${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, 40, measureY + 7, { width: imgWidth, align: 'center' });
 
         // Elements
         if (reccePhoto.elements && reccePhoto.elements.length > 0) {
           const elementsText = reccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
-          const elemY = measureY + 35;
+          const elemY = measureY + 28;
           doc.save();
-          doc.rect(40, elemY, imgWidth, 25).fillOpacity(1).fillAndStroke('#FEF3C7', '#B45309');
+          doc.rect(40, elemY, imgWidth, 22).fillOpacity(1).fillAndStroke('#FEF3C7', '#B45309');
           doc.restore();
-          doc.fillColor('#1F2937').fontSize(10).font('Helvetica-Bold')
-            .text(`Elements: ${elementsText}`, 40, elemY + 7, { width: imgWidth, align: 'center' });
+          doc.fillColor('#1F2937').fontSize(9).font('Helvetica-Bold')
+            .text(`Elements: ${elementsText}`, 40, elemY + 6, { width: imgWidth, align: 'center' });
         }
       }
     }
@@ -198,216 +212,137 @@ export const generateReccePDF = async (req: Request, res: Response) => {
   }
 };
 
+// ====== INSTALLATION PDF ======
 export const generateInstallationPDF = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const store = await Store.findById(id);
-
     if (!store || !store.installation) {
       return res.status(404).json({ message: "Store or Installation data not found" });
     }
 
     const PDFDocument = require('pdfkit');
     const doc = new PDFDocument({ size: 'A4', margin: 0, layout: 'landscape' });
-
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="INSTALLATION_${store.storeName}_${store.storeId}.pdf"`);
     doc.pipe(res);
 
     const logoPath = path.join(process.cwd(), "public", "logo.png");
 
-    // COVER PAGE
+    // ===== SLIDE 1: COVER PAGE =====
     doc.save();
     doc.rect(0, 0, doc.page.width, doc.page.height).fillOpacity(1).fill('#FFFEF5');
     doc.restore();
-    
+
     doc.fillColor('#EAB308').fontSize(24).font('Helvetica-Bold')
       .text('WE DON\'T JUST PRINT.', 100, 150, { width: 600, align: 'left', lineBreak: false })
       .text('WE INSTALL YOUR BRAND', 100, 185, { width: 600, align: 'left', lineBreak: false })
       .text('INTO THE REAL WORLD.', 100, 220, { width: 600, align: 'left', lineBreak: false });
-    
+
     if (fs.existsSync(logoPath)) {
       doc.image(logoPath, 240, 280, { width: 300, height: 90 });
     }
-    
+
     doc.fillColor('#1F2937').fontSize(12).font('Helvetica')
       .text('We help businesses stand out with custom branding,', 300, 420, { width: 500, align: 'right', lineBreak: false })
       .text('high-quality banner printing, and professional on-site installation.', 200, 438, { width: 600, align: 'right', lineBreak: false });
 
-    // DATA PAGE
-    doc.addPage();
-    doc.save();
-    doc.rect(0, 0, doc.page.width, doc.page.height).fillOpacity(1).fill('#FFFEF5');
-    doc.restore();
-    
-    if (fs.existsSync(logoPath)) {
-      doc.image(logoPath, 40, 20, { width: 100, height: 30 });
-    }
-
-    doc.fillColor('#22C55E').fontSize(20).font('Helvetica-Bold')
-      .text('INSTALLATION COMPLETION REPORT', 40, 70, { width: 760, align: 'center' });
-    
-    doc.save();
-    doc.strokeColor('#B45309').lineWidth(2).moveTo(40, 105).lineTo(800, 105).stroke();
-    doc.restore();
-
-    // Store Details
-    doc.fillColor('#000000').fontSize(10);
-    const startY = 130;
-    
-    doc.save();
-    doc.rect(40, startY, 760, 140).strokeColor('#B45309').lineWidth(1).stroke();
-    doc.restore();
-    
-    let y = startY + 15;
-    doc.font('Helvetica-Bold').text('Dealer Code:', 50, y, { continued: false, width: 120 });
-    doc.font('Helvetica').text(store.dealerCode || 'N/A', 170, y, { width: 200 });
-    doc.font('Helvetica-Bold').text('Store Name:', 420, y, { continued: false, width: 120 });
-    doc.font('Helvetica').text(store.storeName || 'N/A', 540, y, { width: 250 });
-    
-    y += 25;
-    doc.font('Helvetica-Bold').text('City:', 50, y, { continued: false, width: 120 });
-    doc.font('Helvetica').text(store.location.city || 'N/A', 170, y, { width: 200 });
-    doc.font('Helvetica-Bold').text('State:', 420, y, { continued: false, width: 120 });
-    doc.font('Helvetica').text(store.location.state || 'N/A', 540, y, { width: 250 });
-    
-    y += 25;
-    doc.font('Helvetica-Bold').text('Address:', 50, y, { continued: false, width: 120 });
-    doc.font('Helvetica').text(store.location.address || 'N/A', 170, y, { width: 620 });
-    
-    y += 25;
-    doc.font('Helvetica-Bold').text('Completion Date:', 50, y, { continued: false, width: 120 });
-    doc.font('Helvetica').text(store.installation.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A', 170, y, { width: 200 });
-
-    
-    y += 25;
-    doc.font('Helvetica-Bold').text('Status:', 50, y, { continued: false, width: 120 });
-    doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 170, y, { width: 620 });
-
-    // Initial Photos Section
+    // ===== SLIDE 2: STORE DETAILS + 4 INITIAL PHOTOS =====
     if (store.recce?.initialPhotos && store.recce.initialPhotos.length > 0) {
       doc.addPage();
-      doc.save();
-      doc.rect(0, 0, doc.page.width, doc.page.height).fillOpacity(1).fill('#FFFEF5');
-      doc.restore();
-      
-      if (fs.existsSync(logoPath)) {
-        doc.image(logoPath, 40, 20, { width: 100, height: 30 });
-      }
+      const contentStartY = drawStoreDetailsHeader(doc, store, 'installation');
 
-      doc.fillColor('#EAB308').fontSize(16).font('Helvetica-Bold')
-        .text('INITIAL STORE PHOTOS', 40, 70, { width: 760, align: 'center' });
-
-      let photoY = 110;
-      const photoWidth = 180;
-      const photoHeight = 135;
+      const photoY = contentStartY;
+      const photoWidth = 170;
+      const photoHeight = 130;
       const photosPerRow = 4;
       const spacing = 20;
+      const gridStartX = 40;
 
-      for (let i = 0; i < store.recce.initialPhotos.length; i++) {
+      for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 4); i++) {
         const col = i % photosPerRow;
         const row = Math.floor(i / photosPerRow);
-        const x = 40 + col * (photoWidth + spacing);
+        const x = gridStartX + col * (photoWidth + spacing);
         const y = photoY + row * (photoHeight + spacing);
 
-        if (row > 0 && col === 0 && y > 500) {
-          doc.addPage();
-          doc.save();
-          doc.rect(0, 0, doc.page.width, doc.page.height).fillOpacity(1).fill('#FFFEF5');
-          doc.restore();
-          if (fs.existsSync(logoPath)) {
-            doc.image(logoPath, 40, 20, { width: 100, height: 30 });
-          }
-          photoY = 70;
-        }
-
-        const finalY = row > 0 && col === 0 && y > 500 ? photoY : y;
-        const photoPath = path.join(process.cwd(), store.recce.initialPhotos[i]);
-        
         doc.save();
-        doc.rect(x, finalY, photoWidth, photoHeight).strokeColor('#B45309').lineWidth(1).stroke();
+        doc.rect(x, y, photoWidth, photoHeight).strokeColor('#B45309').lineWidth(1).stroke();
         doc.restore();
 
+        const photoPath = path.join(process.cwd(), store.recce.initialPhotos[i]);
         if (fs.existsSync(photoPath)) {
-          doc.image(photoPath, x + 5, finalY + 5, { width: photoWidth - 10, height: photoHeight - 10, fit: [photoWidth - 10, photoHeight - 10] });
+          doc.image(photoPath, x + 5, y + 5, { width: photoWidth - 10, height: photoHeight - 10, fit: [photoWidth - 10, photoHeight - 10] });
         }
       }
     }
 
-    // Before & After Comparison
+    // ===== SLIDE 3+: STORE DETAILS + BEFORE/AFTER (per board) =====
     if (store.recce?.reccePhotos && store.recce.reccePhotos.length > 0 && store.installation.photos) {
       for (let i = 0; i < store.recce.reccePhotos.length; i++) {
         const reccePhoto = store.recce.reccePhotos[i];
         const installPhoto = store.installation.photos.find((p: any) => p.reccePhotoIndex === i);
-        
+
         doc.addPage();
-        doc.save();
-        doc.rect(0, 0, doc.page.width, doc.page.height).fillOpacity(1).fill('#FFFEF5');
-        doc.restore();
-        
-        if (fs.existsSync(logoPath)) {
-          doc.image(logoPath, 40, 20, { width: 100, height: 30 });
-        }
+        const contentStartY = drawStoreDetailsHeader(doc, store, 'installation', `Board ${i + 1}/${store.recce.reccePhotos.length}`);
 
-        doc.fillColor('#000000').fontSize(14).font('Helvetica-Bold')
-          .text(`BEFORE & AFTER - Photo ${i + 1}`, 40, 70, { width: 760, align: 'center' });
-
-        const imgY = 110;
-        const imgWidth = 360;
-        const imgHeight = 300;
-        const spacing = 40;
+        const imgY = contentStartY;
+        const imgWidth = 355;
+        const imgHeight = 380;
+        const spacing = 30;
 
         // BEFORE (Left)
         const reccePhotoPath = path.join(process.cwd(), reccePhoto.photo);
         doc.save();
-        doc.rect(40, imgY, imgWidth, imgHeight + 30).strokeColor('#EF4444').lineWidth(2).stroke();
+        doc.rect(40, imgY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(2).stroke();
         doc.restore();
-        
+
         if (fs.existsSync(reccePhotoPath)) {
           doc.image(reccePhotoPath, 45, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
         }
-        
-        doc.save();
-        doc.rect(40, imgY + imgHeight, imgWidth, 30).fillOpacity(1).fillAndStroke('#EF4444', '#EF4444');
-        doc.restore();
-        doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
-          .text('BEFORE', 40, imgY + imgHeight + 10, { width: imgWidth, align: 'center' });
 
         // AFTER (Right)
         if (installPhoto) {
           const installPhotoPath = path.join(process.cwd(), installPhoto.installationPhoto);
           doc.save();
-          doc.rect(40 + imgWidth + spacing, imgY, imgWidth, imgHeight + 30).strokeColor('#22C55E').lineWidth(2).stroke();
+          doc.rect(40 + imgWidth + spacing, imgY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(2).stroke();
           doc.restore();
-          
+
           if (fs.existsSync(installPhotoPath)) {
             doc.image(installPhotoPath, 45 + imgWidth + spacing, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
           }
         }
-        
+
+        // Labels
+        const labelY = imgY + imgHeight + 5;
         doc.save();
-        doc.rect(40 + imgWidth + spacing, imgY + imgHeight, imgWidth, 30).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
+        doc.rect(40, labelY, imgWidth, 25).fillOpacity(1).fillAndStroke('#EF4444', '#EF4444');
         doc.restore();
         doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
-          .text('AFTER', 40 + imgWidth + spacing, imgY + imgHeight + 10, { width: imgWidth, align: 'center' });
+          .text('BEFORE', 40, labelY + 7, { width: imgWidth, align: 'center' });
+
+        doc.save();
+        doc.rect(40 + imgWidth + spacing, labelY, imgWidth, 25).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
+        doc.restore();
+        doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
+          .text('AFTER', 40 + imgWidth + spacing, labelY + 7, { width: imgWidth, align: 'center' });
 
         // Measurements
-        const measureY = imgY + imgHeight + 45;
+        const measureY = labelY + 32;
         doc.save();
-        doc.rect(40, measureY, 760, 25).fillOpacity(1).fillAndStroke('#FFFFFF', '#B45309');
+        doc.rect(40, measureY, imgWidth * 2 + spacing, 22).fillOpacity(1).fillAndStroke('#FFFFFF', '#B45309');
         doc.restore();
-        doc.fillColor('#1F2937').fontSize(11).font('Helvetica-Bold')
-          .text(`Measurements: ${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, 40, measureY + 7, { width: 760, align: 'center' });
+        doc.fillColor('#1F2937').fontSize(10).font('Helvetica-Bold')
+          .text(`Measurements: ${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, 40, measureY + 6, { width: imgWidth * 2 + spacing, align: 'center' });
 
         // Elements
         if (reccePhoto.elements && reccePhoto.elements.length > 0) {
           const elementsText = reccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
-          const elemY = measureY + 30;
+          const elemY = measureY + 25;
           doc.save();
-          doc.rect(40, elemY, 760, 20).fillOpacity(1).fillAndStroke('#FEF3C7', '#B45309');
+          doc.rect(40, elemY, imgWidth * 2 + spacing, 20).fillOpacity(1).fillAndStroke('#FEF3C7', '#B45309');
           doc.restore();
           doc.fillColor('#1F2937').fontSize(9).font('Helvetica-Bold')
-            .text(`Elements: ${elementsText}`, 40, elemY + 5, { width: 760, align: 'center' });
+            .text(`Elements: ${elementsText}`, 40, elemY + 5, { width: imgWidth * 2 + spacing, align: 'center' });
         }
       }
     }
@@ -419,778 +354,236 @@ export const generateInstallationPDF = async (req: Request, res: Response) => {
   }
 };
 
+// ====== BULK PDF ======
 export const generateBulkPDF = async (req: Request, res: Response) => {
   try {
     const { storeIds, type } = req.body;
-    
     if (!storeIds || !Array.isArray(storeIds) || storeIds.length === 0) {
       return res.status(400).json({ message: "No stores selected" });
     }
-    
     if (type !== "recce" && type !== "installation") {
       return res.status(400).json({ message: "Invalid type" });
     }
 
     const stores = await Store.find({ _id: { $in: storeIds } });
-    
     if (stores.length === 0) {
       return res.status(404).json({ message: "No stores found" });
     }
 
     const PDFDocument = require('pdfkit');
     const doc = new PDFDocument({ size: 'A4', margin: 0, layout: 'landscape' });
-
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${type === "recce" ? "Recce" : "Installation"}_Report_${stores.length}_Stores_${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/')}.pdf"`);
     doc.pipe(res);
 
     const logoPath = path.join(process.cwd(), "public", "logo.png");
 
-    // COVER PAGE
+    // ===== COVER PAGE =====
     doc.save();
     doc.rect(0, 0, doc.page.width, doc.page.height).fillOpacity(1).fill('#FFFEF5');
     doc.restore();
-    
+
     doc.fillColor('#EAB308').fontSize(24).font('Helvetica-Bold')
       .text('WE DON\'T JUST PRINT.', 100, 150, { width: 600, align: 'left', lineBreak: false })
       .text('WE INSTALL YOUR BRAND', 100, 185, { width: 600, align: 'left', lineBreak: false })
       .text('INTO THE REAL WORLD.', 100, 220, { width: 600, align: 'left', lineBreak: false });
-    
+
     if (fs.existsSync(logoPath)) {
       doc.image(logoPath, 240, 280, { width: 300, height: 90 });
     }
-    
+
     doc.fillColor('#1F2937').fontSize(12).font('Helvetica')
       .text('We help businesses stand out with custom branding,', 300, 420, { width: 500, align: 'right', lineBreak: false })
       .text('high-quality banner printing, and professional on-site installation.', 200, 438, { width: 600, align: 'right', lineBreak: false });
 
-    for (let i = 0; i < stores.length; i++) {
-      const store = stores[i];
-      
+    for (const store of stores) {
       if (type === "recce" && !store.recce) continue;
       if (type === "installation" && !store.installation) continue;
 
-      // Process each measurement board (recce photo) for this store
       const reccePhotos = store.recce?.reccePhotos || [];
-      const boardCount = Math.max(1, reccePhotos.length); // At least 1 page per store
-      
+      const boardCount = Math.max(1, reccePhotos.length);
+
+      // ===== PER STORE: Initial Photos Slide =====
+      if (store.recce?.initialPhotos && store.recce.initialPhotos.length > 0) {
+        doc.addPage();
+        const contentStartY = drawStoreDetailsHeader(doc, store, type);
+
+        const photoY = contentStartY;
+        const photoWidth = 170;
+        const photoHeight = 130;
+        const photosPerRow = 4;
+        const spacing = 20;
+        const gridStartX = 40;
+
+        for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 4); i++) {
+          const col = i % photosPerRow;
+          const row = Math.floor(i / photosPerRow);
+          const x = gridStartX + col * (photoWidth + spacing);
+          const y = photoY + row * (photoHeight + spacing);
+
+          doc.save();
+          doc.rect(x, y, photoWidth, photoHeight).strokeColor('#B45309').lineWidth(1).stroke();
+          doc.restore();
+
+          const photoPath = path.join(process.cwd(), store.recce.initialPhotos[i]);
+          if (fs.existsSync(photoPath)) {
+            doc.image(photoPath, x + 5, y + 5, { width: photoWidth - 10, height: photoHeight - 10, fit: [photoWidth - 10, photoHeight - 10] });
+          }
+        }
+      }
+
+      // ===== PER BOARD: Content Slide =====
       for (let boardIndex = 0; boardIndex < boardCount; boardIndex++) {
         const currentReccePhoto = reccePhotos[boardIndex];
-        
         doc.addPage();
-      
-      // Clean white background without shading
-      doc.save();
-      doc.rect(0, 0, doc.page.width, doc.page.height).fillOpacity(1).fill('#FFFFFF');
-      doc.restore();
+        const contentStartY = drawStoreDetailsHeader(doc, store, type, reccePhotos.length > 1 ? `Board ${boardIndex + 1}/${reccePhotos.length}` : undefined);
 
-      // COMPACT HEADER (Top 15% - 90px total)
-      if (fs.existsSync(logoPath)) {
-        doc.image(logoPath, 30, 15, { width: 80, height: 25 });
-      }
+        if (type === "installation" && currentReccePhoto && store.installation?.photos) {
+          const installPhotos = store.installation.photos.filter((p: any) => p.reccePhotoIndex === boardIndex);
+          const imgY = contentStartY;
+          const imgHeight = 380;
 
-      // Header with board number if multiple boards
-      let title = type === "recce" ? 'Recce Inspection Report' : 'Installation Completion Report';
-      if (reccePhotos.length > 1) {
-        title += ` - Board ${boardIndex + 1}/${reccePhotos.length}`;
-      }
-      const headerColor = type === "recce" ? '#EAB308' : '#22C55E';
-      
-      doc.fillColor(headerColor).fontSize(16).font('Helvetica-Bold')
-        .text(title, 30, 20, { width: doc.page.width - 210, align: 'center' });
-      
-      doc.fillColor('#EAB308').fontSize(10).font('Helvetica')
-        .text('ELORA CREATIVE ART', 650, 15, { width: 150, align: 'right' })
-        .text('www.eloracreativeart.in', 650, 28, { width: 150, align: 'right' });
+          if (installPhotos.length >= 2) {
+            // Three images: Before + After1 + After2
+            const imgWidth = (doc.page.width - 60) / 3;
 
-      // SIDE-BY-SIDE Layout: Store Details (Left) + Initial Photos (Right)
-      doc.fillColor('#000000').fontSize(10);
-      let y = 50;
-      
-      const dateValue = type === "recce" 
-        ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A')
-        : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A');
-      
-      const submittedBy = type === "recce" ? store.recce?.submittedBy : store.installation?.submittedBy;
-      
-      // LEFT SIDE: Store Details Box (20% width - 160px)
-      doc.save();
-      doc.rect(30, y - 5, 160, 65).strokeColor('#EAB308').lineWidth(1).stroke();
-      doc.restore();
-      
-      // Store details in left box
-      doc.font('Helvetica-Bold').text('Store:', 40, y, { width: 60 });
-      doc.font('Helvetica').text(store.storeName || 'N/A', 100, y, { width: 90 });
-      
-      y += 16;
-      doc.font('Helvetica-Bold').text('ID:', 40, y, { width: 60 });
-      doc.font('Helvetica').text(store.storeId || store.storeCode || 'N/A', 100, y, { width: 90 });
-      
-      y += 16;
-      doc.font('Helvetica-Bold').text('City:', 40, y, { width: 60 });
-      doc.font('Helvetica').text(store.location?.city || 'N/A', 100, y, { width: 90 });
-      
-      y += 16;
-      doc.font('Helvetica-Bold').text('Date:', 40, y, { width: 60 });
-      doc.font('Helvetica').text(dateValue, 100, y, { width: 90 });
-      
-      if (type === "installation") {
-        doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 40, y + 16, { width: 150 });
-      }
-
-      // RIGHT SIDE: 4 Layout Images (80% width) - 2x2 grid
-      const layoutStartX = 210; // 80% of page starts here
-      const layoutWidth = 560; // 80% of remaining width
-      const imageSize = (layoutWidth - 20) / 2; // 2 images per row with spacing
-      const imageSpacing = 10;
-      
-      doc.fillColor('#666666').fontSize(9).font('Helvetica-Bold')
-        .text('Layout Images:', layoutStartX, 50 - 15);
-      
-      // Load and display layout images
-      let layoutImages: Buffer[] = [];
-      
-      // Load initial photos
-      if (store.recce?.initialPhotos && store.recce.initialPhotos.length > 0) {
-        for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 2); i++) {
-          try {
-            const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
-            const response = await axios.get(photoUrl, { 
-              responseType: 'arraybuffer',
-              timeout: 8000,
-              headers: { 'User-Agent': 'Mozilla/5.0' }
-            });
-            if (response.status === 200) {
-              layoutImages.push(Buffer.from(response.data));
-            }
-          } catch (error: any) {
-          }
-        }
-      }
-      
-      // Load pre-recce measurement photo
-      if (currentReccePhoto) {
-        try {
-          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
-          const response = await axios.get(reccePhotoUrl, {
-            responseType: 'arraybuffer',
-            timeout: 10000,
-            headers: { 'User-Agent': 'Mozilla/5.0' }
-          });
-          if (response.status === 200) {
-            layoutImages.push(Buffer.from(response.data));
-          }
-        } catch (error: any) {
-        }
-      }
-      
-      // Load post-installation photo
-      if (type === "installation" && store.installation?.photos) {
-        const installPhotos = store.installation.photos.filter((p: any) => p.reccePhotoIndex === boardIndex);
-        if (installPhotos.length > 0) {
-          try {
-            const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhotos[0].installationPhoto.replace(/\s+/g, '%20')}`;
-            const response = await axios.get(installPhotoUrl, {
-              responseType: 'arraybuffer',
-              timeout: 10000,
-              headers: { 'User-Agent': 'Mozilla/5.0' }
-            });
-            if (response.status === 200) {
-              layoutImages.push(Buffer.from(response.data));
-            }
-          } catch (error: any) {
-          }
-        }
-      }
-
-      // Display up to 4 images in 2x2 grid
-      for (let i = 0; i < Math.min(layoutImages.length, 4); i++) {
-        const row = Math.floor(i / 2);
-        const col = i % 2;
-        const x = layoutStartX + col * (imageSize + imageSpacing);
-        const y = 50 + row * (imageSize + imageSpacing);
-        
-        // Add border
-        doc.save();
-        doc.rect(x - 2, y - 2, imageSize + 4, imageSize + 4).strokeColor('#EAB308').lineWidth(1).stroke();
-        doc.restore();
-        
-        doc.image(layoutImages[i], x, y, { 
-          width: imageSize, 
-          height: imageSize, 
-          fit: [imageSize, imageSize] 
-        });
-      }
-
-      // Professional separator line
-      doc.save();
-      doc.strokeColor('#EAB308').lineWidth(2).moveTo(30, 125).lineTo(770, 125).stroke();
-      doc.restore();
-
-      // MAIN CONTENT AREA
-      const contentStartY = 135;
-      const availableHeight = doc.page.height - contentStartY - 30;
-      const availableWidth = doc.page.width - 60;
-
-      if (type === "installation" && currentReccePhoto && store.installation?.photos) {
-        const installPhotos = store.installation.photos.filter((p: any) => p.reccePhotoIndex === boardIndex);
-        
-        if (installPhotos.length >= 2) {
-          // Three images: Before + After1 + After2
-          const imgWidth = doc.page.width / 3;
-          const imgHeight = availableHeight - 20;
-          
-          // BEFORE (Left)
-          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
-          try {
-            const axios = require('axios');
-            const response = await axios.get(reccePhotoUrl, { 
-              responseType: 'arraybuffer',
-              timeout: 10000
-            });
-            
-            if (response.status === 200) {
-              const buffer = Buffer.from(response.data);
-              // Add border
+            // BEFORE
+            const beforeBuffer = await loadImageFromUrl(`https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`);
+            if (beforeBuffer) {
               doc.save();
-              doc.rect(0, contentStartY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(3).stroke();
+              doc.rect(30, imgY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(3).stroke();
               doc.restore();
-              
-              doc.image(buffer, 5, contentStartY + 5, { 
-                width: imgWidth - 10, 
-                height: imgHeight - 10, 
-                fit: [imgWidth - 10, imgHeight - 10] 
-              });
+              doc.image(beforeBuffer, 35, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
             }
-          } catch (error: any) {
-            console.log(`Failed to load recce image: ${error.message}`);
-          }
-          
-          // AFTER 1 (Middle)
-          const installPhoto1Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[0].installationPhoto.replace(/\s+/g, '%20')}`;
-          try {
-            const axios = require('axios');
-            const response = await axios.get(installPhoto1Url, { 
-              responseType: 'arraybuffer',
-              timeout: 10000
-            });
-            
-            if (response.status === 200) {
-              const buffer = Buffer.from(response.data);
-              // Add border
+
+            // AFTER 1
+            const after1Buffer = await loadImageFromUrl(`https://storage.enamorimpex.com/eloraftp/${installPhotos[0].installationPhoto.replace(/\s+/g, '%20')}`);
+            if (after1Buffer) {
               doc.save();
-              doc.rect(imgWidth, contentStartY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
+              doc.rect(30 + imgWidth, imgY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
               doc.restore();
-              
-              doc.image(buffer, imgWidth + 5, contentStartY + 5, { 
-                width: imgWidth - 10, 
-                height: imgHeight - 10, 
-                fit: [imgWidth - 10, imgHeight - 10] 
-              });
+              doc.image(after1Buffer, 35 + imgWidth, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
             }
-          } catch (error: any) {
-            console.log(`Failed to load installation image 1: ${error.message}`);
-          }
-          
-          // AFTER 2 (Right)
-          const installPhoto2Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[1].installationPhoto.replace(/\s+/g, '%20')}`;
-          try {
-            const axios = require('axios');
-            const response = await axios.get(installPhoto2Url, { 
-              responseType: 'arraybuffer',
-              timeout: 10000
-            });
-            
-            if (response.status === 200) {
-              const buffer = Buffer.from(response.data);
-              // Add border
+
+            // AFTER 2
+            const after2Buffer = await loadImageFromUrl(`https://storage.enamorimpex.com/eloraftp/${installPhotos[1].installationPhoto.replace(/\s+/g, '%20')}`);
+            if (after2Buffer) {
               doc.save();
-              doc.rect(imgWidth * 2, contentStartY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
+              doc.rect(30 + imgWidth * 2, imgY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
               doc.restore();
-              
-              doc.image(buffer, imgWidth * 2 + 5, contentStartY + 5, { 
-                width: imgWidth - 10, 
-                height: imgHeight - 10, 
-                fit: [imgWidth - 10, imgHeight - 10] 
-              });
+              doc.image(after2Buffer, 35 + imgWidth * 2, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
             }
-          } catch (error: any) {
-            console.log(`Failed to load installation image 2: ${error.message}`);
-          }
-          
-          // Labels
-          doc.save();
-          doc.rect(0, contentStartY + imgHeight, imgWidth, 20).fillOpacity(1).fillAndStroke('#EF4444', '#EF4444');
-          doc.restore();
-          doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
-            .text('BEFORE', 0, contentStartY + imgHeight + 6, { width: imgWidth, align: 'center' });
-          
-          doc.save();
-          doc.rect(imgWidth, contentStartY + imgHeight, imgWidth, 20).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
-          doc.restore();
-          doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
-            .text('AFTER 1', imgWidth, contentStartY + imgHeight + 6, { width: imgWidth, align: 'center' });
-          
-          doc.save();
-          doc.rect(imgWidth * 2, contentStartY + imgHeight, imgWidth, 20).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
-          doc.restore();
-          doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
-            .text('AFTER 2', imgWidth * 2, contentStartY + imgHeight + 6, { width: imgWidth, align: 'center' });
-        } else {
-          // Two images: Before + After
-          const imgWidth = doc.page.width / 2;
-          const imgHeight = availableHeight - 20;
-          
-          const installPhoto = installPhotos[0];
-          
-          // BEFORE (Left)
-          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
-          console.log('Loading BEFORE image:', reccePhotoUrl);
-          try {
-            const response = await axios.get(reccePhotoUrl, { 
-              responseType: 'arraybuffer',
-              timeout: 10000,
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (compatible; PDF-Generator)'
-              }
-            });
-            
-            if (response.status === 200 && response.data) {
-              const buffer = Buffer.from(response.data);
-              // Add border
-              doc.save();
-              doc.rect(0, contentStartY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(3).stroke();
-              doc.restore();
-              
-              doc.image(buffer, 5, contentStartY + 5, { 
-                width: imgWidth - 10, 
-                height: imgHeight - 10, 
-                fit: [imgWidth - 10, imgHeight - 10] 
-              });
-              console.log('BEFORE image loaded successfully');
-            }
-          } catch (error: any) {
-            console.log(`Failed to load BEFORE image: ${error.message}`);
-            // Add border even for failed images
+
+            // Labels
+            const labelY = imgY + imgHeight + 5;
             doc.save();
-            doc.rect(0, contentStartY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(3).stroke();
+            doc.rect(30, labelY, imgWidth, 20).fillOpacity(1).fillAndStroke('#EF4444', '#EF4444');
             doc.restore();
-            // Add placeholder text
-            doc.fillColor('#999999').fontSize(14).font('Helvetica')
-              .text('BEFORE Image\nNot Available', 5, contentStartY + imgHeight/2 - 20, { 
-                width: imgWidth - 10, 
-                align: 'center' 
-              });
-          }
-          
-          // AFTER (Right)
-          if (installPhoto) {
-            const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
-            console.log('Loading AFTER image:', installPhotoUrl);
-            try {
-              const response = await axios.get(installPhotoUrl, { 
-                responseType: 'arraybuffer',
-                timeout: 10000,
-                headers: {
-                  'User-Agent': 'Mozilla/5.0 (compatible; PDF-Generator)'
-                }
-              });
-              
-              if (response.status === 200 && response.data) {
-                const buffer = Buffer.from(response.data);
-                // Add border
+            doc.fillColor('#FFFFFF').fontSize(11).font('Helvetica-Bold').text('BEFORE', 30, labelY + 5, { width: imgWidth, align: 'center' });
+
+            doc.save();
+            doc.rect(30 + imgWidth, labelY, imgWidth, 20).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
+            doc.restore();
+            doc.fillColor('#FFFFFF').fontSize(11).font('Helvetica-Bold').text('AFTER 1', 30 + imgWidth, labelY + 5, { width: imgWidth, align: 'center' });
+
+            doc.save();
+            doc.rect(30 + imgWidth * 2, labelY, imgWidth, 20).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
+            doc.restore();
+            doc.fillColor('#FFFFFF').fontSize(11).font('Helvetica-Bold').text('AFTER 2', 30 + imgWidth * 2, labelY + 5, { width: imgWidth, align: 'center' });
+
+          } else {
+            // Two images: Before + After
+            const imgWidth = (doc.page.width - 50) / 2;
+            const installPhoto = installPhotos[0];
+
+            const beforeBuffer = await loadImageFromUrl(`https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`);
+            if (beforeBuffer) {
+              doc.save();
+              doc.rect(30, imgY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(3).stroke();
+              doc.restore();
+              doc.image(beforeBuffer, 35, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
+            }
+
+            if (installPhoto) {
+              const afterBuffer = await loadImageFromUrl(`https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`);
+              if (afterBuffer) {
                 doc.save();
-                doc.rect(imgWidth, contentStartY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
+                doc.rect(30 + imgWidth, imgY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
                 doc.restore();
-                
-                doc.image(buffer, imgWidth + 5, contentStartY + 5, { 
-                  width: imgWidth - 10, 
-                  height: imgHeight - 10, 
-                  fit: [imgWidth - 10, imgHeight - 10] 
-                });
-                console.log('AFTER image loaded successfully');
+                doc.image(afterBuffer, 35 + imgWidth, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
               }
-            } catch (error: any) {
-              console.log(`Failed to load AFTER image: ${error.message}`);
-              // Add border even for failed images
-              doc.save();
-              doc.rect(imgWidth, contentStartY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
-              doc.restore();
-              // Add placeholder text
-              doc.fillColor('#999999').fontSize(14).font('Helvetica')
-                .text('AFTER Image\nNot Available', imgWidth + 5, contentStartY + imgHeight/2 - 20, { 
-                  width: imgWidth - 10, 
-                  align: 'center' 
-                });
             }
-          }
-          
-          // Labels
-          doc.save();
-          doc.rect(0, contentStartY + imgHeight, imgWidth, 20).fillOpacity(1).fillAndStroke('#EF4444', '#EF4444');
-          doc.restore();
-          doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
-            .text('BEFORE', 0, contentStartY + imgHeight + 6, { width: imgWidth, align: 'center' });
-          
-          doc.save();
-          doc.rect(imgWidth, contentStartY + imgHeight, imgWidth, 20).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
-          doc.restore();
-          doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
-            .text('AFTER', imgWidth, contentStartY + imgHeight + 6, { width: imgWidth, align: 'center' });
-        }
-      } else if (type === "recce" && currentReccePhoto) {
-        // Single recce photo - Full width with border
-        const singleImgHeight = availableHeight - 30;
-        
-        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
-        console.log('Loading single recce image:', reccePhotoUrl);
-        try {
-          const response = await axios.get(reccePhotoUrl, { 
-            responseType: 'arraybuffer',
-            timeout: 10000,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (compatible; PDF-Generator)'
-            }
-          });
-          
-          if (response.status === 200 && response.data) {
-            const buffer = Buffer.from(response.data);
-            // Add border
+
+            // Labels
+            const labelY = imgY + imgHeight + 5;
             doc.save();
-            doc.rect(0, contentStartY, doc.page.width, singleImgHeight).strokeColor('#EAB308').lineWidth(3).stroke();
+            doc.rect(30, labelY, imgWidth, 20).fillOpacity(1).fillAndStroke('#EF4444', '#EF4444');
             doc.restore();
-            
-            doc.image(buffer, 5, contentStartY + 5, { 
-              width: doc.page.width - 10, 
-              height: singleImgHeight - 10, 
-              fit: [doc.page.width - 10, singleImgHeight - 10] 
-            });
-            console.log('Single recce image loaded successfully');
+            doc.fillColor('#FFFFFF').fontSize(11).font('Helvetica-Bold').text('BEFORE', 30, labelY + 5, { width: imgWidth, align: 'center' });
+
+            doc.save();
+            doc.rect(30 + imgWidth, labelY, imgWidth, 20).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
+            doc.restore();
+            doc.fillColor('#FFFFFF').fontSize(11).font('Helvetica-Bold').text('AFTER', 30 + imgWidth, labelY + 5, { width: imgWidth, align: 'center' });
           }
-        } catch (error: any) {
-          console.log(`Failed to load single recce image: ${error.message}`);
-          // Add border even for failed images
+
+          // Measurements
+          const measureY = imgY + imgHeight + 30;
           doc.save();
-          doc.rect(0, contentStartY, doc.page.width, singleImgHeight).strokeColor('#EAB308').lineWidth(3).stroke();
+          doc.rect(30, measureY, doc.page.width - 60, 20).fillOpacity(1).fillAndStroke('#FFFFFF', '#B45309');
           doc.restore();
-          // Add placeholder text
-          doc.fillColor('#999999').fontSize(16).font('Helvetica')
-            .text('Recce Image\nNot Available', 5, contentStartY + singleImgHeight/2 - 20, { 
-              width: doc.page.width - 10, 
-              align: 'center' 
-            });
+          doc.fillColor('#1F2937').fontSize(10).font('Helvetica-Bold')
+            .text(`Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`, 30, measureY + 5, { width: doc.page.width - 60, align: 'center' });
+
+          // Elements
+          if (currentReccePhoto.elements && currentReccePhoto.elements.length > 0) {
+            const elementsText = currentReccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
+            const elemY = measureY + 23;
+            doc.save();
+            doc.rect(30, elemY, doc.page.width - 60, 18).fillOpacity(1).fillAndStroke('#FEF3C7', '#B45309');
+            doc.restore();
+            doc.fillColor('#1F2937').fontSize(9).font('Helvetica-Bold')
+              .text(`Elements: ${elementsText}`, 30, elemY + 4, { width: doc.page.width - 60, align: 'center' });
+          }
+
+        } else if (type === "recce" && currentReccePhoto) {
+          // Single recce photo
+          const imgY = contentStartY;
+          const imgHeight = 400;
+
+          const buffer = await loadImageFromUrl(`https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`);
+          if (buffer) {
+            doc.save();
+            doc.rect(30, imgY, doc.page.width - 60, imgHeight).strokeColor('#EAB308').lineWidth(3).stroke();
+            doc.restore();
+            doc.image(buffer, 35, imgY + 5, { width: doc.page.width - 70, height: imgHeight - 10, fit: [doc.page.width - 70, imgHeight - 10] });
+          }
+
+          // Measurements
+          const measureY = imgY + imgHeight + 8;
+          doc.save();
+          doc.rect(30, measureY, doc.page.width - 60, 22).fillOpacity(1).fillAndStroke('#FFFFFF', '#B45309');
+          doc.restore();
+          doc.fillColor('#1F2937').fontSize(10).font('Helvetica-Bold')
+            .text(`Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`, 30, measureY + 5, { width: doc.page.width - 60, align: 'center' });
+
+          // Elements
+          if (currentReccePhoto.elements && currentReccePhoto.elements.length > 0) {
+            const elementsText = currentReccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
+            const elemY = measureY + 25;
+            doc.save();
+            doc.rect(30, elemY, doc.page.width - 60, 18).fillOpacity(1).fillAndStroke('#FEF3C7', '#B45309');
+            doc.restore();
+            doc.fillColor('#1F2937').fontSize(9).font('Helvetica-Bold')
+              .text(`Elements: ${elementsText}`, 30, elemY + 4, { width: doc.page.width - 60, align: 'center' });
+          }
         }
       }
-      
-      } // End of board loop
-    } // End of store loop
+    }
 
     doc.end();
   } catch (error: any) {
     console.error("Bulk PDF Error:", error);
     if (!res.headersSent) res.status(500).json({ message: "Error generating bulk PDF" });
-  }
-};
-
-export const generateBulkPPT = async (req: Request, res: Response) => {
-  try {
-    const { storeIds, type } = req.body;
-    
-    if (!storeIds || !Array.isArray(storeIds) || storeIds.length === 0) {
-      return res.status(400).json({ message: "No stores selected" });
-    }
-    
-    if (type !== "recce" && type !== "installation") {
-      return res.status(400).json({ message: "Invalid type" });
-    }
-
-    const stores = await Store.find({ _id: { $in: storeIds } });
-    
-    if (stores.length === 0) {
-      return res.status(404).json({ message: "No stores found" });
-    }
-
-    const PptxGenJS = require('pptxgenjs');
-    const pptx = new PptxGenJS();
-    
-    // Set A4 dimensions for PPT (client requirement)
-    pptx.defineLayout({ name: 'A4', width: 11.69, height: 8.27 });
-    pptx.layout = 'A4';
-
-    // Title slide
-    const titleSlide = pptx.addSlide();
-    
-    titleSlide.addText(`${type === "recce" ? "Recce Inspection" : "Installation Completion"} REPORT`, {
-      x: 1, y: 2, w: 8, h: 1,
-      fontSize: 28, bold: true, color: type === "recce" ? 'EAB308' : '22C55E',
-      align: 'center'
-    });
-    
-    titleSlide.addText(`${stores.length} Stores | ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/')}`, {
-      x: 1, y: 3.5, w: 8, h: 0.5,
-      fontSize: 16, color: '1F2937', align: 'center'
-    });
-    
-    titleSlide.addText('ELORA CREATIVE ART | www.eloracreativeart.in', {
-      x: 1, y: 5, w: 8, h: 0.5,
-      fontSize: 14, color: 'EAB308', align: 'center'
-    });
-
-    for (let i = 0; i < stores.length; i++) {
-      const store = stores[i];
-      
-      if (type === "recce" && !store.recce) continue;
-      if (type === "installation" && !store.installation) continue;
-
-      // Process each measurement board (recce photo) for this store
-      const reccePhotos = store.recce?.reccePhotos || [];
-      const boardCount = Math.max(1, reccePhotos.length); // At least 1 slide per store
-      
-      for (let boardIndex = 0; boardIndex < boardCount; boardIndex++) {
-        const currentReccePhoto = reccePhotos[boardIndex];
-        
-        const slide = pptx.addSlide();
-      
-      // Header with board number if multiple boards
-      let title = type === "recce" ? 'Recce Inspection Report' : 'Installation Completion Report';
-      if (reccePhotos.length > 1) {
-        title += ` - Board ${boardIndex + 1}/${reccePhotos.length}`;
-      }
-      slide.addText(title, {
-        x: 0.9, y: 0.15, w: 9.89, h: 0.6,
-        fontSize: 20, bold: true, color: type === "recce" ? 'EAB308' : '22C55E',
-        align: 'center'
-      });
-      
-      // Company info - top right
-      slide.addText('ELORA CREATIVE ART', {
-        x: 9.5, y: 0.1, w: 2, h: 0.25,
-        fontSize: 9, color: 'EAB308', align: 'right'
-      });
-      slide.addText('www.eloracreativeart.in', {
-        x: 9.5, y: 0.3, w: 2, h: 0.25,
-        fontSize: 9, color: 'EAB308', align: 'right'
-      });
-      
-      // SIDE-BY-SIDE Layout: Store Details (Left) + Initial Photos (Right)
-      const dateValue = type === "recce" 
-        ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A')
-        : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A');
-      
-      const submittedBy = type === "recce" ? store.recce?.submittedBy : store.installation?.submittedBy;
-      
-      // LEFT SIDE: Store Details (compact)
-      slide.addText(`Store: ${store.storeName || 'Fusion Electro World'}`, {
-        x: 0.3, y: 0.7, w: 4, h: 0.25, fontSize: 11, bold: true
-      });
-      slide.addText(`ID: ${store.storeId || store.storeCode || 'UDAUDAIN002301'}`, {
-        x: 0.3, y: 0.95, w: 2.5, h: 0.25, fontSize: 10
-      });
-      slide.addText(`City: ${store.location?.city || 'Udaipur'}`, {
-        x: 2.8, y: 0.95, w: 1.5, h: 0.25, fontSize: 10
-      });
-      slide.addText(`Date: ${dateValue}`, {
-        x: 0.3, y: 1.2, w: 4, h: 0.25, fontSize: 10
-      });
-      
-      const address = store.location?.address || 'SHOP NO. 1-2 MEERA PLAZA COMMUNITY HALL ROAD SHAKTI NAGAR UDAIPUR';
-      slide.addText(`Address: ${address}`, {
-        x: 0.3, y: 1.45, w: 4, h: 0.4, fontSize: 10
-      });
-      
-      if (type === "installation") {
-        slide.addText('✓ COMPLETED', {
-          x: 3.8, y: 0.7, w: 1, h: 0.25, fontSize: 11, bold: true, color: '22C55E'
-        });
-      }
-
-      // RIGHT SIDE: Initial Photos (if available) - Single line, bigger size
-      if (store.recce?.initialPhotos && store.recce.initialPhotos.length > 0) {
-        slide.addText('Initial Photos:', {
-          x: 5.2, y: 0.6, w: 2, h: 0.2,
-          fontSize: 8, color: '666666'
-        });
-        
-        const photoSize = 0.6;
-        const photoSpacing = 0.08;
-        const rightStartX = 5.2;
-        const photoY = 0.8;
-        
-        // Arrange photos in single row
-        for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 5); i++) {
-          const x = rightStartX + i * (photoSize + photoSpacing);
-          
-          try {
-            const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
-            const response = await axios.get(photoUrl, { 
-              responseType: 'arraybuffer',
-              timeout: 5000
-            });
-            
-            if (response.status === 200) {
-              const buffer = Buffer.from(response.data);
-              const base64 = `data:image/jpeg;base64,${buffer.toString('base64')}`;
-              slide.addImage({ data: base64, x: x, y: photoY, w: photoSize, h: photoSize });
-            }
-          } catch (error) {
-            console.log('Failed to load initial photo for PPT');
-          }
-        }
-      }
-
-      // MAIN CONTENT - Fixed positioning for new layout
-      const contentStartY = 2.0;
-      if (type === "installation" && currentReccePhoto && store.installation?.photos) {
-        const installPhotos = store.installation.photos.filter((p: any) => p.reccePhotoIndex === boardIndex);
-        
-        if (installPhotos.length >= 2) {
-          // Three images: Before + After1 + After2
-          try {
-            const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
-            const recceResponse = await axios.get(reccePhotoUrl, { 
-              responseType: 'arraybuffer',
-              timeout: 10000
-            });
-            
-            if (recceResponse.status === 200) {
-              const recceBuffer = Buffer.from(recceResponse.data);
-              const base64 = `data:image/jpeg;base64,${recceBuffer.toString('base64')}`;
-              slide.addImage({ data: base64, x: 0.2, y: contentStartY, w: 2.8, h: 3.5 });
-            }
-          } catch (error) {
-            console.log('Failed to load recce image for PPT');
-          }
-          
-          // AFTER 1
-          try {
-            const installPhoto1Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[0].installationPhoto.replace(/\s+/g, '%20')}`;
-            const installResponse1 = await axios.get(installPhoto1Url, { 
-              responseType: 'arraybuffer',
-              timeout: 10000
-            });
-            
-            if (installResponse1.status === 200) {
-              const installBuffer1 = Buffer.from(installResponse1.data);
-              const base64 = `data:image/jpeg;base64,${installBuffer1.toString('base64')}`;
-              slide.addImage({ data: base64, x: 3.2, y: contentStartY, w: 2.8, h: 3.5 });
-            }
-          } catch (error) {
-            console.log('Failed to load installation image 1 for PPT');
-          }
-          
-          // AFTER 2
-          try {
-            const installPhoto2Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[1].installationPhoto.replace(/\s+/g, '%20')}`;
-            const installResponse2 = await axios.get(installPhoto2Url, { 
-              responseType: 'arraybuffer',
-              timeout: 10000
-            });
-            
-            if (installResponse2.status === 200) {
-              const installBuffer2 = Buffer.from(installResponse2.data);
-              const base64 = `data:image/jpeg;base64,${installBuffer2.toString('base64')}`;
-              slide.addImage({ data: base64, x: 6.2, y: contentStartY, w: 2.8, h: 3.5 });
-            }
-          } catch (error) {
-            console.log('Failed to load installation image 2 for PPT');
-          }
-          
-          // Labels
-          slide.addText('BEFORE', {
-            x: 0.2, y: contentStartY + 3.6, w: 2.8, h: 0.3,
-            fontSize: 12, bold: true, color: 'FFFFFF',
-            fill: { color: 'EF4444' }, align: 'center'
-          });
-          slide.addText('AFTER 1', {
-            x: 3.2, y: contentStartY + 3.6, w: 2.8, h: 0.3,
-            fontSize: 12, bold: true, color: 'FFFFFF',
-            fill: { color: '22C55E' }, align: 'center'
-          });
-          slide.addText('AFTER 2', {
-            x: 6.2, y: contentStartY + 3.6, w: 2.8, h: 0.3,
-            fontSize: 12, bold: true, color: 'FFFFFF',
-            fill: { color: '22C55E' }, align: 'center'
-          });
-        } else {
-          // Two images: Before + After
-          const installPhoto = installPhotos[0];
-          
-          try {
-            const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
-            const recceResponse = await axios.get(reccePhotoUrl, { 
-              responseType: 'arraybuffer',
-              timeout: 10000
-            });
-            
-            if (recceResponse.status === 200) {
-              const recceBuffer = Buffer.from(recceResponse.data);
-              const base64 = `data:image/jpeg;base64,${recceBuffer.toString('base64')}`;
-              slide.addImage({ data: base64, x: 0.3, y: contentStartY, w: 4.2, h: 3.8 });
-            }
-          } catch (error) {
-            console.log('Failed to load recce image for PPT');
-          }
-          
-          if (installPhoto) {
-            try {
-              const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
-              const installResponse = await axios.get(installPhotoUrl, { 
-                responseType: 'arraybuffer',
-                timeout: 10000
-              });
-              
-              if (installResponse.status === 200) {
-                const installBuffer = Buffer.from(installResponse.data);
-                const base64 = `data:image/jpeg;base64,${installBuffer.toString('base64')}`;
-                slide.addImage({ data: base64, x: 4.8, y: contentStartY, w: 4.2, h: 3.8 });
-              }
-            } catch (error) {
-              console.log('Failed to load installation image for PPT');
-            }
-          }
-          
-          // Labels
-          slide.addText('BEFORE', {
-            x: 0.3, y: contentStartY + 3.9, w: 4.2, h: 0.4,
-            fontSize: 14, bold: true, color: 'FFFFFF',
-            fill: { color: 'EF4444' }, align: 'center'
-          });
-          slide.addText('AFTER', {
-            x: 4.8, y: contentStartY + 3.9, w: 4.2, h: 0.4,
-            fontSize: 14, bold: true, color: 'FFFFFF',
-            fill: { color: '22C55E' }, align: 'center'
-          });
-        }
-      } else if (type === "recce" && currentReccePhoto) {
-        // Single recce photo
-        
-        try {
-          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
-          const response = await axios.get(reccePhotoUrl, { 
-            responseType: 'arraybuffer',
-            timeout: 10000
-          });
-          
-          if (response.status === 200) {
-            const buffer = Buffer.from(response.data);
-            const base64 = `data:image/jpeg;base64,${buffer.toString('base64')}`;
-            slide.addImage({ data: base64, x: 0.5, y: contentStartY, w: 10.69, h: 4.2 });
-          }
-        } catch (error) {
-          console.log('Failed to load recce image for PPT');
-        }
-      }
-      
-      } // End of board loop
-    } // End of store loop
-
-    const buffer = await pptx.write('nodebuffer');
-    
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
-    res.setHeader('Content-Disposition', `attachment; filename="${type === "recce" ? "Recce" : "Installation"}_Report_${stores.length}_Stores_${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/')}.pptx"`);
-    res.send(buffer);
-  } catch (error: any) {
-    console.error("Bulk PPT Error:", error);
-    if (!res.headersSent) res.status(500).json({ message: "Error generating bulk PPT" });
   }
 };
