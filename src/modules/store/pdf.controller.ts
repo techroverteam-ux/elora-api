@@ -36,8 +36,8 @@ const drawStoreDetailsHeader = (doc: any, store: any, type: 'recce' | 'installat
   doc.restore();
 
   // Store details box (full width, compact, top 20% area)
-  const boxY = 58;
-  const boxH = 72;
+  const boxY = 55;
+  const boxH = 65;
   doc.save();
   doc.rect(30, boxY, 740, boxH).strokeColor('#EAB308').lineWidth(1).stroke();
   doc.restore();
@@ -46,7 +46,7 @@ const drawStoreDetailsHeader = (doc: any, store: any, type: 'recce' | 'installat
     ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A')
     : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A');
 
-  let y = boxY + 8;
+  let y = boxY + 10;
   doc.fillColor('#000000').fontSize(9).font('Helvetica-Bold');
   doc.text('Dealer Code:', 40, y, { width: 80 });
   doc.font('Helvetica').text(store.dealerCode || 'N/A', 120, y, { width: 180 });
@@ -57,7 +57,7 @@ const drawStoreDetailsHeader = (doc: any, store: any, type: 'recce' | 'installat
   doc.font('Helvetica-Bold').text('Store ID:', 600, y, { width: 60 });
   doc.font('Helvetica').text(store.storeId || store.storeCode || 'N/A', 660, y, { width: 100 });
 
-  y += 18;
+  y += 16;
   doc.font('Helvetica-Bold').text('City:', 40, y, { width: 80 });
   doc.font('Helvetica').text(store.location?.city || 'N/A', 120, y, { width: 180 });
 
@@ -68,16 +68,16 @@ const drawStoreDetailsHeader = (doc: any, store: any, type: 'recce' | 'installat
   doc.font('Helvetica').text(store.location?.address || 'N/A', 680, y, { width: 90 });
 
   if (type === 'installation') {
-    y += 18;
+    y += 16;
     doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 600, y, { width: 150 });
   }
 
   // Bottom separator of header area - use consistent yellow branding color
   doc.save();
-  doc.strokeColor('#EAB308').lineWidth(1).moveTo(30, boxY + boxH + 4).lineTo(770, boxY + boxH + 4).stroke();
+  doc.strokeColor('#EAB308').lineWidth(1).moveTo(30, boxY + boxH + 2).lineTo(770, boxY + boxH + 2).stroke();
   doc.restore();
 
-  return boxY + boxH + 8; // returns content start Y
+  return boxY + boxH + 6; // returns content start Y
 };
 
 // ====== HELPER: Load image from URL ======
@@ -136,13 +136,13 @@ export const generateReccePDF = async (req: Request, res: Response) => {
       const contentStartY = drawStoreDetailsHeader(doc, store, 'recce');
 
       // Photo grid area: 80% of page - 2x2 grid using full width
-      const photoY = contentStartY + 20; // Add some spacing
+      const photoY = contentStartY + 10; // Reduced spacing
       const availableWidth = doc.page.width - 80; // Full width minus margins
-      const availableHeight = doc.page.height - contentStartY - 60; // 80% bottom space
-      const photoWidth = (availableWidth - 30) / 2; // 2 photos per row with spacing
-      const photoHeight = (availableHeight - 30) / 2; // 2 rows with spacing
-      const spacingX = 30;
-      const spacingY = 30;
+      const availableHeight = doc.page.height - contentStartY - 40; // 80% bottom space
+      const photoWidth = (availableWidth - 20) / 2; // 2 photos per row with spacing
+      const photoHeight = (availableHeight - 20) / 2; // 2 rows with spacing
+      const spacingX = 20;
+      const spacingY = 20;
       const gridStartX = 40;
 
       for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 4); i++) {
@@ -195,22 +195,22 @@ export const generateReccePDF = async (req: Request, res: Response) => {
         }
 
         // Measurements
-        const measureY = imgY + imgHeight + 8;
+        const measureY = imgY + imgHeight + 5;
         doc.save();
-        doc.rect(40, measureY, imgWidth, 25).fillOpacity(1).fillAndStroke('#FFFFFF', '#EAB308');
+        doc.rect(40, measureY, imgWidth, 22).fillOpacity(1).fillAndStroke('#FFFFFF', '#EAB308');
         doc.restore();
-        doc.fillColor('#1F2937').fontSize(11).font('Helvetica-Bold')
-          .text(`Measurements: ${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, 40, measureY + 7, { width: imgWidth, align: 'center' });
+        doc.fillColor('#1F2937').fontSize(10).font('Helvetica-Bold')
+          .text(`Measurements: ${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, 40, measureY + 6, { width: imgWidth, align: 'center' });
 
         // Elements
         if (reccePhoto.elements && reccePhoto.elements.length > 0) {
           const elementsText = reccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
-          const elemY = measureY + 28;
+          const elemY = measureY + 25;
           doc.save();
-          doc.rect(40, elemY, imgWidth, 22).fillOpacity(1).fillAndStroke('#FEF3C7', '#EAB308');
+          doc.rect(40, elemY, imgWidth, 20).fillOpacity(1).fillAndStroke('#FEF3C7', '#EAB308');
           doc.restore();
           doc.fillColor('#1F2937').fontSize(9).font('Helvetica-Bold')
-            .text(`Elements: ${elementsText}`, 40, elemY + 6, { width: imgWidth, align: 'center' });
+            .text(`Elements: ${elementsText}`, 40, elemY + 5, { width: imgWidth, align: 'center' });
         }
       }
     }
@@ -331,36 +331,36 @@ export const generateInstallationPDF = async (req: Request, res: Response) => {
         }
 
         // Labels
-        const labelY = imgY + imgHeight + 5;
+        const labelY = imgY + imgHeight + 3;
         doc.save();
-        doc.rect(40, labelY, imgWidth, 25).fillOpacity(1).fillAndStroke('#EF4444', '#EF4444');
+        doc.rect(40, labelY, imgWidth, 22).fillOpacity(1).fillAndStroke('#EF4444', '#EF4444');
         doc.restore();
-        doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
-          .text('BEFORE', 40, labelY + 7, { width: imgWidth, align: 'center' });
+        doc.fillColor('#FFFFFF').fontSize(11).font('Helvetica-Bold')
+          .text('BEFORE', 40, labelY + 6, { width: imgWidth, align: 'center' });
 
         doc.save();
-        doc.rect(40 + imgWidth + spacing, labelY, imgWidth, 25).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
+        doc.rect(40 + imgWidth + spacing, labelY, imgWidth, 22).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
         doc.restore();
-        doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica-Bold')
-          .text('AFTER', 40 + imgWidth + spacing, labelY + 7, { width: imgWidth, align: 'center' });
+        doc.fillColor('#FFFFFF').fontSize(11).font('Helvetica-Bold')
+          .text('AFTER', 40 + imgWidth + spacing, labelY + 6, { width: imgWidth, align: 'center' });
 
         // Measurements
-        const measureY = labelY + 32;
+        const measureY = labelY + 27;
         doc.save();
-        doc.rect(40, measureY, imgWidth * 2 + spacing, 22).fillOpacity(1).fillAndStroke('#FFFFFF', '#EAB308');
+        doc.rect(40, measureY, imgWidth * 2 + spacing, 20).fillOpacity(1).fillAndStroke('#FFFFFF', '#EAB308');
         doc.restore();
         doc.fillColor('#1F2937').fontSize(10).font('Helvetica-Bold')
-          .text(`Measurements: ${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, 40, measureY + 6, { width: imgWidth * 2 + spacing, align: 'center' });
+          .text(`Measurements: ${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, 40, measureY + 5, { width: imgWidth * 2 + spacing, align: 'center' });
 
         // Elements
         if (reccePhoto.elements && reccePhoto.elements.length > 0) {
           const elementsText = reccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
-          const elemY = measureY + 25;
+          const elemY = measureY + 23;
           doc.save();
-          doc.rect(40, elemY, imgWidth * 2 + spacing, 20).fillOpacity(1).fillAndStroke('#FEF3C7', '#EAB308');
+          doc.rect(40, elemY, imgWidth * 2 + spacing, 18).fillOpacity(1).fillAndStroke('#FEF3C7', '#EAB308');
           doc.restore();
           doc.fillColor('#1F2937').fontSize(9).font('Helvetica-Bold')
-            .text(`Elements: ${elementsText}`, 40, elemY + 5, { width: imgWidth * 2 + spacing, align: 'center' });
+            .text(`Elements: ${elementsText}`, 40, elemY + 4, { width: imgWidth * 2 + spacing, align: 'center' });
         }
       }
     }

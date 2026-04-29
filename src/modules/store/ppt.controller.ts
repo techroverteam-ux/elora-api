@@ -69,9 +69,9 @@ const addStoreDetailsHeader = (slide: any, prs: any, store: any, type: 'recce' |
 
   // Store info box (left side, compact)
   const infoBoxX = 0.1;
-  const infoBoxY = 0.78;
-  const infoBoxW = 5.0;
-  const infoBoxH = 0.95;
+  const infoBoxY = 0.75;
+  const infoBoxW = 11.49;
+  const infoBoxH = 0.85;
 
   slide.addShape(prs.ShapeType.rect, {
     x: infoBoxX, y: infoBoxY, w: infoBoxW, h: infoBoxH,
@@ -84,41 +84,40 @@ const addStoreDetailsHeader = (slide: any, prs: any, store: any, type: 'recce' |
     : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A');
 
   const labelX = infoBoxX + 0.15;
-  const valueX = labelX + 1.2;
-  const rightColX = infoBoxX + 2.8;
-  const rightValueX = rightColX + 0.9;
+  const valueX = labelX + 1.0;
+  const midColX = infoBoxX + 3.0;
+  const midValueX = midColX + 0.8;
+  const rightColX = infoBoxX + 5.5;
+  const rightValueX = rightColX + 0.8;
   let infoY = infoBoxY + 0.08;
 
   // Row 1: Store name | Status
-  slide.addText('Store:', { x: labelX, y: infoY, w: 1, h: 0.18, fontSize: 11, bold: true, color: '000000' });
-  slide.addText(store.storeName || 'N/A', { x: valueX, y: infoY, w: 1.8, h: 0.18, fontSize: 11, color: '000000' });
+  slide.addText('Store:', { x: labelX, y: infoY, w: 0.8, h: 0.15, fontSize: 10, bold: true, color: '000000' });
+  slide.addText(store.storeName || 'N/A', { x: valueX, y: infoY, w: 1.8, h: 0.15, fontSize: 10, color: '000000' });
 
   if (type === "installation") {
-    slide.addText('✓ COMPLETED', { x: rightColX, y: infoY, w: 1.8, h: 0.18, fontSize: 11, bold: true, color: GOLD });
+    slide.addText('✓ COMPLETED', { x: rightColX, y: infoY, w: 1.5, h: 0.15, fontSize: 10, bold: true, color: GOLD });
   }
 
   // Row 2: Dealer Code | ID | City
-  infoY += 0.23;
-  slide.addText('Dealer:', { x: labelX, y: infoY, w: 0.8, h: 0.18, fontSize: 11, bold: true, color: '000000' });
-  slide.addText(store.dealerCode || 'N/A', { x: valueX, y: infoY, w: 1.0, h: 0.18, fontSize: 11, color: '000000' });
-  slide.addText('ID:', { x: rightColX, y: infoY, w: 0.5, h: 0.18, fontSize: 11, bold: true, color: '000000' });
-  slide.addText(store.storeId || store.storeCode || 'N/A', { x: rightValueX, y: infoY, w: 1.2, h: 0.18, fontSize: 11, color: '000000' });
+  infoY += 0.18;
+  slide.addText('Dealer:', { x: labelX, y: infoY, w: 0.8, h: 0.15, fontSize: 10, bold: true, color: '000000' });
+  slide.addText(store.dealerCode || 'N/A', { x: valueX, y: infoY, w: 1.0, h: 0.15, fontSize: 10, color: '000000' });
+  slide.addText('ID:', { x: midColX, y: infoY, w: 0.5, h: 0.15, fontSize: 10, bold: true, color: '000000' });
+  slide.addText(store.storeId || store.storeCode || 'N/A', { x: midValueX, y: infoY, w: 1.2, h: 0.15, fontSize: 10, color: '000000' });
+  slide.addText('City:', { x: rightColX, y: infoY, w: 0.5, h: 0.15, fontSize: 10, bold: true, color: '000000' });
+  slide.addText(store.location?.city || 'N/A', { x: rightValueX, y: infoY, w: 1.2, h: 0.15, fontSize: 10, color: '000000' });
 
-  // Row 3: City | State
-  infoY += 0.23;
-  slide.addText('City:', { x: labelX, y: infoY, w: 0.8, h: 0.18, fontSize: 11, bold: true, color: '000000' });
-  slide.addText(store.location?.city || 'N/A', { x: valueX, y: infoY, w: 1.0, h: 0.18, fontSize: 11, color: '000000' });
-  slide.addText('State:', { x: rightColX, y: infoY, w: 0.5, h: 0.18, fontSize: 11, bold: true, color: '000000' });
-  slide.addText(store.location?.state || 'N/A', { x: rightValueX, y: infoY, w: 1.2, h: 0.18, fontSize: 11, color: '000000' });
-
-  // Row 4: Address (spanning both columns)
-  infoY += 0.23;
-  slide.addText('Address:', { x: labelX, y: infoY, w: 0.8, h: 0.18, fontSize: 11, bold: true, color: '000000' });
-  slide.addText(store.location?.address || 'N/A', { x: valueX, y: infoY, w: 3.5, h: 0.18, fontSize: 11, color: '000000' });
+  // Row 3: State | Address
+  infoY += 0.18;
+  slide.addText('State:', { x: labelX, y: infoY, w: 0.8, h: 0.15, fontSize: 10, bold: true, color: '000000' });
+  slide.addText(store.location?.state || 'N/A', { x: valueX, y: infoY, w: 1.0, h: 0.15, fontSize: 10, color: '000000' });
+  slide.addText('Address:', { x: midColX, y: infoY, w: 0.8, h: 0.15, fontSize: 10, bold: true, color: '000000' });
+  slide.addText(store.location?.address || 'N/A', { x: midValueX, y: infoY, w: 4.5, h: 0.15, fontSize: 10, color: '000000' });
 
   // Separator line after header section
   slide.addShape(prs.ShapeType.line, {
-    x: 0, y: 1.78, w: 11.69, h: 0,
+    x: 0, y: 1.65, w: 11.69, h: 0,
     line: { color: GOLD, width: 1.5 }
   });
 };
@@ -187,13 +186,13 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         addStoreDetailsHeader(initialSlide, prs, store, type);
 
         // 4 Initial Photos in 2x2 grid using full 80% bottom space
-        const gridStartY = 1.9;
-        const availableWidth = 11.69 - 0.6; // Full slide width minus margins
-        const availableHeight = 8.27 - gridStartY - 0.4; // 80% bottom space
-        const imgSize = Math.min((availableWidth - 0.3) / 2, (availableHeight - 0.3) / 2); // Square images
+        const gridStartY = 1.75;
+        const availableWidth = 11.69 - 0.4; // Full slide width minus margins
+        const availableHeight = 8.27 - gridStartY - 0.3; // 80% bottom space
+        const imgSize = Math.min((availableWidth - 0.2) / 2, (availableHeight - 0.2) / 2); // Square images
         const spacingX = (availableWidth - (imgSize * 2)) / 3; // Equal spacing
         const spacingY = (availableHeight - (imgSize * 2)) / 3;
-        const startX = 0.3 + spacingX;
+        const startX = 0.2 + spacingX;
 
         for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 4); i++) {
           const row = Math.floor(i / 2);
@@ -223,7 +222,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         const boardSlide = prs.addSlide();
         addStoreDetailsHeader(boardSlide, prs, store, type, reccePhotos.length > 1 ? `Board ${boardIndex + 1}/${reccePhotos.length}` : undefined);
 
-        const contentStartY = 1.9;
+        const contentStartY = 1.75;
 
         if (type === "installation" && currentReccePhoto && store.installation?.photos) {
           const installPhotos = store.installation.photos.filter((p: any) => p.reccePhotoIndex === boardIndex);
@@ -291,13 +290,13 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             // Measurements
             if (currentReccePhoto.measurements) {
               boardSlide.addShape(prs.ShapeType.rect, {
-                x: 0.2, y: contentStartY + imgHeight + 0.4, w: 11.29, h: 0.3,
+                x: 0.2, y: contentStartY + imgHeight + 0.38, w: 11.29, h: 0.25,
                 fill: { color: 'FFFFFF' },
                 line: { color: GOLD, width: 1 }
               });
               boardSlide.addText(`Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`, {
-                x: 0.2, y: contentStartY + imgHeight + 0.4, w: 11.29, h: 0.3,
-                fontSize: 11, bold: true, color: '1F2937', align: 'center', valign: 'middle'
+                x: 0.2, y: contentStartY + imgHeight + 0.38, w: 11.29, h: 0.25,
+                fontSize: 10, bold: true, color: '1F2937', align: 'center', valign: 'middle'
               });
             }
 
@@ -305,12 +304,12 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             if (currentReccePhoto.elements && currentReccePhoto.elements.length > 0) {
               const elementsText = currentReccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
               boardSlide.addShape(prs.ShapeType.rect, {
-                x: 0.2, y: contentStartY + imgHeight + 0.75, w: 11.29, h: 0.25,
+                x: 0.2, y: contentStartY + imgHeight + 0.66, w: 11.29, h: 0.22,
                 fill: { color: 'FEF3C7' },
                 line: { color: GOLD, width: 1 }
               });
               boardSlide.addText(`Elements: ${elementsText}`, {
-                x: 0.2, y: contentStartY + imgHeight + 0.75, w: 11.29, h: 0.25,
+                x: 0.2, y: contentStartY + imgHeight + 0.66, w: 11.29, h: 0.22,
                 fontSize: 9, bold: true, color: '1F2937', align: 'center', valign: 'middle'
               });
             }
@@ -363,13 +362,13 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             // Measurements
             if (currentReccePhoto.measurements) {
               boardSlide.addShape(prs.ShapeType.rect, {
-                x: 0.2, y: contentStartY + imgHeight + 0.45, w: 11.29, h: 0.3,
+                x: 0.2, y: contentStartY + imgHeight + 0.43, w: 11.29, h: 0.25,
                 fill: { color: 'FFFFFF' },
                 line: { color: GOLD, width: 1 }
               });
               boardSlide.addText(`Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`, {
-                x: 0.2, y: contentStartY + imgHeight + 0.45, w: 11.29, h: 0.3,
-                fontSize: 11, bold: true, color: '1F2937', align: 'center', valign: 'middle'
+                x: 0.2, y: contentStartY + imgHeight + 0.43, w: 11.29, h: 0.25,
+                fontSize: 10, bold: true, color: '1F2937', align: 'center', valign: 'middle'
               });
             }
 
@@ -377,12 +376,12 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             if (currentReccePhoto.elements && currentReccePhoto.elements.length > 0) {
               const elementsText = currentReccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
               boardSlide.addShape(prs.ShapeType.rect, {
-                x: 0.2, y: contentStartY + imgHeight + 0.8, w: 11.29, h: 0.25,
+                x: 0.2, y: contentStartY + imgHeight + 0.71, w: 11.29, h: 0.22,
                 fill: { color: 'FEF3C7' },
                 line: { color: GOLD, width: 1 }
               });
               boardSlide.addText(`Elements: ${elementsText}`, {
-                x: 0.2, y: contentStartY + imgHeight + 0.8, w: 11.29, h: 0.25,
+                x: 0.2, y: contentStartY + imgHeight + 0.71, w: 11.29, h: 0.22,
                 fontSize: 9, bold: true, color: '1F2937', align: 'center', valign: 'middle'
               });
             }
@@ -401,13 +400,13 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           // Measurements
           if (currentReccePhoto.measurements) {
             boardSlide.addShape(prs.ShapeType.rect, {
-              x: 0.3, y: contentStartY + 4.85, w: 11.09, h: 0.3,
+              x: 0.3, y: contentStartY + 4.83, w: 11.09, h: 0.25,
               fill: { color: 'FFFFFF' },
               line: { color: GOLD, width: 1 }
             });
             boardSlide.addText(`Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`, {
-              x: 0.3, y: contentStartY + 4.85, w: 11.09, h: 0.3,
-              fontSize: 11, bold: true, color: '1F2937', align: 'center', valign: 'middle'
+              x: 0.3, y: contentStartY + 4.83, w: 11.09, h: 0.25,
+              fontSize: 10, bold: true, color: '1F2937', align: 'center', valign: 'middle'
             });
           }
 
@@ -415,12 +414,12 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           if (currentReccePhoto.elements && currentReccePhoto.elements.length > 0) {
             const elementsText = currentReccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
             boardSlide.addShape(prs.ShapeType.rect, {
-              x: 0.3, y: contentStartY + 5.2, w: 11.09, h: 0.25,
+              x: 0.3, y: contentStartY + 5.11, w: 11.09, h: 0.22,
               fill: { color: 'FEF3C7' },
               line: { color: GOLD, width: 1 }
             });
             boardSlide.addText(`Elements: ${elementsText}`, {
-              x: 0.3, y: contentStartY + 5.2, w: 11.09, h: 0.25,
+              x: 0.3, y: contentStartY + 5.11, w: 11.09, h: 0.22,
               fontSize: 9, bold: true, color: '1F2937', align: 'center', valign: 'middle'
             });
           }
