@@ -97,17 +97,24 @@ const addStoreDetailsHeader = (slide: any, prs: any, store: any, type: 'recce' |
     slide.addText('✓ COMPLETED', { x: rightColX, y: infoY, w: 1.8, h: 0.18, fontSize: 11, bold: true, color: GOLD });
   }
 
-  // Row 2: ID | City
+  // Row 2: Dealer Code | ID | City
   infoY += 0.23;
-  slide.addText('ID:', { x: labelX, y: infoY, w: 1, h: 0.18, fontSize: 11, bold: true, color: '000000' });
-  slide.addText(store.storeId || store.storeCode || 'N/A', { x: valueX, y: infoY, w: 1.8, h: 0.18, fontSize: 11, color: '000000' });
-  slide.addText('City:', { x: rightColX, y: infoY, w: 0.8, h: 0.18, fontSize: 11, bold: true, color: '000000' });
-  slide.addText(store.location?.city || 'N/A', { x: rightValueX, y: infoY, w: 1.2, h: 0.18, fontSize: 11, color: '000000' });
+  slide.addText('Dealer:', { x: labelX, y: infoY, w: 0.8, h: 0.18, fontSize: 11, bold: true, color: '000000' });
+  slide.addText(store.dealerCode || 'N/A', { x: valueX, y: infoY, w: 1.0, h: 0.18, fontSize: 11, color: '000000' });
+  slide.addText('ID:', { x: rightColX, y: infoY, w: 0.5, h: 0.18, fontSize: 11, bold: true, color: '000000' });
+  slide.addText(store.storeId || store.storeCode || 'N/A', { x: rightValueX, y: infoY, w: 1.2, h: 0.18, fontSize: 11, color: '000000' });
 
-  // Row 3: Address
+  // Row 3: City | State
   infoY += 0.23;
-  slide.addText('Address:', { x: labelX, y: infoY, w: 1, h: 0.18, fontSize: 11, bold: true, color: '000000' });
-  slide.addText(store.location?.address || 'N/A', { x: valueX, y: infoY, w: 4.0, h: 0.18, fontSize: 11, color: '000000' });
+  slide.addText('City:', { x: labelX, y: infoY, w: 0.8, h: 0.18, fontSize: 11, bold: true, color: '000000' });
+  slide.addText(store.location?.city || 'N/A', { x: valueX, y: infoY, w: 1.0, h: 0.18, fontSize: 11, color: '000000' });
+  slide.addText('State:', { x: rightColX, y: infoY, w: 0.5, h: 0.18, fontSize: 11, bold: true, color: '000000' });
+  slide.addText(store.location?.state || 'N/A', { x: rightValueX, y: infoY, w: 1.2, h: 0.18, fontSize: 11, color: '000000' });
+
+  // Row 4: Address (spanning both columns)
+  infoY += 0.23;
+  slide.addText('Address:', { x: labelX, y: infoY, w: 0.8, h: 0.18, fontSize: 11, bold: true, color: '000000' });
+  slide.addText(store.location?.address || 'N/A', { x: valueX, y: infoY, w: 3.5, h: 0.18, fontSize: 11, color: '000000' });
 
   // Separator line after header section
   slide.addShape(prs.ShapeType.line, {
@@ -281,6 +288,33 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
               fontSize: 12, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle'
             });
 
+            // Measurements
+            if (currentReccePhoto.measurements) {
+              boardSlide.addShape(prs.ShapeType.rect, {
+                x: 0.2, y: contentStartY + imgHeight + 0.4, w: 11.29, h: 0.3,
+                fill: { color: 'FFFFFF' },
+                line: { color: GOLD, width: 1 }
+              });
+              boardSlide.addText(`Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`, {
+                x: 0.2, y: contentStartY + imgHeight + 0.4, w: 11.29, h: 0.3,
+                fontSize: 11, bold: true, color: '1F2937', align: 'center', valign: 'middle'
+              });
+            }
+
+            // Elements
+            if (currentReccePhoto.elements && currentReccePhoto.elements.length > 0) {
+              const elementsText = currentReccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
+              boardSlide.addShape(prs.ShapeType.rect, {
+                x: 0.2, y: contentStartY + imgHeight + 0.75, w: 11.29, h: 0.25,
+                fill: { color: 'FEF3C7' },
+                line: { color: GOLD, width: 1 }
+              });
+              boardSlide.addText(`Elements: ${elementsText}`, {
+                x: 0.2, y: contentStartY + imgHeight + 0.75, w: 11.29, h: 0.25,
+                fontSize: 9, bold: true, color: '1F2937', align: 'center', valign: 'middle'
+              });
+            }
+
           } else {
             // Two images: Before + After
             const imgWidth = 5.5;
@@ -325,6 +359,33 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
               x: 6.0, y: contentStartY + imgHeight, w: imgWidth, h: 0.4,
               fontSize: 14, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle'
             });
+
+            // Measurements
+            if (currentReccePhoto.measurements) {
+              boardSlide.addShape(prs.ShapeType.rect, {
+                x: 0.2, y: contentStartY + imgHeight + 0.45, w: 11.29, h: 0.3,
+                fill: { color: 'FFFFFF' },
+                line: { color: GOLD, width: 1 }
+              });
+              boardSlide.addText(`Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`, {
+                x: 0.2, y: contentStartY + imgHeight + 0.45, w: 11.29, h: 0.3,
+                fontSize: 11, bold: true, color: '1F2937', align: 'center', valign: 'middle'
+              });
+            }
+
+            // Elements
+            if (currentReccePhoto.elements && currentReccePhoto.elements.length > 0) {
+              const elementsText = currentReccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
+              boardSlide.addShape(prs.ShapeType.rect, {
+                x: 0.2, y: contentStartY + imgHeight + 0.8, w: 11.29, h: 0.25,
+                fill: { color: 'FEF3C7' },
+                line: { color: GOLD, width: 1 }
+              });
+              boardSlide.addText(`Elements: ${elementsText}`, {
+                x: 0.2, y: contentStartY + imgHeight + 0.8, w: 11.29, h: 0.25,
+                fontSize: 9, bold: true, color: '1F2937', align: 'center', valign: 'middle'
+              });
+            }
           }
 
         } else if (type === "recce" && currentReccePhoto) {
@@ -336,6 +397,33 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
               boardSlide.addImage({ data: base64, x: 0.3, y: contentStartY, w: 11.09, h: 4.8 });
             }
           } catch (e) { }
+
+          // Measurements
+          if (currentReccePhoto.measurements) {
+            boardSlide.addShape(prs.ShapeType.rect, {
+              x: 0.3, y: contentStartY + 4.85, w: 11.09, h: 0.3,
+              fill: { color: 'FFFFFF' },
+              line: { color: GOLD, width: 1 }
+            });
+            boardSlide.addText(`Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`, {
+              x: 0.3, y: contentStartY + 4.85, w: 11.09, h: 0.3,
+              fontSize: 11, bold: true, color: '1F2937', align: 'center', valign: 'middle'
+            });
+          }
+
+          // Elements
+          if (currentReccePhoto.elements && currentReccePhoto.elements.length > 0) {
+            const elementsText = currentReccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
+            boardSlide.addShape(prs.ShapeType.rect, {
+              x: 0.3, y: contentStartY + 5.2, w: 11.09, h: 0.25,
+              fill: { color: 'FEF3C7' },
+              line: { color: GOLD, width: 1 }
+            });
+            boardSlide.addText(`Elements: ${elementsText}`, {
+              x: 0.3, y: contentStartY + 5.2, w: 11.09, h: 0.25,
+              fontSize: 9, bold: true, color: '1F2937', align: 'center', valign: 'middle'
+            });
+          }
         }
       }
     }

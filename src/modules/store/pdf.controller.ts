@@ -30,16 +30,16 @@ const drawStoreDetailsHeader = (doc: any, store: any, type: 'recce' | 'installat
     .text('ELORA CREATIVE ART', 650, 12, { width: 150, align: 'right' })
     .text('www.eloracreativeart.in', 650, 24, { width: 150, align: 'right' });
 
-  // Separator line
+  // Separator line - use consistent yellow branding color
   doc.save();
-  doc.strokeColor('#B45309').lineWidth(2).moveTo(30, 50).lineTo(770, 50).stroke();
+  doc.strokeColor('#EAB308').lineWidth(2).moveTo(30, 50).lineTo(770, 50).stroke();
   doc.restore();
 
   // Store details box (full width, compact, top 20% area)
   const boxY = 58;
   const boxH = 72;
   doc.save();
-  doc.rect(30, boxY, 740, boxH).strokeColor('#B45309').lineWidth(1).stroke();
+  doc.rect(30, boxY, 740, boxH).strokeColor('#EAB308').lineWidth(1).stroke();
   doc.restore();
 
   const dateValue = type === "recce"
@@ -64,18 +64,17 @@ const drawStoreDetailsHeader = (doc: any, store: any, type: 'recce' | 'installat
   doc.font('Helvetica-Bold').text('State:', 310, y, { width: 80 });
   doc.font('Helvetica').text(store.location?.state || 'N/A', 390, y, { width: 200 });
 
-  y += 18;
-  doc.font('Helvetica-Bold').text('Address:', 40, y, { width: 80 });
-  doc.font('Helvetica').text(store.location?.address || 'N/A', 120, y, { width: 640 });
+  doc.font('Helvetica-Bold').text('Address:', 600, y, { width: 80 });
+  doc.font('Helvetica').text(store.location?.address || 'N/A', 680, y, { width: 90 });
 
   if (type === 'installation') {
     y += 18;
     doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 600, y, { width: 150 });
   }
 
-  // Bottom separator of header area
+  // Bottom separator of header area - use consistent yellow branding color
   doc.save();
-  doc.strokeColor('#B45309').lineWidth(1).moveTo(30, boxY + boxH + 4).lineTo(770, boxY + boxH + 4).stroke();
+  doc.strokeColor('#EAB308').lineWidth(1).moveTo(30, boxY + boxH + 4).lineTo(770, boxY + boxH + 4).stroke();
   doc.restore();
 
   return boxY + boxH + 8; // returns content start Y
@@ -153,12 +152,18 @@ export const generateReccePDF = async (req: Request, res: Response) => {
         const y = photoY + row * (photoHeight + spacingY);
 
         doc.save();
-        doc.rect(x, y, photoWidth, photoHeight).strokeColor('#B45309').lineWidth(2).stroke();
+        doc.rect(x, y, photoWidth, photoHeight).strokeColor('#EAB308').lineWidth(2).stroke();
         doc.restore();
 
-        const photoPath = path.join(process.cwd(), store.recce.initialPhotos[i]);
-        if (fs.existsSync(photoPath)) {
-          doc.image(photoPath, x + 5, y + 5, { width: photoWidth - 10, height: photoHeight - 10, fit: [photoWidth - 10, photoHeight - 10] });
+        // Load image from URL instead of local path
+        try {
+          const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
+          const buffer = await loadImageFromUrl(photoUrl);
+          if (buffer) {
+            doc.image(buffer, x + 5, y + 5, { width: photoWidth - 10, height: photoHeight - 10, fit: [photoWidth - 10, photoHeight - 10] });
+          }
+        } catch (e) {
+          console.log(`Failed to load initial photo ${i + 1}`);
         }
       }
     }
@@ -175,18 +180,24 @@ export const generateReccePDF = async (req: Request, res: Response) => {
         const imgHeight = 380;
 
         doc.save();
-        doc.rect(40, imgY, imgWidth, imgHeight).strokeColor('#B45309').lineWidth(2).stroke();
+        doc.rect(40, imgY, imgWidth, imgHeight).strokeColor('#EAB308').lineWidth(2).stroke();
         doc.restore();
 
-        const photoPath = path.join(process.cwd(), reccePhoto.photo);
-        if (fs.existsSync(photoPath)) {
-          doc.image(photoPath, 45, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
+        // Load image from URL instead of local path
+        try {
+          const photoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+          const buffer = await loadImageFromUrl(photoUrl);
+          if (buffer) {
+            doc.image(buffer, 45, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
+          }
+        } catch (e) {
+          console.log('Failed to load recce photo');
         }
 
         // Measurements
         const measureY = imgY + imgHeight + 8;
         doc.save();
-        doc.rect(40, measureY, imgWidth, 25).fillOpacity(1).fillAndStroke('#FFFFFF', '#B45309');
+        doc.rect(40, measureY, imgWidth, 25).fillOpacity(1).fillAndStroke('#FFFFFF', '#EAB308');
         doc.restore();
         doc.fillColor('#1F2937').fontSize(11).font('Helvetica-Bold')
           .text(`Measurements: ${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, 40, measureY + 7, { width: imgWidth, align: 'center' });
@@ -196,7 +207,7 @@ export const generateReccePDF = async (req: Request, res: Response) => {
           const elementsText = reccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
           const elemY = measureY + 28;
           doc.save();
-          doc.rect(40, elemY, imgWidth, 22).fillOpacity(1).fillAndStroke('#FEF3C7', '#B45309');
+          doc.rect(40, elemY, imgWidth, 22).fillOpacity(1).fillAndStroke('#FEF3C7', '#EAB308');
           doc.restore();
           doc.fillColor('#1F2937').fontSize(9).font('Helvetica-Bold')
             .text(`Elements: ${elementsText}`, 40, elemY + 6, { width: imgWidth, align: 'center' });
@@ -252,25 +263,33 @@ export const generateInstallationPDF = async (req: Request, res: Response) => {
       const contentStartY = drawStoreDetailsHeader(doc, store, 'installation');
 
       const photoY = contentStartY;
-      const photoWidth = 170;
-      const photoHeight = 130;
-      const photosPerRow = 4;
-      const spacing = 20;
+      const availableWidth = doc.page.width - 80;
+      const availableHeight = doc.page.height - contentStartY - 60;
+      const photoWidth = (availableWidth - 30) / 2;
+      const photoHeight = (availableHeight - 30) / 2;
+      const spacingX = 30;
+      const spacingY = 30;
       const gridStartX = 40;
 
       for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 4); i++) {
-        const col = i % photosPerRow;
-        const row = Math.floor(i / photosPerRow);
-        const x = gridStartX + col * (photoWidth + spacing);
-        const y = photoY + row * (photoHeight + spacing);
+        const col = i % 2;
+        const row = Math.floor(i / 2);
+        const x = gridStartX + col * (photoWidth + spacingX);
+        const y = photoY + row * (photoHeight + spacingY);
 
         doc.save();
-        doc.rect(x, y, photoWidth, photoHeight).strokeColor('#B45309').lineWidth(1).stroke();
+        doc.rect(x, y, photoWidth, photoHeight).strokeColor('#EAB308').lineWidth(2).stroke();
         doc.restore();
 
-        const photoPath = path.join(process.cwd(), store.recce.initialPhotos[i]);
-        if (fs.existsSync(photoPath)) {
-          doc.image(photoPath, x + 5, y + 5, { width: photoWidth - 10, height: photoHeight - 10, fit: [photoWidth - 10, photoHeight - 10] });
+        // Load image from URL instead of local path
+        try {
+          const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
+          const buffer = await loadImageFromUrl(photoUrl);
+          if (buffer) {
+            doc.image(buffer, x + 5, y + 5, { width: photoWidth - 10, height: photoHeight - 10, fit: [photoWidth - 10, photoHeight - 10] });
+          }
+        } catch (e) {
+          console.log(`Failed to load initial photo ${i + 1}`);
         }
       }
     }
@@ -328,7 +347,7 @@ export const generateInstallationPDF = async (req: Request, res: Response) => {
         // Measurements
         const measureY = labelY + 32;
         doc.save();
-        doc.rect(40, measureY, imgWidth * 2 + spacing, 22).fillOpacity(1).fillAndStroke('#FFFFFF', '#B45309');
+        doc.rect(40, measureY, imgWidth * 2 + spacing, 22).fillOpacity(1).fillAndStroke('#FFFFFF', '#EAB308');
         doc.restore();
         doc.fillColor('#1F2937').fontSize(10).font('Helvetica-Bold')
           .text(`Measurements: ${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, 40, measureY + 6, { width: imgWidth * 2 + spacing, align: 'center' });
@@ -338,7 +357,7 @@ export const generateInstallationPDF = async (req: Request, res: Response) => {
           const elementsText = reccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
           const elemY = measureY + 25;
           doc.save();
-          doc.rect(40, elemY, imgWidth * 2 + spacing, 20).fillOpacity(1).fillAndStroke('#FEF3C7', '#B45309');
+          doc.rect(40, elemY, imgWidth * 2 + spacing, 20).fillOpacity(1).fillAndStroke('#FEF3C7', '#EAB308');
           doc.restore();
           doc.fillColor('#1F2937').fontSize(9).font('Helvetica-Bold')
             .text(`Elements: ${elementsText}`, 40, elemY + 5, { width: imgWidth * 2 + spacing, align: 'center' });
@@ -423,12 +442,18 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
           const y = photoY + row * (photoHeight + spacingY);
 
           doc.save();
-          doc.rect(x, y, photoWidth, photoHeight).strokeColor('#B45309').lineWidth(2).stroke();
+          doc.rect(x, y, photoWidth, photoHeight).strokeColor('#EAB308').lineWidth(2).stroke();
           doc.restore();
 
-          const photoPath = path.join(process.cwd(), store.recce.initialPhotos[i]);
-          if (fs.existsSync(photoPath)) {
-            doc.image(photoPath, x + 5, y + 5, { width: photoWidth - 10, height: photoHeight - 10, fit: [photoWidth - 10, photoHeight - 10] });
+          // Load image from URL instead of local path
+          try {
+            const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
+            const buffer = await loadImageFromUrl(photoUrl);
+            if (buffer) {
+              doc.image(buffer, x + 5, y + 5, { width: photoWidth - 10, height: photoHeight - 10, fit: [photoWidth - 10, photoHeight - 10] });
+            }
+          } catch (e) {
+            console.log(`Failed to load initial photo ${i + 1}`);
           }
         }
       }
@@ -531,7 +556,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
           // Measurements
           const measureY = imgY + imgHeight + 30;
           doc.save();
-          doc.rect(30, measureY, doc.page.width - 60, 20).fillOpacity(1).fillAndStroke('#FFFFFF', '#B45309');
+          doc.rect(30, measureY, doc.page.width - 60, 20).fillOpacity(1).fillAndStroke('#FFFFFF', '#EAB308');
           doc.restore();
           doc.fillColor('#1F2937').fontSize(10).font('Helvetica-Bold')
             .text(`Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`, 30, measureY + 5, { width: doc.page.width - 60, align: 'center' });
@@ -541,7 +566,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             const elementsText = currentReccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
             const elemY = measureY + 23;
             doc.save();
-            doc.rect(30, elemY, doc.page.width - 60, 18).fillOpacity(1).fillAndStroke('#FEF3C7', '#B45309');
+            doc.rect(30, elemY, doc.page.width - 60, 18).fillOpacity(1).fillAndStroke('#FEF3C7', '#EAB308');
             doc.restore();
             doc.fillColor('#1F2937').fontSize(9).font('Helvetica-Bold')
               .text(`Elements: ${elementsText}`, 30, elemY + 4, { width: doc.page.width - 60, align: 'center' });
@@ -563,7 +588,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
           // Measurements
           const measureY = imgY + imgHeight + 8;
           doc.save();
-          doc.rect(30, measureY, doc.page.width - 60, 22).fillOpacity(1).fillAndStroke('#FFFFFF', '#B45309');
+          doc.rect(30, measureY, doc.page.width - 60, 22).fillOpacity(1).fillAndStroke('#FFFFFF', '#EAB308');
           doc.restore();
           doc.fillColor('#1F2937').fontSize(10).font('Helvetica-Bold')
             .text(`Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`, 30, measureY + 5, { width: doc.page.width - 60, align: 'center' });
@@ -573,7 +598,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             const elementsText = currentReccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
             const elemY = measureY + 25;
             doc.save();
-            doc.rect(30, elemY, doc.page.width - 60, 18).fillOpacity(1).fillAndStroke('#FEF3C7', '#B45309');
+            doc.rect(30, elemY, doc.page.width - 60, 18).fillOpacity(1).fillAndStroke('#FEF3C7', '#EAB308');
             doc.restore();
             doc.fillColor('#1F2937').fontSize(9).font('Helvetica-Bold')
               .text(`Elements: ${elementsText}`, 30, elemY + 4, { width: doc.page.width - 60, align: 'center' });
