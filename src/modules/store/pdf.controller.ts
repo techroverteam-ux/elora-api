@@ -64,9 +64,6 @@ const drawStoreDetailsHeader = (doc: any, store: any, type: 'recce' | 'installat
   doc.font('Helvetica-Bold').text('State:', 310, y, { width: 80 });
   doc.font('Helvetica').text(store.location?.state || 'N/A', 390, y, { width: 200 });
 
-  doc.font('Helvetica-Bold').text('Date:', 600, y, { width: 60 });
-  doc.font('Helvetica').text(dateValue, 660, y, { width: 100 });
-
   y += 18;
   doc.font('Helvetica-Bold').text('Address:', 40, y, { width: 80 });
   doc.font('Helvetica').text(store.location?.address || 'N/A', 120, y, { width: 640 });
@@ -139,22 +136,24 @@ export const generateReccePDF = async (req: Request, res: Response) => {
       doc.addPage();
       const contentStartY = drawStoreDetailsHeader(doc, store, 'recce');
 
-      // Photo grid area: 80% of page
-      const photoY = contentStartY;
-      const photoWidth = 170;
-      const photoHeight = 130;
-      const photosPerRow = 4;
-      const spacing = 20;
+      // Photo grid area: 80% of page - 2x2 grid using full width
+      const photoY = contentStartY + 20; // Add some spacing
+      const availableWidth = doc.page.width - 80; // Full width minus margins
+      const availableHeight = doc.page.height - contentStartY - 60; // 80% bottom space
+      const photoWidth = (availableWidth - 30) / 2; // 2 photos per row with spacing
+      const photoHeight = (availableHeight - 30) / 2; // 2 rows with spacing
+      const spacingX = 30;
+      const spacingY = 30;
       const gridStartX = 40;
 
       for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 4); i++) {
-        const col = i % photosPerRow;
-        const row = Math.floor(i / photosPerRow);
-        const x = gridStartX + col * (photoWidth + spacing);
-        const y = photoY + row * (photoHeight + spacing);
+        const col = i % 2;
+        const row = Math.floor(i / 2);
+        const x = gridStartX + col * (photoWidth + spacingX);
+        const y = photoY + row * (photoHeight + spacingY);
 
         doc.save();
-        doc.rect(x, y, photoWidth, photoHeight).strokeColor('#B45309').lineWidth(1).stroke();
+        doc.rect(x, y, photoWidth, photoHeight).strokeColor('#B45309').lineWidth(2).stroke();
         doc.restore();
 
         const photoPath = path.join(process.cwd(), store.recce.initialPhotos[i]);
@@ -409,20 +408,22 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
         const contentStartY = drawStoreDetailsHeader(doc, store, type);
 
         const photoY = contentStartY;
-        const photoWidth = 170;
-        const photoHeight = 130;
-        const photosPerRow = 4;
-        const spacing = 20;
+        const availableWidth = doc.page.width - 80;
+        const availableHeight = doc.page.height - contentStartY - 60;
+        const photoWidth = (availableWidth - 30) / 2;
+        const photoHeight = (availableHeight - 30) / 2;
+        const spacingX = 30;
+        const spacingY = 30;
         const gridStartX = 40;
 
         for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 4); i++) {
-          const col = i % photosPerRow;
-          const row = Math.floor(i / photosPerRow);
-          const x = gridStartX + col * (photoWidth + spacing);
-          const y = photoY + row * (photoHeight + spacing);
+          const col = i % 2;
+          const row = Math.floor(i / 2);
+          const x = gridStartX + col * (photoWidth + spacingX);
+          const y = photoY + row * (photoHeight + spacingY);
 
           doc.save();
-          doc.rect(x, y, photoWidth, photoHeight).strokeColor('#B45309').lineWidth(1).stroke();
+          doc.rect(x, y, photoWidth, photoHeight).strokeColor('#B45309').lineWidth(2).stroke();
           doc.restore();
 
           const photoPath = path.join(process.cwd(), store.recce.initialPhotos[i]);

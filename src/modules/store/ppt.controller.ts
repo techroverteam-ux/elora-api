@@ -104,12 +104,7 @@ const addStoreDetailsHeader = (slide: any, prs: any, store: any, type: 'recce' |
   slide.addText('City:', { x: rightColX, y: infoY, w: 0.8, h: 0.18, fontSize: 11, bold: true, color: '000000' });
   slide.addText(store.location?.city || 'N/A', { x: rightValueX, y: infoY, w: 1.2, h: 0.18, fontSize: 11, color: '000000' });
 
-  // Row 3: Date
-  infoY += 0.23;
-  slide.addText('Date:', { x: labelX, y: infoY, w: 1, h: 0.18, fontSize: 11, bold: true, color: '000000' });
-  slide.addText(dateValue, { x: valueX, y: infoY, w: 1.8, h: 0.18, fontSize: 11, color: '000000' });
-
-  // Row 4: Address
+  // Row 3: Address
   infoY += 0.23;
   slide.addText('Address:', { x: labelX, y: infoY, w: 1, h: 0.18, fontSize: 11, bold: true, color: '000000' });
   slide.addText(store.location?.address || 'N/A', { x: valueX, y: infoY, w: 4.0, h: 0.18, fontSize: 11, color: '000000' });
@@ -184,28 +179,32 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         const initialSlide = prs.addSlide();
         addStoreDetailsHeader(initialSlide, prs, store, type);
 
-        // 4 Initial Photos in 2x2 grid (bottom 80%)
+        // 4 Initial Photos in 2x2 grid using full 80% bottom space
         const gridStartY = 1.9;
-        const imgSize = 2.6;
-        const spacing = 0.2;
+        const availableWidth = 11.69 - 0.6; // Full slide width minus margins
+        const availableHeight = 8.27 - gridStartY - 0.4; // 80% bottom space
+        const imgSize = Math.min((availableWidth - 0.3) / 2, (availableHeight - 0.3) / 2); // Square images
+        const spacingX = (availableWidth - (imgSize * 2)) / 3; // Equal spacing
+        const spacingY = (availableHeight - (imgSize * 2)) / 3;
+        const startX = 0.3 + spacingX;
 
         for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 4); i++) {
           const row = Math.floor(i / 2);
           const col = i % 2;
-          const x = 0.3 + col * (imgSize + spacing);
-          const y = gridStartY + row * (imgSize + spacing);
+          const x = startX + col * (imgSize + spacingX);
+          const y = gridStartY + spacingY + row * (imgSize + spacingY);
 
           initialSlide.addShape(prs.ShapeType.rect, {
             x: x, y: y, w: imgSize, h: imgSize,
             fill: { color: 'FFFFFF' },
-            line: { color: GOLD, width: 1.5 }
+            line: { color: GOLD, width: 2 }
           });
 
           try {
             const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
             const base64 = await loadImageBase64(photoUrl);
             if (base64) {
-              initialSlide.addImage({ data: base64, x: x + 0.03, y: y + 0.03, w: imgSize - 0.06, h: imgSize - 0.06 });
+              initialSlide.addImage({ data: base64, x: x + 0.05, y: y + 0.05, w: imgSize - 0.1, h: imgSize - 0.1 });
             }
           } catch (e) { }
         }
