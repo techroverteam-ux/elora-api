@@ -509,12 +509,14 @@ export const assignStoresBulk = async (req: Request | any, res: Response) => {
         "installation.assignedDate": new Date(),
         currentStatus: StoreStatus.INSTALLATION_ASSIGNED,
       };
-      // For installation, only allow stores with approved recce (not rejected)
+      // For installation, only allow stores with approved recce (not rejected) AND at least one approved photo
       validationQuery = {
         _id: { $in: storeIds },
         currentStatus: StoreStatus.RECCE_APPROVED,
         // Explicitly exclude rejected recce stores
-        $nor: [{ currentStatus: StoreStatus.RECCE_REJECTED }]
+        $nor: [{ currentStatus: StoreStatus.RECCE_REJECTED }],
+        // Ensure there are approved recce photos
+        "recce.approvedPhotosCount": { $gt: 0 }
       };
     } else {
       return res.status(400).json({ message: "Invalid assignment stage" });
@@ -1215,6 +1217,7 @@ export const reviewReccePhoto = async (req: Request | any, res: Response) => {
       store.recce.reccePhotos[photoIdx].rejectionReason = rejectionReason;
     }
 
+    // Update photo counts and overall status
     const approved = store.recce.reccePhotos.filter(p => p.approvalStatus === "APPROVED").length;
     const rejected = store.recce.reccePhotos.filter(p => p.approvalStatus === "REJECTED").length;
     const pending = store.recce.reccePhotos.filter(p => !p.approvalStatus || p.approvalStatus === "PENDING").length;
@@ -1223,15 +1226,19 @@ export const reviewReccePhoto = async (req: Request | any, res: Response) => {
     store.recce.rejectedPhotosCount = rejected;
     store.recce.pendingPhotosCount = pending;
 
+    // NEW LOGIC: If at least one photo is approved and no pending photos, mark as APPROVED
+    // This allows installation assignment even if some photos are rejected
     if (approved > 0 && pending === 0) {
       store.currentStatus = StoreStatus.RECCE_APPROVED;
     } else if (approved === 0 && rejected === store.recce.reccePhotos.length) {
+      // Only mark as rejected if ALL photos are rejected
       store.currentStatus = StoreStatus.RECCE_REJECTED;
       // Clear installation assignment if all photos are rejected
       store.workflow.installationAssignedTo = undefined;
       store.workflow.installationAssignedBy = undefined;
       store.installation = undefined;
     } else {
+      // Still has pending photos or mixed status
       store.currentStatus = StoreStatus.RECCE_SUBMITTED;
     }
 
@@ -1301,14 +1308,18 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
       }
     }
 
-    // Filter only approved recce photos
+    // Filter only approved recce photos for installation
     const approvedReccePhotos = store.recce?.reccePhotos?.filter(
-      p => p.approvalStatus === "APPROVED"
+      (p, idx) => p.approvalStatus === "APPROVED"
     ) || [];
 
     if (approvedReccePhotos.length === 0) {
-      return res.status(400).json({ message: "No approved recce photos found. Cannot submit installation." });
+      return res.status(400).json({ 
+        message: "No approved recce photos found. Cannot submit installation. Please ensure at least one recce photo is approved." 
+      });
     }
+
+    console.log(`[DEBUG] Found ${approvedReccePhotos.length} approved recce photos out of ${store.recce?.reccePhotos?.length || 0} total photos`);
 
     const userName = req.user?.name || req.user?.email?.split('@')[0] || "Unknown_User";
     console.log(`[DEBUG] Installation user - Name: ${req.user?.name}, Email: ${req.user?.email}, Using: ${userName}`);
@@ -1323,13 +1334,11 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
 
       // Validate that the reccePhotoIndex refers to an approved photo
       const originalRecceIndex = photoData.reccePhotoIndex;
-      const approvedIndex = store.recce?.reccePhotos?.findIndex(
-        (p, idx) => idx === originalRecceIndex && p.approvalStatus === "APPROVED"
-      );
-
-      if (approvedIndex === -1) {
+      const reccePhoto = store.recce?.reccePhotos?.[originalRecceIndex];
+      
+      if (!reccePhoto || reccePhoto.approvalStatus !== "APPROVED") {
         return res.status(400).json({ 
-          message: `Recce photo at index ${originalRecceIndex} is not approved or does not exist.` 
+          message: `Recce photo at index ${originalRecceIndex} is not approved or does not exist. Only approved recce photos can be installed.` 
         });
       }
 
