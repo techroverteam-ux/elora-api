@@ -291,8 +291,30 @@ export const getAllStores = async (req: Request | any, res: Response) => {
       if (status.includes(",")) {
         const statuses = status.split(",").map((s: string) => s.trim());
         query.currentStatus = { $in: statuses };
+        
+        // If installation statuses are requested, ensure recce is not rejected
+        const installationStatuses = ["INSTALLATION_ASSIGNED", "INSTALLATION_SUBMITTED", "COMPLETED"];
+        const hasInstallationStatus = statuses.some((s: string) => installationStatuses.includes(s));
+        if (hasInstallationStatus) {
+          // Exclude stores with rejected recce
+          query.currentStatus = { 
+            $in: statuses,
+            $ne: "RECCE_REJECTED"
+          };
+        }
       } else {
         query.currentStatus = status;
+        
+        // If single installation status is requested, ensure recce is not rejected
+        const installationStatuses = ["INSTALLATION_ASSIGNED", "INSTALLATION_SUBMITTED", "COMPLETED"];
+        if (installationStatuses.includes(status)) {
+          query.$and = [
+            ...(query.$and || []),
+            { currentStatus: status },
+            { currentStatus: { $ne: "RECCE_REJECTED" } }
+          ];
+          delete query.currentStatus; // Remove the direct assignment since we're using $and
+        }
       }
     }
 
@@ -465,6 +487,7 @@ export const assignStoresBulk = async (req: Request | any, res: Response) => {
 
     const assignedBy = req.user._id; // Track who assigned the task
     let updateData = {};
+    let validationQuery = {};
 
     // LOGIC: Handle Recce vs Installation Assignment
     if (stage === "RECCE") {
@@ -474,6 +497,11 @@ export const assignStoresBulk = async (req: Request | any, res: Response) => {
         "recce.assignedDate": new Date(),
         currentStatus: StoreStatus.RECCE_ASSIGNED,
       };
+      // For recce, we can assign stores that are uploaded or manually added
+      validationQuery = {
+        _id: { $in: storeIds },
+        currentStatus: { $in: [StoreStatus.UPLOADED, StoreStatus.MANUALLY_ADDED] }
+      };
     } else if (stage === "INSTALLATION") {
       updateData = {
         "workflow.installationAssignedTo": userId,
@@ -481,19 +509,44 @@ export const assignStoresBulk = async (req: Request | any, res: Response) => {
         "installation.assignedDate": new Date(),
         currentStatus: StoreStatus.INSTALLATION_ASSIGNED,
       };
+      // For installation, only allow stores with approved recce (not rejected)
+      validationQuery = {
+        _id: { $in: storeIds },
+        currentStatus: StoreStatus.RECCE_APPROVED,
+        // Explicitly exclude rejected recce stores
+        $nor: [{ currentStatus: StoreStatus.RECCE_REJECTED }]
+      };
     } else {
       return res.status(400).json({ message: "Invalid assignment stage" });
     }
 
-    // Execute Bulk Update
+    // Validate that all stores are eligible for assignment
+    const eligibleStores = await Store.find(validationQuery).select('_id dealerCode currentStatus');
+    const eligibleStoreIds = eligibleStores.map(s => s._id.toString());
+    const ineligibleStoreIds = storeIds.filter((id: string) => !eligibleStoreIds.includes(id));
+    
+    if (ineligibleStoreIds.length > 0) {
+      // Get details of ineligible stores for better error message
+      const ineligibleStores = await Store.find({ _id: { $in: ineligibleStoreIds } }).select('dealerCode currentStatus');
+      const errorDetails = ineligibleStores.map(s => `${s.dealerCode} (${s.currentStatus})`).join(', ');
+      
+      return res.status(400).json({ 
+        message: `Cannot assign ${stage.toLowerCase()} to some stores. ${stage === 'INSTALLATION' ? 'Only stores with approved recce can be assigned to installation.' : 'Only uploaded stores can be assigned to recce.'}`,
+        ineligibleStores: errorDetails
+      });
+    }
+
+    // Execute Bulk Update only for eligible stores
     const result = await Store.updateMany(
-      { _id: { $in: storeIds } },
+      { _id: { $in: eligibleStoreIds } },
       { $set: updateData },
     );
 
     res.status(200).json({
       message: `Successfully assigned ${result.modifiedCount} stores to user.`,
       result,
+      assignedStores: eligibleStoreIds.length,
+      skippedStores: ineligibleStoreIds.length
     });
   } catch (error: any) {
     res
@@ -967,7 +1020,7 @@ export const generateReccePPT = async (req: Request, res: Response) => {
               x: pos.x,
               y: pos.y,
               w: photoWidth,
-              h: photoHeight,
+              h: photoHeight
             });
             tempFilesToCleanup.push(photoPath);
           }
@@ -1006,7 +1059,7 @@ export const generateReccePPT = async (req: Request, res: Response) => {
               x: 1.0,
               y: 0.8,
               w: 8.0,
-              h: 5.5,
+              h: 5.5
             });
             tempFilesToCleanup.push(photoPath);
           }
@@ -1110,6 +1163,12 @@ export const reviewRecce = async (req: Request, res: Response) => {
       id,
       {
         currentStatus: newStatus,
+        // If rejecting, also clear any installation assignment to prevent confusion
+        ...(status === "REJECTED" && {
+          "workflow.installationAssignedTo": null,
+          "workflow.installationAssignedBy": null,
+          "installation.assignedDate": null,
+        }),
         // Optional: Save admin remarks if rejected so staff knows what to fix
         "recce.notes": remarks
           ? `[Admin]: ${remarks} | ${new Date().toLocaleDateString()}`
@@ -1168,6 +1227,10 @@ export const reviewReccePhoto = async (req: Request | any, res: Response) => {
       store.currentStatus = StoreStatus.RECCE_APPROVED;
     } else if (approved === 0 && rejected === store.recce.reccePhotos.length) {
       store.currentStatus = StoreStatus.RECCE_REJECTED;
+      // Clear installation assignment if all photos are rejected
+      store.workflow.installationAssignedTo = undefined;
+      store.workflow.installationAssignedBy = undefined;
+      store.installation = undefined;
     } else {
       store.currentStatus = StoreStatus.RECCE_SUBMITTED;
     }
@@ -1535,7 +1598,7 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
               x: pos.x,
               y: pos.y,
               w: photoWidth,
-              h: photoHeight,
+              h: photoHeight
             });
             imagePathResolver.cleanupTempFile(photoPath);
           }
@@ -1598,7 +1661,7 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
               x: 0.5,
               y: 1.5,
               w: 4.5,
-              h: 4.5,
+              h: 4.5
             });
           }
         } catch (error) {
@@ -1637,7 +1700,7 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
                 x: 5.3,
                 y: 1.5,
                 w: 4.5,
-                h: 4.5,
+                h: 4.5
               });
             }
           } catch (error) {
@@ -2497,25 +2560,20 @@ export const exportInstallationTasks = async (
   }
 };
 
-export const exportStores = async (req: Request | any, res: Response) => {
+export const exportSelectedStores = async (req: Request | any, res: Response) => {
   try {
-    const ExcelJS = require("exceljs");
-    const {
-      status,
-      search,
-      city,
-      clientCode,
-      clientName,
-      zone,
-      state,
-      district,
-      vendorCode,
-      dealerCode,
-      poNumber,
-      invoiceNo,
-    } = req.query;
+    const { storeIds } = req.body;
+    
+    if (!storeIds || !Array.isArray(storeIds) || storeIds.length === 0) {
+      return res.status(400).json({ message: "No stores selected" });
+    }
 
-    let query: any = {};
+    const ExcelJS = require("exceljs");
+    
+    // Build query for selected stores
+    let query: any = { _id: { $in: storeIds } };
+    
+    // Role-based Access Control
     const userRoles = req.user.roles || [];
     const isSuperAdmin = userRoles.some((r: any) => r.code === "SUPER_ADMIN");
     const isAdmin = userRoles.some((r: any) => r.code === "ADMIN");
@@ -2527,65 +2585,22 @@ export const exportStores = async (req: Request | any, res: Response) => {
       ];
     }
 
-    if (status && status !== "ALL") {
-      if (status.includes(",")) {
-        const statuses = status.split(",").map((s: string) => s.trim());
-        query.currentStatus = { $in: statuses };
-      } else {
-        query.currentStatus = status;
-      }
-    }
-
-    if (city) query["location.city"] = { $regex: city, $options: "i" };
-    if (zone) query["location.zone"] = zone;
-    if (state) query["location.state"] = state;
-    if (district) query["location.district"] = district;
-    if (vendorCode) query.vendorCode = vendorCode;
-    if (dealerCode) query.dealerCode = { $regex: dealerCode, $options: "i" };
-    if (poNumber)
-      query["commercials.poNumber"] = { $regex: poNumber, $options: "i" };
-    if (invoiceNo)
-      query["commercials.invoiceNumber"] = { $regex: invoiceNo, $options: "i" };
-    if (clientCode) query.clientCode = { $regex: clientCode, $options: "i" };
-
-    if (clientName) {
-      const clients = await Client.find({
-        clientName: { $regex: clientName, $options: "i" },
-      }).select("_id");
-      if (clients.length > 0) {
-        query.clientId = { $in: clients.map((c) => c._id) };
-      } else {
-        query.clientId = null;
-      }
-    }
-
-    if (search) {
-      const searchRegex = { $regex: search, $options: "i" };
-      query.$and = [
-        ...(query.$and || []),
-        {
-          $or: [
-            { storeName: searchRegex },
-            { dealerCode: searchRegex },
-            { "location.city": searchRegex },
-            { "location.area": searchRegex },
-          ],
-        },
-      ];
-    }
-
     const stores = await Store.find(query)
       .populate("workflow.recceAssignedTo", "name")
       .populate("workflow.installationAssignedTo", "name")
       .populate("clientId", "clientName")
       .sort({ updatedAt: -1 });
 
+    if (stores.length === 0) {
+      return res.status(404).json({ message: "No stores found or access denied" });
+    }
+
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet("Stores");
+    const worksheet = workbook.addWorksheet("Selected Stores");
 
     worksheet.mergeCells("A1:L3");
     const titleCell = worksheet.getCell("A1");
-    titleCell.value = "Stores Export";
+    titleCell.value = `Selected Stores Export (${stores.length} stores)`;
     titleCell.font = { size: 18, bold: true, color: { argb: "FF1F2937" } };
     titleCell.alignment = { vertical: "middle", horizontal: "center" };
 
@@ -2749,13 +2764,290 @@ export const exportStores = async (req: Request | any, res: Response) => {
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
+    const filename = `Selected_Stores_Export_${stores.length}_stores_${new Date().toISOString().split('T')[0]}.xlsx`;
     res.setHeader(
       "Content-Type",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
     res.setHeader(
       "Content-Disposition",
-      "attachment; filename=Stores_Export.xlsx",
+      `attachment; filename="${filename}"`,
+    );
+    res.send(buffer);
+  } catch (error: any) {
+    console.error("Export Selected Stores Error:", error);
+    res.status(500).json({ message: "Failed to export selected stores", error: error.message });
+  }
+};
+
+export const exportStores = async (req: Request | any, res: Response) => {
+  try {
+    const ExcelJS = require("exceljs");
+    const {
+      status,
+      search,
+      city,
+      clientCode,
+      clientName,
+      zone,
+      state,
+      district,
+      vendorCode,
+      dealerCode,
+      poNumber,
+      invoiceNo,
+      storeIds, // Add support for storeIds parameter
+    } = req.query;
+
+    let query: any = {};
+    const userRoles = req.user.roles || [];
+    const isSuperAdmin = userRoles.some((r: any) => r.code === "SUPER_ADMIN");
+    const isAdmin = userRoles.some((r: any) => r.code === "ADMIN");
+
+    if (!isSuperAdmin && !isAdmin) {
+      query.$or = [
+        { "workflow.recceAssignedTo": req.user._id },
+        { "workflow.installationAssignedTo": req.user._id },
+      ];
+    }
+
+    // If storeIds are provided, filter by them
+    if (storeIds) {
+      const idsArray = storeIds.split(',').map((id: string) => id.trim());
+      query._id = { $in: idsArray };
+    } else {
+      // Apply other filters only if storeIds are not provided
+      if (status && status !== "ALL") {
+        if (status.includes(",")) {
+          const statuses = status.split(",").map((s: string) => s.trim());
+          query.currentStatus = { $in: statuses };
+        } else {
+          query.currentStatus = status;
+        }
+      }
+
+      if (city) query["location.city"] = { $regex: city, $options: "i" };
+      if (zone) query["location.zone"] = zone;
+      if (state) query["location.state"] = state;
+      if (district) query["location.district"] = district;
+      if (vendorCode) query.vendorCode = vendorCode;
+      if (dealerCode) query.dealerCode = { $regex: dealerCode, $options: "i" };
+      if (poNumber)
+        query["commercials.poNumber"] = { $regex: poNumber, $options: "i" };
+      if (invoiceNo)
+        query["commercials.invoiceNumber"] = { $regex: invoiceNo, $options: "i" };
+      if (clientCode) query.clientCode = { $regex: clientCode, $options: "i" };
+
+      if (clientName) {
+        const clients = await Client.find({
+          clientName: { $regex: clientName, $options: "i" },
+        }).select("_id");
+        if (clients.length > 0) {
+          query.clientId = { $in: clients.map((c) => c._id) };
+        } else {
+          query.clientId = null;
+        }
+      }
+
+      if (search) {
+        const searchRegex = { $regex: search, $options: "i" };
+        query.$and = [
+          ...(query.$and || []),
+          {
+            $or: [
+              { storeName: searchRegex },
+              { dealerCode: searchRegex },
+              { "location.city": searchRegex },
+              { "location.area": searchRegex },
+            ],
+          },
+        ];
+      }
+    }
+
+    const stores = await Store.find(query)
+      .populate("workflow.recceAssignedTo", "name")
+      .populate("workflow.installationAssignedTo", "name")
+      .populate("clientId", "clientName")
+      .sort({ updatedAt: -1 });
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Stores");
+
+    worksheet.mergeCells("A1:L3");
+    const titleCell = worksheet.getCell("A1");
+    titleCell.value = storeIds ? `Selected Stores Export (${stores.length} stores)` : "Stores Export";
+    titleCell.font = { size: 18, bold: true, color: { argb: "FF1F2937" } };
+    titleCell.alignment = { vertical: "middle", horizontal: "center" };
+
+    const headers = [
+      "Store ID",
+      "Client Code",
+      "Dealer Code",
+      "Vendor Code",
+      "Zone",
+      "State",
+      "District",
+      "City",
+      "Address",
+      "Mobile Number",
+      "GST Number",
+      "Board Type",
+      "Width (Ft.)",
+      "Height (Ft.)",
+      "Qty",
+      "Board Size (Sq.Ft.)",
+      "Board Size (Inch)",
+      "Board Rate/Sq.Ft.",
+      "Total Board Cost",
+      "Status",
+      "Recce User",
+      "Installation User",
+    ];
+
+    const headerRow = worksheet.getRow(5);
+    headers.forEach((header, index) => {
+      const cell = headerRow.getCell(index + 1);
+      cell.value = header;
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 12 };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFEAB308" },
+      };
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+    });
+    headerRow.height = 25;
+
+    stores.forEach((store: any, index) => {
+      const row = worksheet.getRow(6 + index);
+      
+      // Calculate board specifications from recce data or specs
+      let boardType = "-";
+      let width = "-";
+      let height = "-";
+      let qty = "-";
+      let boardSize = "-";
+      let boardSizeInch = "-";
+      let boardRate = "-";
+      let totalBoardCost = "-";
+      
+      if (store.recce?.reccePhotos && store.recce.reccePhotos.length > 0) {
+        const photo = store.recce.reccePhotos[0];
+        boardType = photo.elements?.[0]?.elementName || "-";
+        const w = photo.measurements?.width || 0;
+        const h = photo.measurements?.height || 0;
+        const unit = photo.measurements?.unit || "in";
+        width = unit === "in" ? (w / 12).toFixed(2) : w.toString();
+        height = unit === "in" ? (h / 12).toFixed(2) : h.toString();
+        qty = photo.elements?.[0]?.quantity || 1;
+        const widthFt = unit === "in" ? w / 12 : w;
+        const heightFt = unit === "in" ? h / 12 : h;
+        boardSize = (widthFt * heightFt).toFixed(2);
+        const widthInch = unit === "in" ? w : w * 12;
+        const heightInch = unit === "in" ? h : h * 12;
+        boardSizeInch = (widthInch * heightInch).toFixed(2);
+        boardRate = photo.elements?.[0]?.customRate || store.costDetails?.boardRate || 0;
+        totalBoardCost = store.costDetails?.totalBoardCost || 0;
+      } else if (store.specs) {
+        boardType = store.specs.type || "-";
+        width = store.specs.width || "-";
+        height = store.specs.height || "-";
+        qty = store.specs.qty || "-";
+        boardSize = store.specs.boardSize || "-";
+        if (width !== "-" && height !== "-") {
+          boardSizeInch = (parseFloat(width) * 12 * parseFloat(height) * 12).toFixed(2);
+        }
+        boardRate = store.costDetails?.boardRate || "-";
+        totalBoardCost = store.costDetails?.totalBoardCost || "-";
+      }
+      
+      row.values = [
+        store.storeId || "-",
+        store.clientCode || "-",
+        store.dealerCode || "-",
+        store.vendorCode || "-",
+        store.location.zone || "-",
+        store.location.state || "-",
+        store.location.district || "-",
+        store.location.city || "-",
+        store.location.address || "-",
+        store.contact?.mobile || "-",
+        store.contact?.gstNumber || "-",
+        boardType,
+        width,
+        height,
+        qty,
+        boardSize,
+        boardSizeInch,
+        boardRate,
+        totalBoardCost,
+        store.currentStatus || "-",
+        store.workflow.recceAssignedTo?.name || "-",
+        store.workflow.installationAssignedTo?.name || "-",
+      ];
+      row.alignment = {
+        vertical: "middle",
+        horizontal: "center",
+        wrapText: true,
+      };
+      row.height = 40;
+      if (index % 2 === 0) {
+        row.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFF9FAFB" },
+        };
+      }
+    });
+
+    worksheet.columns = [
+      { width: 20 },  // Store ID
+      { width: 18 },  // Client Code
+      { width: 18 },  // Dealer Code
+      { width: 18 },  // Vendor Code
+      { width: 15 },  // Zone
+      { width: 18 },  // State
+      { width: 18 },  // District
+      { width: 18 },  // City
+      { width: 45 },  // Address
+      { width: 18 },  // Mobile Number
+      { width: 18 },  // GST Number
+      { width: 20 },  // Board Type
+      { width: 15 },  // Width
+      { width: 15 },  // Height
+      { width: 10 },  // Qty
+      { width: 20 },  // Board Size (Sq.Ft.)
+      { width: 20 },  // Board Size (Inch)
+      { width: 20 },  // Board Rate
+      { width: 20 },  // Total Board Cost
+      { width: 25 },  // Status
+      { width: 25 },  // Recce User
+      { width: 25 },  // Installation User
+    ];
+
+    worksheet.eachRow((row: Row, rowNumber: number) => {
+      if (rowNumber >= 5) {
+        row.eachCell((cell: Cell) => {
+          cell.border = {
+            top: { style: "thin", color: { argb: "FFD1D5DB" } },
+            left: { style: "thin", color: { argb: "FFD1D5DB" } },
+            bottom: { style: "thin", color: { argb: "FFD1D5DB" } },
+            right: { style: "thin", color: { argb: "FFD1D5DB" } },
+          };
+        });
+      }
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = storeIds ? `Selected_Stores_Export_${stores.length}_stores_${new Date().toISOString().split('T')[0]}.xlsx` : "Stores_Export.xlsx";
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"`,
     );
     res.send(buffer);
   } catch (error: any) {

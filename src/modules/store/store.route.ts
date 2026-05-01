@@ -21,6 +21,7 @@ import {
   exportRecceTasks,
   exportInstallationTasks,
   exportStores,
+  exportSelectedStores,
   bulkAssignStoresToUser,
   generateStoreExcel,
   exportRecceForApproval,
@@ -50,6 +51,7 @@ router.get("/template", downloadStoreTemplate);
 router.get("/export/recce", exportRecceTasks);
 router.get("/export/installation", exportInstallationTasks);
 router.get("/export", exportStores);
+router.post("/export/selected", exportSelectedStores);
 
 router.post("/recce/export-approval", protect, checkPermission("stores", "view"), exportRecceForApproval);
 router.post("/recce/import-approval", protect, checkPermission("stores", "edit"), upload.single("file"), importRecceApproval);

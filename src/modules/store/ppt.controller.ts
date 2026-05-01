@@ -4,8 +4,8 @@ import path from "path";
 import fs from "fs";
 const axios = require('axios');
 
-// ====== HELPER: Load image from URL as base64 ======
-const loadImageBase64 = async (url: string): Promise<string | null> => {
+// ====== HELPER: Load image from URL as base64 with proper sizing ======
+const loadImageBase64 = async (url: string): Promise<{ data: string; width: number; height: number } | null> => {
   try {
     const response = await axios.get(url, {
       responseType: 'arraybuffer',
@@ -13,10 +13,42 @@ const loadImageBase64 = async (url: string): Promise<string | null> => {
       headers: { 'User-Agent': 'Mozilla/5.0' }
     });
     if (response.status === 200) {
-      return `data:image/jpeg;base64,${Buffer.from(response.data).toString('base64')}`;
+      const buffer = Buffer.from(response.data);
+      const base64 = `data:image/jpeg;base64,${buffer.toString('base64')}`;
+      
+      // Try to get image dimensions (basic approach)
+      // For now, we'll return default dimensions and let PPT handle aspect ratio
+      return {
+        data: base64,
+        width: 1920, // Default width
+        height: 1080 // Default height
+      };
     }
-  } catch (e) { }
+  } catch (e) { 
+    console.error('Error loading image:', e);
+  }
   return null;
+};
+
+// ====== HELPER: Add image with proper aspect ratio ======
+const addImageWithAspectRatio = async (slide: any, imageUrl: string, x: number, y: number, maxWidth: number, maxHeight: number) => {
+  try {
+    const imageData = await loadImageBase64(imageUrl);
+    if (imageData) {
+      slide.addImage({ 
+        data: imageData.data, 
+        x: x, 
+        y: y, 
+        w: maxWidth, 
+        h: maxHeight,
+        sizing: { type: 'contain' }
+      });
+      return true;
+    }
+  } catch (e) {
+    console.error('Error adding image with aspect ratio:', e);
+  }
+  return false;
 };
 
 // ====== HELPER: Add store details header to a slide (top 20%) ======
@@ -200,19 +232,16 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           const x = startX + col * (imgSize + spacingX);
           const y = gridStartY + spacingY + row * (imgSize + spacingY);
 
+          // Add border frame
           initialSlide.addShape(prs.ShapeType.rect, {
             x: x, y: y, w: imgSize, h: imgSize,
             fill: { color: 'FFFFFF' },
             line: { color: GOLD, width: 2 }
           });
 
-          try {
-            const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
-            const base64 = await loadImageBase64(photoUrl);
-            if (base64) {
-              initialSlide.addImage({ data: base64, x: x + 0.05, y: y + 0.05, w: imgSize - 0.1, h: imgSize - 0.1 });
-            }
-          } catch (e) { }
+          // Add image with proper aspect ratio
+          const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
+          await addImageWithAspectRatio(initialSlide, photoUrl, x + 0.05, y + 0.05, imgSize - 0.1, imgSize - 0.1);
         }
       }
 
@@ -233,31 +262,16 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             const imgHeight = 4.8;
 
             // BEFORE
-            try {
-              const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
-              const base64 = await loadImageBase64(reccePhotoUrl);
-              if (base64) {
-                boardSlide.addImage({ data: base64, x: 0.2, y: contentStartY, w: imgWidth, h: imgHeight });
-              }
-            } catch (e) { }
+            const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
+            await addImageWithAspectRatio(boardSlide, reccePhotoUrl, 0.2, contentStartY, imgWidth, imgHeight);
 
             // AFTER 1
-            try {
-              const installPhoto1Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[0].installationPhoto.replace(/\s+/g, '%20')}`;
-              const base64 = await loadImageBase64(installPhoto1Url);
-              if (base64) {
-                boardSlide.addImage({ data: base64, x: 4.0, y: contentStartY, w: imgWidth, h: imgHeight });
-              }
-            } catch (e) { }
+            const installPhoto1Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[0].installationPhoto.replace(/\s+/g, '%20')}`;
+            await addImageWithAspectRatio(boardSlide, installPhoto1Url, 4.0, contentStartY, imgWidth, imgHeight);
 
             // AFTER 2
-            try {
-              const installPhoto2Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[1].installationPhoto.replace(/\s+/g, '%20')}`;
-              const base64 = await loadImageBase64(installPhoto2Url);
-              if (base64) {
-                boardSlide.addImage({ data: base64, x: 7.8, y: contentStartY, w: imgWidth, h: imgHeight });
-              }
-            } catch (e) { }
+            const installPhoto2Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[1].installationPhoto.replace(/\s+/g, '%20')}`;
+            await addImageWithAspectRatio(boardSlide, installPhoto2Url, 7.8, contentStartY, imgWidth, imgHeight);
 
             // Labels
             boardSlide.addShape(prs.ShapeType.rect, {
@@ -321,23 +335,13 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             const installPhoto = installPhotos[0];
 
             // BEFORE
-            try {
-              const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
-              const base64 = await loadImageBase64(reccePhotoUrl);
-              if (base64) {
-                boardSlide.addImage({ data: base64, x: 0.2, y: contentStartY, w: imgWidth, h: imgHeight });
-              }
-            } catch (e) { }
+            const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
+            await addImageWithAspectRatio(boardSlide, reccePhotoUrl, 0.2, contentStartY, imgWidth, imgHeight);
 
             // AFTER
             if (installPhoto) {
-              try {
-                const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
-                const base64 = await loadImageBase64(installPhotoUrl);
-                if (base64) {
-                  boardSlide.addImage({ data: base64, x: 6.0, y: contentStartY, w: imgWidth, h: imgHeight });
-                }
-              } catch (e) { }
+              const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
+              await addImageWithAspectRatio(boardSlide, installPhotoUrl, 6.0, contentStartY, imgWidth, imgHeight);
             }
 
             // Labels
@@ -388,14 +392,9 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           }
 
         } else if (type === "recce" && currentReccePhoto) {
-          // Single recce photo
-          try {
-            const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
-            const base64 = await loadImageBase64(reccePhotoUrl);
-            if (base64) {
-              boardSlide.addImage({ data: base64, x: 0.3, y: contentStartY, w: 11.09, h: 4.8 });
-            }
-          } catch (e) { }
+          // Single recce photo with proper aspect ratio
+          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
+          await addImageWithAspectRatio(boardSlide, reccePhotoUrl, 0.3, contentStartY, 11.09, 4.8);
 
           // Measurements
           if (currentReccePhoto.measurements) {
