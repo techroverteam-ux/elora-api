@@ -2,158 +2,288 @@ import { Request, Response } from "express";
 import Store from "./store.model";
 import path from "path";
 import fs from "fs";
-const axios = require('axios');
+const axios = require("axios");
 
 // ====== HELPER: Load image from URL as base64 with proper sizing ======
-const loadImageBase64 = async (url: string): Promise<{ data: string; width: number; height: number } | null> => {
+const loadImageBase64 = async (
+  url: string,
+): Promise<{ data: string; width: number; height: number } | null> => {
   try {
     const response = await axios.get(url, {
-      responseType: 'arraybuffer',
+      responseType: "arraybuffer",
       timeout: 10000,
-      headers: { 'User-Agent': 'Mozilla/5.0' }
+      headers: { "User-Agent": "Mozilla/5.0" },
     });
     if (response.status === 200) {
       const buffer = Buffer.from(response.data);
-      const base64 = `data:image/jpeg;base64,${buffer.toString('base64')}`;
-      
+      const base64 = `data:image/jpeg;base64,${buffer.toString("base64")}`;
+
       // Try to get image dimensions (basic approach)
       // For now, we'll return default dimensions and let PPT handle aspect ratio
       return {
         data: base64,
         width: 1920, // Default width
-        height: 1080 // Default height
+        height: 1080, // Default height
       };
     }
-  } catch (e) { 
-    console.error('Error loading image:', e);
+  } catch (e) {
+    console.error("Error loading image:", e);
   }
   return null;
 };
 
 // ====== HELPER: Add image with proper aspect ratio ======
-const addImageWithAspectRatio = async (slide: any, imageUrl: string, x: number, y: number, maxWidth: number, maxHeight: number) => {
+const addImageWithAspectRatio = async (
+  slide: any,
+  imageUrl: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  maxHeight: number,
+) => {
   try {
     const imageData = await loadImageBase64(imageUrl);
     if (imageData) {
-      slide.addImage({ 
-        data: imageData.data, 
-        x: x, 
-        y: y, 
-        w: maxWidth, 
+      slide.addImage({
+        data: imageData.data,
+        x: x,
+        y: y,
+        w: maxWidth,
         h: maxHeight,
-        sizing: { type: 'contain' }
+        sizing: { type: "contain" },
       });
       return true;
     }
   } catch (e) {
-    console.error('Error adding image with aspect ratio:', e);
+    console.error("Error adding image with aspect ratio:", e);
   }
   return false;
 };
 
-// ====== HELPER: Add store details header to a slide (top 20%) ======
-const addStoreDetailsHeader = (slide: any, prs: any, store: any, type: 'recce' | 'installation', boardInfo?: string) => {
-  const CREAM_BG = 'F5F0E8';
-  const GOLD = 'D4A017';
-  const GREEN = '22C55E';
-  const DARK_GRAY = '1F2937';
+// ====== HELPER: Add store details header to a slide (top ~25%) ======
+const addStoreDetailsHeader = (
+  slide: any,
+  prs: any,
+  store: any,
+  type: "recce" | "installation",
+  boardInfo?: string,
+) => {
+  const CREAM_BG = "F5F0E8";
+  const GOLD = "D4A017";
+  const GREEN = "22C55E";
 
   slide.background = { color: CREAM_BG };
 
-  // Logo
-  let logoBase64 = '';
+  // ── Logo ──────────────────────────────────────────────────────────────
+  // Logo PNG is 970x239px → aspect ratio 4.0586:1
+  // At h=0.55in: w = 0.55 * (970/239) = 2.232in — preserves correct proportions
+  let logoBase64 = "";
   const logoPath = path.join(process.cwd(), "public", "logo.png");
   if (fs.existsSync(logoPath)) {
     try {
       const logoBuffer = fs.readFileSync(logoPath);
-      logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`;
-    } catch (e) { }
+      logoBase64 = `data:image/png;base64,${logoBuffer.toString("base64")}`;
+    } catch (e) {}
   }
-
   if (logoBase64) {
-    slide.addImage({ data: logoBase64, x: 0.1, y: 0.03, w: 1.2, h: 0.65 });
+    slide.addImage({ data: logoBase64, x: 0.15, y: 0.08, w: 2.232, h: 0.55 });
   }
 
-  // Title
-  let titleText = type === "recce" ? 'Recce Inspection Report' : 'Installation Completion Report';
-  if (boardInfo) titleText += ` - ${boardInfo}`;
+  // ── Title — centered across full slide width ───────────────────────────
+  let titleText =
+    type === "recce"
+      ? "Recce Inspection Report"
+      : "Installation Completion Report";
+  if (boardInfo) titleText += ` — ${boardInfo}`;
   const titleColor = type === "recce" ? GOLD : GREEN;
   slide.addText(titleText, {
-    x: 2.4, y: 0.1, w: 5.5, h: 0.45,
-    fontSize: 20, bold: true, color: titleColor, align: 'left'
+    x: 2.845,
+    y: 0.1,
+    w: 6.0,
+    h: 0.5,
+    fontSize: 20,
+    bold: true,
+    color: titleColor,
+    align: "center",
+    valign: "middle",
   });
 
-  // Company info - top right
-  slide.addText('ELORA CREATIVE ART', {
-    x: 9.5, y: 0.1, w: 3.7, h: 0.25,
-    fontSize: 9, bold: true, color: GOLD, align: 'right'
+  // ── Company info — top right ───────────────────────────────────────────
+  slide.addText("ELORA CREATIVE ART", {
+    x: 9.2,
+    y: 0.1,
+    w: 2.39,
+    h: 0.25,
+    fontSize: 9,
+    bold: true,
+    color: GOLD,
+    align: "right",
   });
-  slide.addText('www.eloracreativeart.in', {
-    x: 9.5, y: 0.35, w: 3.7, h: 0.2,
-    fontSize: 8, color: GOLD, align: 'right'
+  slide.addText("www.eloracreativeart.in", {
+    x: 9.2,
+    y: 0.35,
+    w: 2.39,
+    h: 0.2,
+    fontSize: 8,
+    color: GOLD,
+    align: "right",
   });
 
-  // Gold separator line
+  // ── Separator line 1 — below logo/title row ────────────────────────────
   slide.addShape(prs.ShapeType.line, {
-    x: 0, y: 0.72, w: 11.69, h: 0,
-    line: { color: GOLD, width: 2 }
+    x: 0,
+    y: 0.72,
+    w: 11.69,
+    h: 0,
+    line: { color: GOLD, width: 2 },
   });
 
-  // Store info box (left side, compact)
-  const infoBoxX = 0.1;
-  const infoBoxY = 0.75;
-  const infoBoxW = 11.49;
-  const infoBoxH = 0.85;
+  // ── Store info box ─────────────────────────────────────────────────────
+  const boxX = 0.15;
+  const boxY = 0.8;
+  const boxW = 11.39;
+  const boxH = 1.05;
 
   slide.addShape(prs.ShapeType.rect, {
-    x: infoBoxX, y: infoBoxY, w: infoBoxW, h: infoBoxH,
-    fill: { color: 'FFFFFF' },
-    line: { color: GOLD, width: 1.5 }
+    x: boxX,
+    y: boxY,
+    w: boxW,
+    h: boxH,
+    fill: { color: CREAM_BG }, // cream fill — blends with background, no harsh white
+    line: { color: GOLD, width: 1.5 },
   });
 
-  const dateValue = type === "recce"
-    ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A')
-    : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A');
+  // Date value
+  const dateValue =
+    type === "recce"
+      ? store.recce?.submittedDate
+        ? new Date(store.recce.submittedDate)
+            .toLocaleDateString("en-GB", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            })
+            .replace(/ /g, "/")
+        : "N/A"
+      : store.installation?.submittedDate
+        ? new Date(store.installation.submittedDate)
+            .toLocaleDateString("en-GB", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            })
+            .replace(/ /g, "/")
+        : "N/A";
 
-  const labelX = infoBoxX + 0.15;
-  const valueX = labelX + 1.0;
-  const midColX = infoBoxX + 3.0;
-  const midValueX = midColX + 0.8;
-  const rightColX = infoBoxX + 5.5;
-  const rightValueX = rightColX + 0.8;
-  let infoY = infoBoxY + 0.08;
+  // Column x positions — 3 groups evenly distributed across 11.39in box
+  // Group 1 (left):   label @ 0.30,  value @ 1.12
+  // Group 2 (mid):    label @ 4.15,  value @ 4.97
+  // Group 3 (right):  label @ 8.05,  value @ 8.70
+  const lbl1X = boxX + 0.15;
+  const val1X = lbl1X + 0.82;
+  const lbl2X = boxX + 4.0;
+  const val2X = lbl2X + 0.82;
+  const lbl3X = boxX + 7.9;
+  const val3X = lbl3X + 0.65;
 
-  // Row 1: Store name | Status
-  slide.addText('Store:', { x: labelX, y: infoY, w: 0.8, h: 0.15, fontSize: 10, bold: true, color: '000000' });
-  slide.addText(store.storeName || 'N/A', { x: valueX, y: infoY, w: 1.8, h: 0.15, fontSize: 10, color: '000000' });
+  // Row y positions — 3 rows with even spacing inside box
+  const rowH = 0.22;
+  const row1Y = boxY + 0.1;
+  const row2Y = row1Y + rowH + 0.03;
+  const row3Y = row2Y + rowH + 0.03;
 
+  const lblStyle = { fontSize: 10, bold: true, color: "1F2937" } as const;
+  const valStyle = { fontSize: 10, bold: false, color: "1F2937" } as const;
+
+  // Row 1: Store name (left)  |  ✓ COMPLETED (far right, gold)
+  slide.addText("Store:", { x: lbl1X, y: row1Y, w: 0.8, h: rowH, ...lblStyle });
+  slide.addText(store.storeName || "N/A", {
+    x: val1X,
+    y: row1Y,
+    w: 2.8,
+    h: rowH,
+    ...valStyle,
+  });
   if (type === "installation") {
-    slide.addText('✓ COMPLETED', { x: rightColX, y: infoY, w: 1.5, h: 0.15, fontSize: 10, bold: true, color: GOLD });
+    slide.addText("✓ COMPLETED", {
+      x: val3X,
+      y: row1Y,
+      w: 2.5,
+      h: rowH,
+      fontSize: 10,
+      bold: true,
+      color: GOLD,
+      align: "right",
+    });
   }
 
-  // Row 2: Dealer Code | ID | City
-  infoY += 0.18;
-  slide.addText('Dealer:', { x: labelX, y: infoY, w: 0.8, h: 0.15, fontSize: 10, bold: true, color: '000000' });
-  slide.addText(store.dealerCode || 'N/A', { x: valueX, y: infoY, w: 1.0, h: 0.15, fontSize: 10, color: '000000' });
-  slide.addText('ID:', { x: midColX, y: infoY, w: 0.5, h: 0.15, fontSize: 10, bold: true, color: '000000' });
-  slide.addText(store.storeId || store.storeCode || 'N/A', { x: midValueX, y: infoY, w: 1.2, h: 0.15, fontSize: 10, color: '000000' });
-  slide.addText('City:', { x: rightColX, y: infoY, w: 0.5, h: 0.15, fontSize: 10, bold: true, color: '000000' });
-  slide.addText(store.location?.city || 'N/A', { x: rightValueX, y: infoY, w: 1.2, h: 0.15, fontSize: 10, color: '000000' });
+  // Row 2: Dealer (left)  |  ID (mid)  |  City (right)
+  slide.addText("Dealer:", {
+    x: lbl1X,
+    y: row2Y,
+    w: 0.8,
+    h: rowH,
+    ...lblStyle,
+  });
+  slide.addText(store.dealerCode || "N/A", {
+    x: val1X,
+    y: row2Y,
+    w: 2.8,
+    h: rowH,
+    ...valStyle,
+  });
+  slide.addText("ID:", { x: lbl2X, y: row2Y, w: 0.8, h: rowH, ...lblStyle });
+  slide.addText(store.storeId || store.storeCode || "N/A", {
+    x: val2X,
+    y: row2Y,
+    w: 2.8,
+    h: rowH,
+    ...valStyle,
+  });
+  slide.addText("City:", { x: lbl3X, y: row2Y, w: 0.62, h: rowH, ...lblStyle });
+  slide.addText(store.location?.city || "N/A", {
+    x: val3X,
+    y: row2Y,
+    w: 2.4,
+    h: rowH,
+    ...valStyle,
+  });
 
-  // Row 3: State | Address
-  infoY += 0.18;
-  slide.addText('State:', { x: labelX, y: infoY, w: 0.8, h: 0.15, fontSize: 10, bold: true, color: '000000' });
-  slide.addText(store.location?.state || 'N/A', { x: valueX, y: infoY, w: 1.0, h: 0.15, fontSize: 10, color: '000000' });
-  slide.addText('Address:', { x: midColX, y: infoY, w: 0.8, h: 0.15, fontSize: 10, bold: true, color: '000000' });
-  slide.addText(store.location?.address || 'N/A', { x: midValueX, y: infoY, w: 4.5, h: 0.15, fontSize: 10, color: '000000' });
+  // Row 3: State (left)  |  Address (mid → spans to right edge)
+  slide.addText("State:", { x: lbl1X, y: row3Y, w: 0.8, h: rowH, ...lblStyle });
+  slide.addText(store.location?.state || "N/A", {
+    x: val1X,
+    y: row3Y,
+    w: 2.8,
+    h: rowH,
+    ...valStyle,
+  });
+  slide.addText("Address:", {
+    x: lbl2X,
+    y: row3Y,
+    w: 0.8,
+    h: rowH,
+    ...lblStyle,
+  });
+  slide.addText(store.location?.address || "N/A", {
+    x: val2X,
+    y: row3Y,
+    w: 5.6,
+    h: rowH,
+    ...valStyle, // spans all the way to box right edge
+  });
 
-  // Separator line after header section
+  // ── Separator line 2 — after the store box ─────────────────────────────
   slide.addShape(prs.ShapeType.line, {
-    x: 0, y: 1.65, w: 11.69, h: 0,
-    line: { color: GOLD, width: 1.5 }
+    x: 0,
+    y: 1.95,
+    w: 11.69,
+    h: 0,
+    line: { color: GOLD, width: 1.5 },
   });
 };
 
+// ====== CONTROLLER: Generate Bulk PPT ======
 export const generateBulkPPT = async (req: Request, res: Response) => {
   try {
     const { storeIds, type } = req.body;
@@ -169,42 +299,76 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "No stores found" });
     }
 
-    const PptxGenJS = require('pptxgenjs');
+    const PptxGenJS = require("pptxgenjs");
     const prs = new PptxGenJS();
-    prs.defineLayout({ name: 'A4', width: 11.69, height: 8.27 });
-    prs.layout = 'A4';
+    prs.defineLayout({ name: "A4", width: 11.69, height: 8.27 });
+    prs.layout = "A4";
 
-    const CREAM_BG = 'F5F0E8';
-    const GOLD = 'D4A017';
-    const GREEN = '22C55E';
-    const RED = 'EF4444';
+    const CREAM_BG = "F5F0E8";
+    const GOLD = "D4A017";
+    const GREEN = "22C55E";
+    const RED = "EF4444";
 
-    // Load logo
-    let logoBase64 = '';
+    // ── Load logo once (shared across all slides) ──────────────────────
+    let logoBase64 = "";
     const logoPath = path.join(process.cwd(), "public", "logo.png");
     if (fs.existsSync(logoPath)) {
       try {
         const logoBuffer = fs.readFileSync(logoPath);
-        logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`;
-      } catch (e) { }
+        logoBase64 = `data:image/png;base64,${logoBuffer.toString("base64")}`;
+      } catch (e) {}
     }
 
-    // ===== SLIDE 1: COVER PAGE =====
+    // ── SLIDE 1: Cover page ────────────────────────────────────────────
+    // Logo is 970x239px → ratio 4.0586:1
+    // Cover logo: w=3.5 → h = 3.5 / 4.0586 = 0.862
+    // All content is centered both horizontally and vertically as one block:
+    //   text (h=1.8) + gap 0.35 + logo (h=0.862) + gap 0.40 + subtitle (h=0.55)
+    //   total = 3.962, start_y = (8.27 - 3.962) / 2 = 2.154
     const coverSlide = prs.addSlide();
     coverSlide.background = { color: CREAM_BG };
-    coverSlide.addText('WE DON\'T JUST PRINT.\nWE INSTALL YOUR BRAND\nINTO THE REAL WORLD.', {
-      x: 0.8, y: 1.2, w: 4.8, h: 2,
-      fontSize: 28, bold: true, color: GOLD, align: 'left'
-    });
-    if (logoBase64) {
-      coverSlide.addImage({ data: logoBase64, x: 3.5, y: 3.0, w: 2.5, h: 1.5 });
-    }
-    coverSlide.addText('We help businesses stand out with custom branding,\nhigh-quality banner printing, and professional on-site installation.', {
-      x: 2.4, y: 5.5, w: 4, h: 1.2,
-      fontSize: 10, color: '1F2937', align: 'right'
-    });
 
-    // Process each store
+    coverSlide.addText(
+      "WE DON'T JUST PRINT.\nWE INSTALL YOUR BRAND\nINTO THE REAL WORLD.",
+      {
+        x: 2.845,
+        y: 2.154,
+        w: 6.0,
+        h: 1.8,
+        fontSize: 28,
+        bold: true,
+        color: GOLD,
+        align: "center",
+      },
+    );
+
+    if (logoBase64) {
+      coverSlide.addImage({
+        data: logoBase64,
+        x: 4.095,
+        y: 4.304,
+        w: 3.5,
+        h: 0.862, // correct ratio, centered
+      });
+    }
+
+    coverSlide.addText(
+      "We help businesses stand out with custom branding,\nhigh-quality banner printing, and professional on-site installation.",
+      {
+        x: 3.095,
+        y: 5.566,
+        w: 5.5,
+        h: 0.55,
+        fontSize: 10,
+        color: "1F2937",
+        align: "center",
+      },
+    );
+
+    // ── Per-store slides ───────────────────────────────────────────────
+    // contentStartY = 2.03 (sep2 at 1.95 + 0.08 gap) — updated to match new header height
+    const contentStartY = 2.03;
+
     for (const store of stores) {
       if (type === "recce" && !store.recce) continue;
       if (type === "installation" && !store.installation) continue;
@@ -212,228 +376,434 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
       const reccePhotos = store.recce?.reccePhotos || [];
       const boardCount = Math.max(1, reccePhotos.length);
 
-      // ===== PER STORE: Initial Photos Slide =====
+      // ── Initial Photos slide (one per store, recce photos) ────────────
       if (store.recce?.initialPhotos && store.recce.initialPhotos.length > 0) {
         const initialSlide = prs.addSlide();
         addStoreDetailsHeader(initialSlide, prs, store, type);
 
-        // 4 Initial Photos in 2x2 grid using full 80% bottom space
-        const gridStartY = 1.75;
-        const availableWidth = 11.69 - 0.4; // Full slide width minus margins
-        const availableHeight = 8.27 - gridStartY - 0.3; // 80% bottom space
-        const imgSize = Math.min((availableWidth - 0.2) / 2, (availableHeight - 0.2) / 2); // Square images
-        const spacingX = (availableWidth - (imgSize * 2)) / 3; // Equal spacing
-        const spacingY = (availableHeight - (imgSize * 2)) / 3;
+        const gridStartY = contentStartY;
+        const availableWidth = 11.69 - 0.4;
+        const availableHeight = 8.27 - gridStartY - 0.3;
+        const imgSize = Math.min(
+          (availableWidth - 0.2) / 2,
+          (availableHeight - 0.2) / 2,
+        );
+        const spacingX = (availableWidth - imgSize * 2) / 3;
+        const spacingY = (availableHeight - imgSize * 2) / 3;
         const startX = 0.2 + spacingX;
 
-        for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 4); i++) {
+        for (
+          let i = 0;
+          i < Math.min(store.recce.initialPhotos.length, 4);
+          i++
+        ) {
           const row = Math.floor(i / 2);
           const col = i % 2;
           const x = startX + col * (imgSize + spacingX);
           const y = gridStartY + spacingY + row * (imgSize + spacingY);
 
-          // Add border frame
           initialSlide.addShape(prs.ShapeType.rect, {
-            x: x, y: y, w: imgSize, h: imgSize,
-            fill: { color: 'FFFFFF' },
-            line: { color: GOLD, width: 2 }
+            x,
+            y,
+            w: imgSize,
+            h: imgSize,
+            fill: { color: "FFFFFF" },
+            line: { color: GOLD, width: 2 },
           });
 
-          // Add image with proper aspect ratio
-          const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
-          await addImageWithAspectRatio(initialSlide, photoUrl, x + 0.05, y + 0.05, imgSize - 0.1, imgSize - 0.1);
+          const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, "%20")}`;
+          await addImageWithAspectRatio(
+            initialSlide,
+            photoUrl,
+            x + 0.05,
+            y + 0.05,
+            imgSize - 0.1,
+            imgSize - 0.1,
+          );
         }
       }
 
-      // ===== PER BOARD: Before/After Slide =====
+      // ── Per-board Before/After slide ───────────────────────────────────
       for (let boardIndex = 0; boardIndex < boardCount; boardIndex++) {
         const currentReccePhoto = reccePhotos[boardIndex];
         const boardSlide = prs.addSlide();
-        addStoreDetailsHeader(boardSlide, prs, store, type, reccePhotos.length > 1 ? `Board ${boardIndex + 1}/${reccePhotos.length}` : undefined);
+        addStoreDetailsHeader(
+          boardSlide,
+          prs,
+          store,
+          type,
+          reccePhotos.length > 1
+            ? `Board ${boardIndex + 1}/${reccePhotos.length}`
+            : undefined,
+        );
 
-        const contentStartY = 1.75;
-
-        if (type === "installation" && currentReccePhoto && store.installation?.photos) {
-          const installPhotos = store.installation.photos.filter((p: any) => p.reccePhotoIndex === boardIndex);
+        if (
+          type === "installation" &&
+          currentReccePhoto &&
+          store.installation?.photos
+        ) {
+          const installPhotos = store.installation.photos.filter(
+            (p: any) => p.reccePhotoIndex === boardIndex,
+          );
 
           if (installPhotos.length >= 2) {
-            // Three images: Before + After1 + After2
+            // Three images: Before + After 1 + After 2
             const imgWidth = 3.6;
             const imgHeight = 4.8;
 
-            // BEFORE
-            const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
-            await addImageWithAspectRatio(boardSlide, reccePhotoUrl, 0.2, contentStartY, imgWidth, imgHeight);
+            const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, "%20")}`;
+            await addImageWithAspectRatio(
+              boardSlide,
+              reccePhotoUrl,
+              0.2,
+              contentStartY,
+              imgWidth,
+              imgHeight,
+            );
 
-            // AFTER 1
-            const installPhoto1Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[0].installationPhoto.replace(/\s+/g, '%20')}`;
-            await addImageWithAspectRatio(boardSlide, installPhoto1Url, 4.0, contentStartY, imgWidth, imgHeight);
+            const installPhoto1Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[0].installationPhoto.replace(/\s+/g, "%20")}`;
+            await addImageWithAspectRatio(
+              boardSlide,
+              installPhoto1Url,
+              4.0,
+              contentStartY,
+              imgWidth,
+              imgHeight,
+            );
 
-            // AFTER 2
-            const installPhoto2Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[1].installationPhoto.replace(/\s+/g, '%20')}`;
-            await addImageWithAspectRatio(boardSlide, installPhoto2Url, 7.8, contentStartY, imgWidth, imgHeight);
+            const installPhoto2Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[1].installationPhoto.replace(/\s+/g, "%20")}`;
+            await addImageWithAspectRatio(
+              boardSlide,
+              installPhoto2Url,
+              7.8,
+              contentStartY,
+              imgWidth,
+              imgHeight,
+            );
 
-            // Labels
+            // BEFORE label
             boardSlide.addShape(prs.ShapeType.rect, {
-              x: 0.2, y: contentStartY + imgHeight, w: imgWidth, h: 0.35,
-              fill: { color: RED }
+              x: 0.2,
+              y: contentStartY + imgHeight,
+              w: imgWidth,
+              h: 0.35,
+              fill: { color: RED },
             });
-            boardSlide.addText('BEFORE', {
-              x: 0.2, y: contentStartY + imgHeight, w: imgWidth, h: 0.35,
-              fontSize: 12, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle'
+            boardSlide.addText("BEFORE", {
+              x: 0.2,
+              y: contentStartY + imgHeight,
+              w: imgWidth,
+              h: 0.35,
+              fontSize: 12,
+              bold: true,
+              color: "FFFFFF",
+              align: "center",
+              valign: "middle",
             });
 
+            // AFTER 1 label
             boardSlide.addShape(prs.ShapeType.rect, {
-              x: 4.0, y: contentStartY + imgHeight, w: imgWidth, h: 0.35,
-              fill: { color: GREEN }
+              x: 4.0,
+              y: contentStartY + imgHeight,
+              w: imgWidth,
+              h: 0.35,
+              fill: { color: GREEN },
             });
-            boardSlide.addText('AFTER 1', {
-              x: 4.0, y: contentStartY + imgHeight, w: imgWidth, h: 0.35,
-              fontSize: 12, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle'
+            boardSlide.addText("AFTER 1", {
+              x: 4.0,
+              y: contentStartY + imgHeight,
+              w: imgWidth,
+              h: 0.35,
+              fontSize: 12,
+              bold: true,
+              color: "FFFFFF",
+              align: "center",
+              valign: "middle",
             });
 
+            // AFTER 2 label
             boardSlide.addShape(prs.ShapeType.rect, {
-              x: 7.8, y: contentStartY + imgHeight, w: imgWidth, h: 0.35,
-              fill: { color: GREEN }
+              x: 7.8,
+              y: contentStartY + imgHeight,
+              w: imgWidth,
+              h: 0.35,
+              fill: { color: GREEN },
             });
-            boardSlide.addText('AFTER 2', {
-              x: 7.8, y: contentStartY + imgHeight, w: imgWidth, h: 0.35,
-              fontSize: 12, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle'
+            boardSlide.addText("AFTER 2", {
+              x: 7.8,
+              y: contentStartY + imgHeight,
+              w: imgWidth,
+              h: 0.35,
+              fontSize: 12,
+              bold: true,
+              color: "FFFFFF",
+              align: "center",
+              valign: "middle",
             });
 
             // Measurements
             if (currentReccePhoto.measurements) {
               boardSlide.addShape(prs.ShapeType.rect, {
-                x: 0.2, y: contentStartY + imgHeight + 0.38, w: 11.29, h: 0.25,
-                fill: { color: 'FFFFFF' },
-                line: { color: GOLD, width: 1 }
+                x: 0.2,
+                y: contentStartY + imgHeight + 0.38,
+                w: 11.29,
+                h: 0.25,
+                fill: { color: "FFFFFF" },
+                line: { color: GOLD, width: 1 },
               });
-              boardSlide.addText(`Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`, {
-                x: 0.2, y: contentStartY + imgHeight + 0.38, w: 11.29, h: 0.25,
-                fontSize: 10, bold: true, color: '1F2937', align: 'center', valign: 'middle'
-              });
+              boardSlide.addText(
+                `Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`,
+                {
+                  x: 0.2,
+                  y: contentStartY + imgHeight + 0.38,
+                  w: 11.29,
+                  h: 0.25,
+                  fontSize: 10,
+                  bold: true,
+                  color: "1F2937",
+                  align: "center",
+                  valign: "middle",
+                },
+              );
             }
 
             // Elements
-            if (currentReccePhoto.elements && currentReccePhoto.elements.length > 0) {
-              const elementsText = currentReccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
+            if (
+              currentReccePhoto.elements &&
+              currentReccePhoto.elements.length > 0
+            ) {
+              const elementsText = currentReccePhoto.elements
+                .map((el: any) => `${el.elementName} (Qty: ${el.quantity})`)
+                .join(" | ");
               boardSlide.addShape(prs.ShapeType.rect, {
-                x: 0.2, y: contentStartY + imgHeight + 0.66, w: 11.29, h: 0.22,
-                fill: { color: 'FEF3C7' },
-                line: { color: GOLD, width: 1 }
+                x: 0.2,
+                y: contentStartY + imgHeight + 0.66,
+                w: 11.29,
+                h: 0.22,
+                fill: { color: "FEF3C7" },
+                line: { color: GOLD, width: 1 },
               });
               boardSlide.addText(`Elements: ${elementsText}`, {
-                x: 0.2, y: contentStartY + imgHeight + 0.66, w: 11.29, h: 0.22,
-                fontSize: 9, bold: true, color: '1F2937', align: 'center', valign: 'middle'
+                x: 0.2,
+                y: contentStartY + imgHeight + 0.66,
+                w: 11.29,
+                h: 0.22,
+                fontSize: 9,
+                bold: true,
+                color: "1F2937",
+                align: "center",
+                valign: "middle",
               });
             }
-
           } else {
             // Two images: Before + After
             const imgWidth = 5.5;
             const imgHeight = 4.8;
             const installPhoto = installPhotos[0];
 
-            // BEFORE
-            const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
-            await addImageWithAspectRatio(boardSlide, reccePhotoUrl, 0.2, contentStartY, imgWidth, imgHeight);
+            const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, "%20")}`;
+            await addImageWithAspectRatio(
+              boardSlide,
+              reccePhotoUrl,
+              0.2,
+              contentStartY,
+              imgWidth,
+              imgHeight,
+            );
 
-            // AFTER
             if (installPhoto) {
-              const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
-              await addImageWithAspectRatio(boardSlide, installPhotoUrl, 6.0, contentStartY, imgWidth, imgHeight);
+              const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, "%20")}`;
+              await addImageWithAspectRatio(
+                boardSlide,
+                installPhotoUrl,
+                6.0,
+                contentStartY,
+                imgWidth,
+                imgHeight,
+              );
             }
 
-            // Labels
+            // BEFORE label
             boardSlide.addShape(prs.ShapeType.rect, {
-              x: 0.2, y: contentStartY + imgHeight, w: imgWidth, h: 0.4,
-              fill: { color: RED }
+              x: 0.2,
+              y: contentStartY + imgHeight,
+              w: imgWidth,
+              h: 0.4,
+              fill: { color: RED },
             });
-            boardSlide.addText('BEFORE', {
-              x: 0.2, y: contentStartY + imgHeight, w: imgWidth, h: 0.4,
-              fontSize: 14, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle'
+            boardSlide.addText("BEFORE", {
+              x: 0.2,
+              y: contentStartY + imgHeight,
+              w: imgWidth,
+              h: 0.4,
+              fontSize: 14,
+              bold: true,
+              color: "FFFFFF",
+              align: "center",
+              valign: "middle",
             });
 
+            // AFTER label
             boardSlide.addShape(prs.ShapeType.rect, {
-              x: 6.0, y: contentStartY + imgHeight, w: imgWidth, h: 0.4,
-              fill: { color: GREEN }
+              x: 6.0,
+              y: contentStartY + imgHeight,
+              w: imgWidth,
+              h: 0.4,
+              fill: { color: GREEN },
             });
-            boardSlide.addText('AFTER', {
-              x: 6.0, y: contentStartY + imgHeight, w: imgWidth, h: 0.4,
-              fontSize: 14, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle'
+            boardSlide.addText("AFTER", {
+              x: 6.0,
+              y: contentStartY + imgHeight,
+              w: imgWidth,
+              h: 0.4,
+              fontSize: 14,
+              bold: true,
+              color: "FFFFFF",
+              align: "center",
+              valign: "middle",
             });
 
             // Measurements
             if (currentReccePhoto.measurements) {
               boardSlide.addShape(prs.ShapeType.rect, {
-                x: 0.2, y: contentStartY + imgHeight + 0.43, w: 11.29, h: 0.25,
-                fill: { color: 'FFFFFF' },
-                line: { color: GOLD, width: 1 }
+                x: 0.2,
+                y: contentStartY + imgHeight + 0.43,
+                w: 11.29,
+                h: 0.25,
+                fill: { color: "FFFFFF" },
+                line: { color: GOLD, width: 1 },
               });
-              boardSlide.addText(`Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`, {
-                x: 0.2, y: contentStartY + imgHeight + 0.43, w: 11.29, h: 0.25,
-                fontSize: 10, bold: true, color: '1F2937', align: 'center', valign: 'middle'
-              });
+              boardSlide.addText(
+                `Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`,
+                {
+                  x: 0.2,
+                  y: contentStartY + imgHeight + 0.43,
+                  w: 11.29,
+                  h: 0.25,
+                  fontSize: 10,
+                  bold: true,
+                  color: "1F2937",
+                  align: "center",
+                  valign: "middle",
+                },
+              );
             }
 
             // Elements
-            if (currentReccePhoto.elements && currentReccePhoto.elements.length > 0) {
-              const elementsText = currentReccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
+            if (
+              currentReccePhoto.elements &&
+              currentReccePhoto.elements.length > 0
+            ) {
+              const elementsText = currentReccePhoto.elements
+                .map((el: any) => `${el.elementName} (Qty: ${el.quantity})`)
+                .join(" | ");
               boardSlide.addShape(prs.ShapeType.rect, {
-                x: 0.2, y: contentStartY + imgHeight + 0.71, w: 11.29, h: 0.22,
-                fill: { color: 'FEF3C7' },
-                line: { color: GOLD, width: 1 }
+                x: 0.2,
+                y: contentStartY + imgHeight + 0.71,
+                w: 11.29,
+                h: 0.22,
+                fill: { color: "FEF3C7" },
+                line: { color: GOLD, width: 1 },
               });
               boardSlide.addText(`Elements: ${elementsText}`, {
-                x: 0.2, y: contentStartY + imgHeight + 0.71, w: 11.29, h: 0.22,
-                fontSize: 9, bold: true, color: '1F2937', align: 'center', valign: 'middle'
+                x: 0.2,
+                y: contentStartY + imgHeight + 0.71,
+                w: 11.29,
+                h: 0.22,
+                fontSize: 9,
+                bold: true,
+                color: "1F2937",
+                align: "center",
+                valign: "middle",
               });
             }
           }
-
         } else if (type === "recce" && currentReccePhoto) {
-          // Single recce photo with proper aspect ratio
-          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`;
-          await addImageWithAspectRatio(boardSlide, reccePhotoUrl, 0.3, contentStartY, 11.09, 4.8);
+          // Single recce photo
+          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, "%20")}`;
+          await addImageWithAspectRatio(
+            boardSlide,
+            reccePhotoUrl,
+            0.3,
+            contentStartY,
+            11.09,
+            4.8,
+          );
 
           // Measurements
           if (currentReccePhoto.measurements) {
             boardSlide.addShape(prs.ShapeType.rect, {
-              x: 0.3, y: contentStartY + 4.83, w: 11.09, h: 0.25,
-              fill: { color: 'FFFFFF' },
-              line: { color: GOLD, width: 1 }
+              x: 0.3,
+              y: contentStartY + 4.83,
+              w: 11.09,
+              h: 0.25,
+              fill: { color: "FFFFFF" },
+              line: { color: GOLD, width: 1 },
             });
-            boardSlide.addText(`Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`, {
-              x: 0.3, y: contentStartY + 4.83, w: 11.09, h: 0.25,
-              fontSize: 10, bold: true, color: '1F2937', align: 'center', valign: 'middle'
-            });
+            boardSlide.addText(
+              `Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`,
+              {
+                x: 0.3,
+                y: contentStartY + 4.83,
+                w: 11.09,
+                h: 0.25,
+                fontSize: 10,
+                bold: true,
+                color: "1F2937",
+                align: "center",
+                valign: "middle",
+              },
+            );
           }
 
           // Elements
-          if (currentReccePhoto.elements && currentReccePhoto.elements.length > 0) {
-            const elementsText = currentReccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
+          if (
+            currentReccePhoto.elements &&
+            currentReccePhoto.elements.length > 0
+          ) {
+            const elementsText = currentReccePhoto.elements
+              .map((el: any) => `${el.elementName} (Qty: ${el.quantity})`)
+              .join(" | ");
             boardSlide.addShape(prs.ShapeType.rect, {
-              x: 0.3, y: contentStartY + 5.11, w: 11.09, h: 0.22,
-              fill: { color: 'FEF3C7' },
-              line: { color: GOLD, width: 1 }
+              x: 0.3,
+              y: contentStartY + 5.11,
+              w: 11.09,
+              h: 0.22,
+              fill: { color: "FEF3C7" },
+              line: { color: GOLD, width: 1 },
             });
             boardSlide.addText(`Elements: ${elementsText}`, {
-              x: 0.3, y: contentStartY + 5.11, w: 11.09, h: 0.22,
-              fontSize: 9, bold: true, color: '1F2937', align: 'center', valign: 'middle'
+              x: 0.3,
+              y: contentStartY + 5.11,
+              w: 11.09,
+              h: 0.22,
+              fontSize: 9,
+              bold: true,
+              color: "1F2937",
+              align: "center",
+              valign: "middle",
             });
           }
         }
       }
     }
 
-    const buffer = await prs.write('nodebuffer');
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
-    res.setHeader('Content-Disposition', `attachment; filename="Report_${type}_${stores.length}_Stores_${new Date().toISOString().split('T')[0]}.pptx"`);
+    // ── Send response ──────────────────────────────────────────────────
+    const buffer = await prs.write("nodebuffer");
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="Report_${type}_${stores.length}_Stores_${new Date().toISOString().split("T")[0]}.pptx"`,
+    );
     res.send(buffer);
-
   } catch (error: any) {
     if (!res.headersSent) {
-      res.status(500).json({ message: "Error generating bulk PPT", error: error.message });
+      res
+        .status(500)
+        .json({ message: "Error generating bulk PPT", error: error.message });
     }
   }
 };
