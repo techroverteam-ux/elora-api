@@ -24,8 +24,21 @@ const findKey = (row: any, keywords: string[]): string | undefined => {
   );
 };
 
-export const uploadStoresBulk = async (req: Request, res: Response) => {
+export const uploadStoresBulk = async (req: Request | any, res: Response) => {
   try {
+    // Check if user has permission to create stores
+    const userRoles = req.user.roles || [];
+    const hasStoresCreatePermission = userRoles.some((role: any) => {
+      const storesPermission = role.permissions?.get('stores');
+      return storesPermission?.create === true;
+    });
+
+    if (!hasStoresCreatePermission) {
+      return res.status(403).json({ 
+        message: "Access denied. You don't have permission to create stores." 
+      });
+    }
+
     await Store.collection.dropIndex("storeCode_1").catch(() => {});
 
     const files = (req.files as Express.Multer.File[]) || (req.file ? [req.file] : []);
@@ -189,8 +202,21 @@ export const uploadStoresBulk = async (req: Request, res: Response) => {
   }
 };
 
-export const createStore = async (req: Request, res: Response) => {
+export const createStore = async (req: Request | any, res: Response) => {
   try {
+    // Check if user has permission to create stores
+    const userRoles = req.user.roles || [];
+    const hasStoresCreatePermission = userRoles.some((role: any) => {
+      const storesPermission = role.permissions?.get('stores');
+      return storesPermission?.create === true;
+    });
+
+    if (!hasStoresCreatePermission) {
+      return res.status(403).json({ 
+        message: "Access denied. You don't have permission to create stores." 
+      });
+    }
+
     const {
       dealerCode,
       storeName,
@@ -276,12 +302,17 @@ export const getAllStores = async (req: Request | any, res: Response) => {
 
     let query: any = {};
 
-    // 1. Role-based Access Control
+    // 1. Permission-based Access Control
     const userRoles = req.user.roles || [];
-    const isSuperAdmin = userRoles.some((r: any) => r.code === "SUPER_ADMIN");
-    const isAdmin = userRoles.some((r: any) => r.code === "ADMIN");
+    
+    // Check if user has 'stores' view permission
+    const hasStoresViewPermission = userRoles.some((role: any) => {
+      const storesPermission = role.permissions?.get('stores');
+      return storesPermission?.view === true;
+    });
 
-    if (!isSuperAdmin && !isAdmin) {
+    // If user doesn't have stores view permission, only show assigned stores
+    if (!hasStoresViewPermission) {
       query.$or = [
         { "workflow.recceAssignedTo": req.user._id },
         { "workflow.installationAssignedTo": req.user._id },
@@ -453,8 +484,21 @@ export const getStoreById = async (req: Request, res: Response) => {
   }
 };
 
-export const updateStore = async (req: Request, res: Response) => {
+export const updateStore = async (req: Request | any, res: Response) => {
   try {
+    // Check if user has permission to edit stores
+    const userRoles = req.user.roles || [];
+    const hasStoresEditPermission = userRoles.some((role: any) => {
+      const storesPermission = role.permissions?.get('stores');
+      return storesPermission?.edit === true;
+    });
+
+    if (!hasStoresEditPermission) {
+      return res.status(403).json({ 
+        message: "Access denied. You don't have permission to edit stores." 
+      });
+    }
+
     const store = await Store.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true,
@@ -466,8 +510,21 @@ export const updateStore = async (req: Request, res: Response) => {
   }
 };
 
-export const deleteStore = async (req: Request, res: Response) => {
+export const deleteStore = async (req: Request | any, res: Response) => {
   try {
+    // Check if user has permission to delete stores
+    const userRoles = req.user.roles || [];
+    const hasStoresDeletePermission = userRoles.some((role: any) => {
+      const storesPermission = role.permissions?.get('stores');
+      return storesPermission?.delete === true;
+    });
+
+    if (!hasStoresDeletePermission) {
+      return res.status(403).json({ 
+        message: "Access denied. You don't have permission to delete stores." 
+      });
+    }
+
     const store = await Store.findByIdAndDelete(req.params.id);
     if (!store) return res.status(404).json({ message: "Store not found" });
     res.status(200).json({ message: "Store deleted successfully" });
@@ -2215,10 +2272,15 @@ export const exportRecceTasks = async (req: Request | any, res: Response) => {
   try {
     const ExcelJS = require("exceljs");
     let query: any = {};
+    
+    // Permission-based Access Control
     const userRoles = req.user.roles || [];
-    const isSuperAdmin = userRoles.some((r: any) => r.code === "SUPER_ADMIN");
-    const isAdmin = userRoles.some((r: any) => r.code === "ADMIN");
-    if (!isSuperAdmin && !isAdmin) {
+    const hasStoresViewPermission = userRoles.some((role: any) => {
+      const storesPermission = role.permissions?.get('stores');
+      return storesPermission?.view === true;
+    });
+    
+    if (!hasStoresViewPermission) {
       query["workflow.recceAssignedTo"] = req.user._id;
     }
     const stores = await Store.find(query)
@@ -2397,10 +2459,15 @@ export const exportInstallationTasks = async (
   try {
     const ExcelJS = require("exceljs");
     let query: any = {};
+    
+    // Permission-based Access Control
     const userRoles = req.user.roles || [];
-    const isSuperAdmin = userRoles.some((r: any) => r.code === "SUPER_ADMIN");
-    const isAdmin = userRoles.some((r: any) => r.code === "ADMIN");
-    if (!isSuperAdmin && !isAdmin) {
+    const hasStoresViewPermission = userRoles.some((role: any) => {
+      const storesPermission = role.permissions?.get('stores');
+      return storesPermission?.view === true;
+    });
+    
+    if (!hasStoresViewPermission) {
       query["workflow.installationAssignedTo"] = req.user._id;
     }
     const stores = await Store.find(query)
@@ -2585,12 +2652,14 @@ export const exportSelectedStores = async (req: Request | any, res: Response) =>
     // Build query for selected stores
     let query: any = { _id: { $in: storeIds } };
     
-    // Role-based Access Control
+    // Permission-based Access Control
     const userRoles = req.user.roles || [];
-    const isSuperAdmin = userRoles.some((r: any) => r.code === "SUPER_ADMIN");
-    const isAdmin = userRoles.some((r: any) => r.code === "ADMIN");
+    const hasStoresViewPermission = userRoles.some((role: any) => {
+      const storesPermission = role.permissions?.get('stores');
+      return storesPermission?.view === true;
+    });
 
-    if (!isSuperAdmin && !isAdmin) {
+    if (!hasStoresViewPermission) {
       query.$or = [
         { "workflow.recceAssignedTo": req.user._id },
         { "workflow.installationAssignedTo": req.user._id },
@@ -2812,11 +2881,15 @@ export const exportStores = async (req: Request | any, res: Response) => {
     } = req.query;
 
     let query: any = {};
+    
+    // Permission-based Access Control
     const userRoles = req.user.roles || [];
-    const isSuperAdmin = userRoles.some((r: any) => r.code === "SUPER_ADMIN");
-    const isAdmin = userRoles.some((r: any) => r.code === "ADMIN");
+    const hasStoresViewPermission = userRoles.some((role: any) => {
+      const storesPermission = role.permissions?.get('stores');
+      return storesPermission?.view === true;
+    });
 
-    if (!isSuperAdmin && !isAdmin) {
+    if (!hasStoresViewPermission) {
       query.$or = [
         { "workflow.recceAssignedTo": req.user._id },
         { "workflow.installationAssignedTo": req.user._id },
