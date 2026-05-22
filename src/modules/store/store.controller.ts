@@ -117,6 +117,7 @@ export const uploadStoresBulk = async (req: Request | any, res: Response) => {
                   vendorCode: rowData.vendorCode,
                   clientCode: rowData.clientCode ? String(rowData.clientCode).trim() : "",
                   clientId: clientId,
+                  createdBy: req.user._id, // Track who uploaded this store
                   location: {
                     zone: row["Zone"] || "",
                     state: rowData.state,
@@ -258,6 +259,7 @@ export const createStore = async (req: Request | any, res: Response) => {
       commercials,
       costDetails,
       specs,
+      createdBy: req.user._id, // Track who created this store
       currentStatus: StoreStatus.MANUALLY_ADDED,
     });
 
@@ -302,8 +304,14 @@ export const getAllStores = async (req: Request | any, res: Response) => {
 
     let query: any = {};
 
-    // 1. Permission-based Access Control
+    // 1. 3-Tier Permission-based Access Control
     const userRoles = req.user.roles || [];
+    
+    // Check if user is Super Admin (role code check)
+    const isSuperAdmin = userRoles.some((role: any) => role.code === "SUPER_ADMIN");
+    
+    // Check if user is Sub Admin (role code check)
+    const isSubAdmin = userRoles.some((role: any) => role.code === "SUB_ADMIN");
     
     // Check if user has 'stores' view permission
     const hasStoresViewPermission = userRoles.some((role: any) => {
@@ -311,13 +319,20 @@ export const getAllStores = async (req: Request | any, res: Response) => {
       return storesPermission?.view === true;
     });
 
-    // If user doesn't have stores view permission, only show assigned stores
-    if (!hasStoresViewPermission) {
+    // Apply access control based on role hierarchy
+    if (isSuperAdmin) {
+      // Super Admin: No filter - can see all stores
+    } else if (isSubAdmin) {
+      // Sub Admin: Can only see stores they created/uploaded
+      query.createdBy = req.user._id;
+    } else if (!hasStoresViewPermission) {
+      // Other roles without view permission: Only see assigned stores
       query.$or = [
         { "workflow.recceAssignedTo": req.user._id },
         { "workflow.installationAssignedTo": req.user._id },
       ];
     }
+    // If user has stores.view permission but is not Super/Sub Admin, they can see all stores
 
     // 2. Status Filter
     if (status && status !== "ALL") {
@@ -2273,14 +2288,22 @@ export const exportRecceTasks = async (req: Request | any, res: Response) => {
     const ExcelJS = require("exceljs");
     let query: any = {};
     
-    // Permission-based Access Control
+    // 3-Tier Permission-based Access Control
     const userRoles = req.user.roles || [];
+    const isSuperAdmin = userRoles.some((role: any) => role.code === "SUPER_ADMIN");
+    const isSubAdmin = userRoles.some((role: any) => role.code === "SUB_ADMIN");
     const hasStoresViewPermission = userRoles.some((role: any) => {
       const storesPermission = role.permissions?.get('stores');
       return storesPermission?.view === true;
     });
     
-    if (!hasStoresViewPermission) {
+    if (isSuperAdmin) {
+      // Super Admin: No filter
+    } else if (isSubAdmin) {
+      // Sub Admin: Only their uploaded stores
+      query.createdBy = req.user._id;
+    } else if (!hasStoresViewPermission) {
+      // Other roles: Only assigned stores
       query["workflow.recceAssignedTo"] = req.user._id;
     }
     const stores = await Store.find(query)
@@ -2460,14 +2483,22 @@ export const exportInstallationTasks = async (
     const ExcelJS = require("exceljs");
     let query: any = {};
     
-    // Permission-based Access Control
+    // 3-Tier Permission-based Access Control
     const userRoles = req.user.roles || [];
+    const isSuperAdmin = userRoles.some((role: any) => role.code === "SUPER_ADMIN");
+    const isSubAdmin = userRoles.some((role: any) => role.code === "SUB_ADMIN");
     const hasStoresViewPermission = userRoles.some((role: any) => {
       const storesPermission = role.permissions?.get('stores');
       return storesPermission?.view === true;
     });
     
-    if (!hasStoresViewPermission) {
+    if (isSuperAdmin) {
+      // Super Admin: No filter
+    } else if (isSubAdmin) {
+      // Sub Admin: Only their uploaded stores
+      query.createdBy = req.user._id;
+    } else if (!hasStoresViewPermission) {
+      // Other roles: Only assigned stores
       query["workflow.installationAssignedTo"] = req.user._id;
     }
     const stores = await Store.find(query)
@@ -2652,14 +2683,22 @@ export const exportSelectedStores = async (req: Request | any, res: Response) =>
     // Build query for selected stores
     let query: any = { _id: { $in: storeIds } };
     
-    // Permission-based Access Control
+    // 3-Tier Permission-based Access Control
     const userRoles = req.user.roles || [];
+    const isSuperAdmin = userRoles.some((role: any) => role.code === "SUPER_ADMIN");
+    const isSubAdmin = userRoles.some((role: any) => role.code === "SUB_ADMIN");
     const hasStoresViewPermission = userRoles.some((role: any) => {
       const storesPermission = role.permissions?.get('stores');
       return storesPermission?.view === true;
     });
 
-    if (!hasStoresViewPermission) {
+    if (isSuperAdmin) {
+      // Super Admin: No additional filter
+    } else if (isSubAdmin) {
+      // Sub Admin: Only their uploaded stores
+      query.createdBy = req.user._id;
+    } else if (!hasStoresViewPermission) {
+      // Other roles: Only assigned stores
       query.$or = [
         { "workflow.recceAssignedTo": req.user._id },
         { "workflow.installationAssignedTo": req.user._id },
@@ -2882,14 +2921,22 @@ export const exportStores = async (req: Request | any, res: Response) => {
 
     let query: any = {};
     
-    // Permission-based Access Control
+    // 3-Tier Permission-based Access Control
     const userRoles = req.user.roles || [];
+    const isSuperAdmin = userRoles.some((role: any) => role.code === "SUPER_ADMIN");
+    const isSubAdmin = userRoles.some((role: any) => role.code === "SUB_ADMIN");
     const hasStoresViewPermission = userRoles.some((role: any) => {
       const storesPermission = role.permissions?.get('stores');
       return storesPermission?.view === true;
     });
 
-    if (!hasStoresViewPermission) {
+    if (isSuperAdmin) {
+      // Super Admin: No filter
+    } else if (isSubAdmin) {
+      // Sub Admin: Only their uploaded stores
+      query.createdBy = req.user._id;
+    } else if (!hasStoresViewPermission) {
+      // Other roles: Only assigned stores
       query.$or = [
         { "workflow.recceAssignedTo": req.user._id },
         { "workflow.installationAssignedTo": req.user._id },

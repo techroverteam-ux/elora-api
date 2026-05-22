@@ -22,6 +22,7 @@ export interface StoreDocument extends Document {
   storeCode?: string;
   storeName?: string;
   vendorCode?: string; // NEW: Added Vendor Code
+  createdBy?: mongoose.Types.ObjectId; // NEW: Track who created/uploaded the store
 
   location: {
     zone?: string; // NEW
@@ -129,6 +130,7 @@ const StoreSchema = new Schema<StoreDocument>(
     storeCode: { type: String },
     storeName: { type: String },
     vendorCode: { type: String }, // NEW
+    createdBy: { type: Schema.Types.ObjectId, ref: "User" }, // NEW: Track who created/uploaded the store
 
     location: {
       zone: { type: String }, // NEW
