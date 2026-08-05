@@ -156,6 +156,31 @@ export const uploadStoresBulk = async (req: Request | any, res: Response) => {
                   imagesAttached: row["Images Attached in PPT (yes/no)"] ? String(row["Images Attached in PPT (yes/no)"]).toLowerCase().includes("yes") || String(row["Images Attached in PPT (yes/no)"]).toLowerCase().includes("y") : false,
                   currentStatus: StoreStatus.UPLOADED,
                 });
+
+                const directInstallation = row["Direct Installation (Yes/No)"] 
+                  ? String(row["Direct Installation (Yes/No)"]).toLowerCase().includes("yes") || String(row["Direct Installation (Yes/No)"]).toLowerCase().includes("y")
+                  : false;
+
+                if (directInstallation) {
+                  const lastStore = toInsert[toInsert.length - 1];
+                  lastStore.currentStatus = StoreStatus.RECCE_APPROVED;
+                  lastStore.recce = {
+                    reccePhotos: [{
+                      photo: "", // Empty string since images are not required
+                      measurements: {
+                        width: parseNumber(rowData.width) || 0,
+                        height: parseNumber(rowData.height) || 0,
+                        unit: "ft" // Assuming Excel template takes Ft.
+                      },
+                      elements: [], // Elements not strictly compulsory for bulk upload direct installation, can be added later
+                      approvalStatus: "APPROVED",
+                      approvedAt: new Date()
+                    }],
+                    approvedPhotosCount: 1,
+                    pendingPhotosCount: 0,
+                    rejectedPhotosCount: 0
+                  };
+                }
               }
             }
           }
@@ -228,6 +253,8 @@ export const createStore = async (req: Request | any, res: Response) => {
       commercials,
       costDetails,
       specs,
+      directInstallation,
+      boards,
     } = req.body;
 
     if (!dealerCode) {
@@ -260,8 +287,45 @@ export const createStore = async (req: Request | any, res: Response) => {
       costDetails,
       specs,
       createdBy: req.user._id, // Track who created this store
-      currentStatus: StoreStatus.MANUALLY_ADDED,
+      currentStatus: directInstallation ? StoreStatus.RECCE_APPROVED : StoreStatus.MANUALLY_ADDED,
     });
+
+    if (directInstallation) {
+      // Map boards to reccePhotos
+      const reccePhotos = Array.isArray(boards) && boards.length > 0
+        ? boards.map((board: any) => ({
+            photo: "",
+            measurements: {
+              width: Number(board.width) || 0,
+              height: Number(board.height) || 0,
+              unit: board.unit || "ft"
+            },
+            elements: board.elementId ? [{
+              elementId: board.elementId,
+              elementName: board.elementName,
+              quantity: Number(board.quantity) || 1,
+              customRate: Number(board.customRate) || 0
+            }] : [],
+            approvalStatus: "APPROVED" as const,
+            approvedAt: new Date(),
+            approvedBy: req.user._id
+          }))
+        : [{
+            photo: "",
+            measurements: { width: 0, height: 0, unit: "ft" },
+            elements: [],
+            approvalStatus: "APPROVED" as const,
+            approvedAt: new Date(),
+            approvedBy: req.user._id
+          }];
+
+      store.recce = {
+        reccePhotos: reccePhotos,
+        approvedPhotosCount: reccePhotos.length,
+        pendingPhotosCount: 0,
+        rejectedPhotosCount: 0,
+      };
+    }
 
     await store.save();
 
@@ -431,6 +495,15 @@ export const getAllStores = async (req: Request | any, res: Response) => {
           ],
         },
       ];
+    }
+
+    const returnAllIds = req.query.returnAllIds === 'true';
+    
+    if (returnAllIds) {
+      const allStores = await Store.find(query).select('_id currentStatus');
+      return res.status(200).json({
+        stores: allStores
+      });
     }
 
     const total = await Store.countDocuments(query);
@@ -3351,6 +3424,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
       "Width (Ft.)",
       "Height (Ft.)",
       "Dealer Board Type",
+      "Direct Installation (Yes/No)",
     ];
     const headerRow = sheet.getRow(1);
     for (let i = 0; i < headers.length; i++) {
@@ -3385,6 +3459,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
       { width: 12 },
       { width: 12 },
       { width: 20 },
+      { width: 25 },
     ];
     const samples = [
       [
@@ -3402,6 +3477,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         10,
         5,
         "Flex",
+        "No"
       ],
       [
         2,
@@ -3418,6 +3494,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         10,
         10,
         "LED",
+        "Yes"
       ],
       [
         3,
@@ -3434,6 +3511,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         15,
         10,
         "Digital",
+        "No"
       ],
       [
         4,
@@ -3450,6 +3528,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         20,
         10,
         "Flex",
+        "No"
       ],
       [
         5,
@@ -3466,6 +3545,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
         10,
         5,
         "LED",
+        "No"
       ],
       [
         6,
