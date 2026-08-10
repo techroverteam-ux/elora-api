@@ -85,10 +85,18 @@ export const uploadStoresBulk = async (req: Request | any, res: Response) => {
             error = "Dealer Code is required";
           } else {
             const dCode = String(rowData.dealerCode).trim();
+            let isDuplicateDirectInst = false;
+            let existingStore: any = null;
+
             if (existingCodes.has(dCode)) {
               error = `Store with Dealer Code ${dCode} already exists in system`;
             } else if (dealerCodesInFile.has(dCode)) {
-              error = `Dealer Code ${dCode} appears multiple times in this file`;
+              existingStore = toInsert.find((s) => s.dealerCode === dCode);
+              if (!existingStore || existingStore.currentStatus !== StoreStatus.RECCE_APPROVED) {
+                error = `Dealer Code ${dCode} appears multiple times in this file, but is not marked for Direct Installation`;
+              } else {
+                isDuplicateDirectInst = true;
+              }
             } else {
               dealerCodesInFile.add(dCode);
               
@@ -99,14 +107,31 @@ export const uploadStoresBulk = async (req: Request | any, res: Response) => {
                   error = `Client Code ${clientCode} not found in system`;
                 }
               }
+            }
 
-              if (!error) {
+            if (!error) {
+              const parseNumber = (val: any): number => { const num = Number(val); return isNaN(num) ? 0 : num; };
+
+              if (isDuplicateDirectInst && existingStore) {
+                // Append new board to the existing store
+                const width = parseNumber(rowData.width) || 0;
+                const height = parseNumber(rowData.height) || 0;
+                const elementName = row["Element Name (Direct Inst.)"] || "";
+
+                existingStore.recce.reccePhotos.push({
+                  photo: "",
+                  measurements: { width, height, unit: "ft" },
+                  elements: elementName ? [{ elementName, quantity: 1, customRate: 0 }] : [],
+                  approvalStatus: "APPROVED",
+                  approvedAt: new Date()
+                });
+                existingStore.recce.approvedPhotosCount = existingStore.recce.reccePhotos.length;
+              } else {
                 const city = rowData.city || rowData.district;
                 const district = rowData.district;
                 const cityPrefix = city.trim().substring(0, 3).toUpperCase();
                 const districtPrefix = district.trim().substring(0, 3).toUpperCase();
                 const storeId = `${cityPrefix}${districtPrefix}${dCode.toUpperCase()}`;
-                const parseNumber = (val: any): number => { const num = Number(val); return isNaN(num) ? 0 : num; };
 
                 toInsert.push({
                   projectID: rowData.srNo ? String(rowData.srNo) : "",
@@ -164,6 +189,7 @@ export const uploadStoresBulk = async (req: Request | any, res: Response) => {
                 if (directInstallation) {
                   const lastStore = toInsert[toInsert.length - 1];
                   lastStore.currentStatus = StoreStatus.RECCE_APPROVED;
+                  const elementName = row["Element Name (Direct Inst.)"] || "";
                   lastStore.recce = {
                     reccePhotos: [{
                       photo: "", // Empty string since images are not required
@@ -172,7 +198,7 @@ export const uploadStoresBulk = async (req: Request | any, res: Response) => {
                         height: parseNumber(rowData.height) || 0,
                         unit: "ft" // Assuming Excel template takes Ft.
                       },
-                      elements: [], // Elements not strictly compulsory for bulk upload direct installation, can be added later
+                      elements: elementName ? [{ elementName, quantity: 1, customRate: 0 }] : [],
                       approvalStatus: "APPROVED",
                       approvedAt: new Date()
                     }],
@@ -3425,6 +3451,7 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
       "Height (Ft.)",
       "Dealer Board Type",
       "Direct Installation (Yes/No)",
+      "Element Name (Direct Inst.)",
     ];
     const headerRow = sheet.getRow(1);
     for (let i = 0; i < headers.length; i++) {
@@ -3460,173 +3487,30 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
       { width: 12 },
       { width: 20 },
       { width: 25 },
+      { width: 25 },
     ];
     const samples = [
-      [
-        1,
-        "RELBAN240101",
-        "DLR001",
-        "ELORA CREATIVE ART",
-        "Rajesh Kumar",
-        "Maharashtra",
-        "Mumbai",
-        "Mumbai Suburban",
-        "123 Main Street, Andheri West",
-        "9876543210",
-        "27AAAAA0000A1Z5",
-        10,
-        5,
-        "Flex",
-        "No"
-      ],
-      [
-        2,
-        "RELBAN240101",
-        "DLR002",
-        "ELORA CREATIVE ART",
-        "Amit Sharma",
-        "Delhi",
-        "Delhi",
-        "Central Delhi",
-        "456 Park Avenue, Connaught Place",
-        "9876543211",
-        "07AAAAA0000A1Z5",
-        10,
-        10,
-        "LED",
-        "Yes"
-      ],
-      [
-        3,
-        "RELBAN240101",
-        "DLR003",
-        "ELORA CREATIVE ART",
-        "Priya Singh",
-        "Karnataka",
-        "Bangalore",
-        "Bangalore Urban",
-        "789 MG Road, Indiranagar",
-        "9876543212",
-        "29AAAAA0000A1Z5",
-        15,
-        10,
-        "Digital",
-        "No"
-      ],
-      [
-        4,
-        "RELBAN240101",
-        "DLR004",
-        "ELORA CREATIVE ART",
-        "Suresh Patel",
-        "Maharashtra",
-        "Pune",
-        "Pune",
-        "321 FC Road, Shivajinagar",
-        "9876543213",
-        "27BBBBB0000B1Z5",
-        20,
-        10,
-        "Flex",
-        "No"
-      ],
-      [
-        5,
-        "RELBAN240101",
-        "DLR005",
-        "ELORA CREATIVE ART",
-        "Neha Gupta",
-        "Telangana",
-        "Hyderabad",
-        "Hyderabad",
-        "654 Banjara Hills, Road No 12",
-        "9876543214",
-        "36AAAAA0000A1Z5",
-        10,
-        5,
-        "LED",
-        "No"
-      ],
-      [
-        6,
-        "RELBAN240101",
-        "DLR006",
-        "ELORA CREATIVE ART",
-        "Vikram Reddy",
-        "Tamil Nadu",
-        "Chennai",
-        "Chennai",
-        "987 Anna Salai, T Nagar",
-        "9876543215",
-        "33AAAAA0000A1Z5",
-        10,
-        10,
-        "Digital",
-      ],
-      [
-        7,
-        "RELBAN240101",
-        "DLR007",
-        "ELORA CREATIVE ART",
-        "Anjali Verma",
-        "West Bengal",
-        "Kolkata",
-        "Kolkata",
-        "147 Park Street, Central Kolkata",
-        "9876543216",
-        "19AAAAA0000A1Z5",
-        15,
-        10,
-        "Flex",
-      ],
-      [
-        8,
-        "RELBAN240101",
-        "DLR008",
-        "ELORA CREATIVE ART",
-        "Rahul Joshi",
-        "Gujarat",
-        "Ahmedabad",
-        "Ahmedabad",
-        "258 CG Road, Navrangpura",
-        "9876543217",
-        "24AAAAA0000A1Z5",
-        20,
-        10,
-        "LED",
-      ],
-      [
-        9,
-        "RELBAN240101",
-        "DLR009",
-        "ELORA CREATIVE ART",
-        "Kavita Desai",
-        "Rajasthan",
-        "Jaipur",
-        "Jaipur",
-        "369 MI Road, C Scheme",
-        "9876543218",
-        "08AAAAA0000A1Z5",
-        10,
-        5,
-        "Digital",
-      ],
-      [
-        10,
-        "RELBAN240101",
-        "DLR010",
-        "ELORA CREATIVE ART",
-        "Manoj Yadav",
-        "Uttar Pradesh",
-        "Lucknow",
-        "Lucknow",
-        "741 Hazratganj, Lucknow Central",
-        "9876543219",
-        "09AAAAA0000A1Z5",
-        10,
-        10,
-        "Flex",
-      ],
+      [ 1, "SUBSUB712529", "TEST-N-001", "ELORA CREATIVE ART", "Rajesh Kumar", "Maharashtra", "Mumbai", "Mumbai Suburban", "123 Main Street, Andheri West", "9876543210", "27AAAAA0000A1Z5", 10, 5, "Flex", "No", "" ],
+      [ 2, "SUBSUB712529", "TEST-N-002", "ELORA CREATIVE ART", "Amit Sharma", "Delhi", "Delhi", "Central Delhi", "456 Park Avenue, Connaught Place", "9876543211", "07AAAAA0000A1Z5", 10, 10, "LED", "No", "" ],
+      [ 3, "SUBSUB712529", "TEST-N-003", "ELORA CREATIVE ART", "Priya Singh", "Karnataka", "Bangalore", "Bangalore Urban", "789 MG Road, Indiranagar", "9876543212", "29AAAAA0000A1Z5", 15, 10, "Digital", "No", "" ],
+      [ 4, "SUBSUB712529", "TEST-N-004", "ELORA CREATIVE ART", "Suresh Patel", "Maharashtra", "Pune", "Pune", "321 FC Road, Shivajinagar", "9876543213", "27BBBBB0000B1Z5", 20, 10, "Flex", "No", "" ],
+      [ 5, "SUBSUB712529", "TEST-N-005", "ELORA CREATIVE ART", "Neha Gupta", "Telangana", "Hyderabad", "Hyderabad", "654 Banjara Hills, Road No 12", "9876543214", "36AAAAA0000A1Z5", 10, 5, "LED", "No", "" ],
+      
+      [ 6, "SUBSUB712529", "TEST-DI-001", "ELORA CREATIVE ART", "Vikas Reddy", "Andhra Pradesh", "Visakhapatnam", "Visakhapatnam", "987 Beach Road", "9876543215", "37AAAAA0000A1Z5", 30, 15, "Digital", "Yes", "Main Fascia" ],
+      [ 7, "SUBSUB712529", "TEST-DI-001", "", "", "", "", "", "", "", "", 10, 5, "", "", "Side Flange" ],
+      
+      [ 8, "SUBSUB712529", "TEST-DI-002", "ELORA CREATIVE ART", "Anjali Verma", "West Bengal", "Kolkata", "Kolkata", "147 Park Street", "9876543216", "19AAAAA0000A1Z5", 15, 10, "Flex", "Yes", "Main Board" ],
+      [ 9, "SUBSUB712529", "TEST-DI-002", "", "", "", "", "", "", "", "", 5, 5, "", "", "Lollipop" ],
+
+      [ 10, "SUBSUB712529", "TEST-DI-003", "ELORA CREATIVE ART", "Rahul Joshi", "Gujarat", "Ahmedabad", "Ahmedabad", "258 CG Road", "9876543217", "24AAAAA0000A1Z5", 20, 10, "LED", "Yes", "Main Signage" ],
+      [ 11, "SUBSUB712529", "TEST-DI-003", "", "", "", "", "", "", "", "", 8, 4, "", "", "Entry Gate" ],
+
+      [ 12, "SUBSUB712529", "TEST-DI-004", "ELORA CREATIVE ART", "Kavita Desai", "Rajasthan", "Jaipur", "Jaipur", "369 MI Road", "9876543218", "08AAAAA0000A1Z5", 10, 5, "Digital", "Yes", "Primary Board" ],
+      [ 13, "SUBSUB712529", "TEST-DI-004", "", "", "", "", "", "", "", "", 6, 3, "", "", "Wall Wrap" ],
+      [ 14, "SUBSUB712529", "TEST-DI-004", "", "", "", "", "", "", "", "", 4, 4, "", "", "Standee" ],
+
+      [ 15, "SUBSUB712529", "TEST-DI-005", "ELORA CREATIVE ART", "Manoj Yadav", "Uttar Pradesh", "Lucknow", "Lucknow", "741 Hazratganj", "9876543219", "09AAAAA0000A1Z5", 10, 10, "Flex", "Yes", "Main Flex" ],
+      [ 16, "SUBSUB712529", "TEST-DI-005", "", "", "", "", "", "", "", "", 5, 5, "", "", "Pillar Wrap" ],
     ];
     samples.forEach((data, idx) => {
       const row: Row = sheet.getRow(idx + 2);
@@ -3705,7 +3589,8 @@ export const downloadStoreTemplate = async (req: Request, res: Response) => {
       "3. Dealer Code must be unique for each store",
       "4. Width and Height should be in feet (numbers only)",
       "5. Refer to Validations sheet for Board Sizes and Types",
-      "6. Delete sample data before uploading your actual data",
+      "6. To add multiple boards for a Direct Installation, create multiple rows with the exact same Dealer Code. Fill the Width, Height, and Element Name on each row.",
+      "7. Delete sample data before uploading your actual data",
     ];
     instructions.forEach((text, i) => {
       const cell = instructionsSheet.getCell("A" + (i + 3));
