@@ -3634,7 +3634,7 @@ export const generateStoreExcel = async (req: Request, res: Response) => {
     const worksheet = workbook.addWorksheet("Store Details");
 
     const headers = [
-      "Client Code", "Store Code", "Store Name", "City", "Address", "Mobile No",
+      "Store ID", "Dealer Code", "Client Code", "Store Name", "City", "Address", "Mobile No",
       "Element", "Width (Inch)", "Height (Inch)", "RECCE Person", "Installation Person"
     ];
 
@@ -3649,7 +3649,7 @@ export const generateStoreExcel = async (req: Request, res: Response) => {
     headerRow.height = 25;
 
     worksheet.columns = [
-      { width: 15 }, { width: 15 }, { width: 30 }, { width: 15 }, { width: 40 },
+      { width: 15 }, { width: 15 }, { width: 15 }, { width: 30 }, { width: 15 }, { width: 40 },
       { width: 15 }, { width: 30 }, { width: 15 }, { width: 15 }, { width: 20 }, { width: 20 }
     ];
 
@@ -3663,8 +3663,9 @@ export const generateStoreExcel = async (req: Request, res: Response) => {
         if (elements.length > 0) {
           elements.forEach((el: any) => {
             const row = worksheet.addRow([
+              store.storeId || "-",
+              store.dealerCode || "-",
               store.clientCode || "-",
-              store.storeCode || "-",
               store.storeName,
               store.location.city || "-",
               store.location.address || "-",
@@ -3680,8 +3681,9 @@ export const generateStoreExcel = async (req: Request, res: Response) => {
           });
         } else {
           const row = worksheet.addRow([
+            store.storeId || "-",
+            store.dealerCode || "-",
             store.clientCode || "-",
-            store.storeCode || "-",
             store.storeName,
             store.location.city || "-",
             store.location.address || "-",
@@ -3698,8 +3700,9 @@ export const generateStoreExcel = async (req: Request, res: Response) => {
       });
     } else {
       const row = worksheet.addRow([
+        store.storeId || "-",
+        store.dealerCode || "-",
         store.clientCode || "-",
-        store.storeCode || "-",
         store.storeName,
         store.location.city || "-",
         store.location.address || "-",
