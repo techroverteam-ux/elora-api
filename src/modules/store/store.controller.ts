@@ -426,9 +426,9 @@ export const getAllStores = async (req: Request | any, res: Response) => {
 
     // 2. Status Filter
     if (status && status !== "ALL") {
-      // Handle comma-separated statuses
-      if (status.includes(",")) {
-        const statuses = status.split(",").map((s: string) => s.trim());
+      // Handle array or comma-separated statuses
+      if (Array.isArray(status) || (typeof status === "string" && status.includes(","))) {
+        const statuses = Array.isArray(status) ? status : status.split(",").map((s: string) => s.trim());
         query.currentStatus = { $in: statuses };
         
         // If installation statuses are requested, ensure recce is not rejected
@@ -457,16 +457,16 @@ export const getAllStores = async (req: Request | any, res: Response) => {
       }
     }
 
-    // 3. City Filter (supports comma-separated values for multi-select)
+    // 3. City Filter (supports multi-select)
     if (city) {
-      if (city.includes(",")) {
+      if (Array.isArray(city)) {
+        query["location.city"] = { $in: city };
+      } else if (typeof city === "string" && city.includes(",")) {
         const cities = city.split(",").map((c: string) => c.trim()).filter(Boolean);
-        // For multiple cities, use simple $in operator with exact values
-        // MongoDB will do case-insensitive matching if we use regex, but $in with strings is simpler
         query["location.city"] = { $in: cities };
       } else {
         // Single city - exact match (case-insensitive)
-        query["location.city"] = city.trim();
+        query["location.city"] = typeof city === "string" ? city.trim() : city;
       }
     }
 
@@ -492,14 +492,29 @@ export const getAllStores = async (req: Request | any, res: Response) => {
 
     // 8. Client Code Filter
     if (clientCode) {
-      query.clientCode = { $regex: clientCode, $options: "i" };
+      if (Array.isArray(clientCode)) {
+        query.clientCode = { $in: clientCode };
+      } else if (typeof clientCode === "string" && clientCode.includes(",")) {
+        query.clientCode = { $in: clientCode.split(",").map(c => c.trim()).filter(Boolean) };
+      } else {
+        query.clientCode = { $regex: clientCode, $options: "i" };
+      }
     }
 
     // 9. Client Name Filter
     if (clientName) {
-      const clients = await Client.find({
-        clientName: { $regex: clientName, $options: "i" },
-      }).select("_id");
+      let clientsQuery: any = {};
+      
+      if (Array.isArray(clientName)) {
+        clientsQuery = { clientName: { $in: clientName.map((n: any) => new RegExp(`^${n}$`, 'i')) } };
+      } else if (typeof clientName === "string" && clientName.includes(",")) {
+        const names = clientName.split(",").map(n => n.trim()).filter(Boolean);
+        clientsQuery = { clientName: { $in: names.map(n => new RegExp(`^${n}$`, 'i')) } };
+      } else {
+        clientsQuery = { clientName: { $regex: clientName, $options: "i" } };
+      }
+
+      const clients = await Client.find(clientsQuery).select("_id");
       if (clients.length > 0) {
         query.clientId = { $in: clients.map((c) => c._id) };
       } else {
