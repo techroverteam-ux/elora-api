@@ -1,4 +1,10 @@
 import { Request, Response } from "express";
+const getFullImageUrl = (path: string) => {
+  if (!path) return "";
+  if (path.startsWith("http")) return path;
+  const cleanedPath = path.replace(/^\/+/, "");
+  return encodeURI(`https://storage.enamorimpex.com/eloraftp/${cleanedPath}`);
+};
 import Store from "./store.model";
 import fs from "fs";
 import path from "path";
@@ -83,13 +89,12 @@ const drawStoreDetailsHeader = (doc: any, store: any, type: 'recce' | 'installat
 // ====== HELPER: Load image from URL ======
 const loadImageFromUrl = async (url: string): Promise<Buffer | null> => {
   try {
-    const response = await axios.get(url, {
-      responseType: 'arraybuffer',
-      timeout: 10000,
+    const response = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0' }
     });
-    if (response.status === 200) {
-      return Buffer.from(response.data);
+    if (response.ok) {
+      const arrayBuffer = await response.arrayBuffer();
+      return Buffer.from(arrayBuffer);
     }
   } catch (e) { }
   return null;
@@ -157,7 +162,7 @@ export const generateReccePDF = async (req: Request, res: Response) => {
 
         // Load image from URL instead of local path
         try {
-          const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
+          const photoUrl = getFullImageUrl(store.recce.initialPhotos[i]);
           const buffer = await loadImageFromUrl(photoUrl);
           if (buffer) {
             doc.image(buffer, x + 5, y + 5, { width: photoWidth - 10, height: photoHeight - 10, fit: [photoWidth - 10, photoHeight - 10] });
@@ -185,7 +190,7 @@ export const generateReccePDF = async (req: Request, res: Response) => {
 
         // Load image from URL instead of local path
         try {
-          const photoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+          const photoUrl = getFullImageUrl(reccePhoto.photo);
           const buffer = await loadImageFromUrl(photoUrl);
           if (buffer) {
             doc.image(buffer, 45, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
@@ -283,7 +288,7 @@ export const generateInstallationPDF = async (req: Request, res: Response) => {
 
         // Load image from URL instead of local path
         try {
-          const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
+          const photoUrl = getFullImageUrl(store.recce.initialPhotos[i]);
           const buffer = await loadImageFromUrl(photoUrl);
           if (buffer) {
             doc.image(buffer, x + 5, y + 5, { width: photoWidth - 10, height: photoHeight - 10, fit: [photoWidth - 10, photoHeight - 10] });
@@ -447,7 +452,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
 
           // Load image from URL instead of local path
           try {
-            const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, '%20')}`;
+            const photoUrl = getFullImageUrl(store.recce.initialPhotos[i]);
             const buffer = await loadImageFromUrl(photoUrl);
             if (buffer) {
               doc.image(buffer, x + 5, y + 5, { width: photoWidth - 10, height: photoHeight - 10, fit: [photoWidth - 10, photoHeight - 10] });
@@ -474,7 +479,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             const imgWidth = (doc.page.width - 60) / 3;
 
             // BEFORE
-            const beforeBuffer = await loadImageFromUrl(`https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`);
+            const beforeBuffer = await loadImageFromUrl(getFullImageUrl(currentReccePhoto.photo));
             if (beforeBuffer) {
               doc.save();
               doc.rect(30, imgY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(3).stroke();
@@ -483,7 +488,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             }
 
             // AFTER 1
-            const after1Buffer = await loadImageFromUrl(`https://storage.enamorimpex.com/eloraftp/${installPhotos[0].installationPhoto.replace(/\s+/g, '%20')}`);
+            const after1Buffer = await loadImageFromUrl(getFullImageUrl(installPhotos[0].installationPhoto));
             if (after1Buffer) {
               doc.save();
               doc.rect(30 + imgWidth, imgY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
@@ -492,7 +497,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             }
 
             // AFTER 2
-            const after2Buffer = await loadImageFromUrl(`https://storage.enamorimpex.com/eloraftp/${installPhotos[1].installationPhoto.replace(/\s+/g, '%20')}`);
+            const after2Buffer = await loadImageFromUrl(getFullImageUrl(installPhotos[1].installationPhoto));
             if (after2Buffer) {
               doc.save();
               doc.rect(30 + imgWidth * 2, imgY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
@@ -522,7 +527,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             const imgWidth = (doc.page.width - 50) / 2;
             const installPhoto = installPhotos[0];
 
-            const beforeBuffer = await loadImageFromUrl(`https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`);
+            const beforeBuffer = await loadImageFromUrl(getFullImageUrl(currentReccePhoto.photo));
             if (beforeBuffer) {
               doc.save();
               doc.rect(30, imgY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(3).stroke();
@@ -531,7 +536,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             }
 
             if (installPhoto) {
-              const afterBuffer = await loadImageFromUrl(`https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`);
+              const afterBuffer = await loadImageFromUrl(getFullImageUrl(installPhoto.installationPhoto));
               if (afterBuffer) {
                 doc.save();
                 doc.rect(30 + imgWidth, imgY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
@@ -577,7 +582,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
           const imgY = contentStartY;
           const imgHeight = 400;
 
-          const buffer = await loadImageFromUrl(`https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, '%20')}`);
+          const buffer = await loadImageFromUrl(getFullImageUrl(currentReccePhoto.photo));
           if (buffer) {
             doc.save();
             doc.rect(30, imgY, doc.page.width - 60, imgHeight).strokeColor('#EAB308').lineWidth(3).stroke();

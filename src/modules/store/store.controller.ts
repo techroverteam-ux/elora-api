@@ -409,20 +409,26 @@ export const getAllStores = async (req: Request | any, res: Response) => {
       return storesPermission?.view === true;
     });
 
+    // Check if user is strictly a field role (RECCE or INSTALLATION)
+    const isFieldRole = userRoles.some((role: any) => 
+      role.code === "RECCE" || role.code === "INSTALLATION" || 
+      role.code === "recce" || role.code === "installation"
+    );
+
     // Apply access control based on role hierarchy
     if (isSuperAdmin) {
       // Super Admin: No filter - can see all stores
     } else if (isSubAdmin) {
       // Sub Admin: Can only see stores they created/uploaded
       query.createdBy = req.user._id;
-    } else if (!hasStoresViewPermission) {
-      // Other roles without view permission: Only see assigned stores
+    } else if (isFieldRole || !hasStoresViewPermission) {
+      // Field roles (RECCE/INSTALLATION) or roles without view permission: Only see assigned stores
       query.$or = [
         { "workflow.recceAssignedTo": req.user._id },
         { "workflow.installationAssignedTo": req.user._id },
       ];
     }
-    // If user has stores.view permission but is not Super/Sub Admin, they can see all stores
+    // If user has stores.view permission but is not Super/Sub Admin and not a Field Role, they can see all stores
 
     // 2. Status Filter
     if (status && status !== "ALL") {

@@ -1,4 +1,10 @@
 import { Request, Response } from "express";
+const getFullImageUrl = (path: string) => {
+  if (!path) return "";
+  if (path.startsWith("http")) return path;
+  const cleanedPath = path.replace(/^\/+/, "");
+  return encodeURI(`https://storage.enamorimpex.com/eloraftp/${cleanedPath}`);
+};
 import Store from "./store.model";
 import path from "path";
 import fs from "fs";
@@ -9,21 +15,20 @@ const loadImageBase64 = async (
   url: string,
 ): Promise<{ data: string; width: number; height: number } | null> => {
   try {
-    const response = await axios.get(url, {
-      responseType: "arraybuffer",
-      timeout: 10000,
+    const response = await fetch(url, {
       headers: { "User-Agent": "Mozilla/5.0" },
     });
-    if (response.status === 200) {
-      const buffer = Buffer.from(response.data);
-      const base64 = `data:image/jpeg;base64,${buffer.toString("base64")}`;
+    if (response.ok) {
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const contentType = response.headers.get("content-type") || "image/jpeg";
+      
+      const base64 = `data:${contentType};base64,${buffer.toString("base64")}`;
 
-      // Try to get image dimensions (basic approach)
-      // For now, we'll return default dimensions and let PPT handle aspect ratio
       return {
         data: base64,
-        width: 1920, // Default width
-        height: 1080, // Default height
+        width: 1920,
+        height: 1080,
       };
     }
   } catch (e) {
@@ -411,7 +416,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             line: { color: GOLD, width: 2 },
           });
 
-          const photoUrl = `https://storage.enamorimpex.com/eloraftp/${store.recce.initialPhotos[i].replace(/\s+/g, "%20")}`;
+          const photoUrl = getFullImageUrl(store.recce.initialPhotos[i]);
           await addImageWithAspectRatio(
             initialSlide,
             photoUrl,
@@ -451,7 +456,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             const imgWidth = 3.6;
             const imgHeight = 4.8;
 
-            const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, "%20")}`;
+            const reccePhotoUrl = getFullImageUrl(currentReccePhoto.photo);
             await addImageWithAspectRatio(
               boardSlide,
               reccePhotoUrl,
@@ -461,7 +466,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
               imgHeight,
             );
 
-            const installPhoto1Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[0].installationPhoto.replace(/\s+/g, "%20")}`;
+            const installPhoto1Url = getFullImageUrl(installPhotos[0].installationPhoto);
             await addImageWithAspectRatio(
               boardSlide,
               installPhoto1Url,
@@ -471,7 +476,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
               imgHeight,
             );
 
-            const installPhoto2Url = `https://storage.enamorimpex.com/eloraftp/${installPhotos[1].installationPhoto.replace(/\s+/g, "%20")}`;
+            const installPhoto2Url = getFullImageUrl(installPhotos[1].installationPhoto);
             await addImageWithAspectRatio(
               boardSlide,
               installPhoto2Url,
@@ -601,7 +606,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             const imgHeight = 4.8;
             const installPhoto = installPhotos[0];
 
-            const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, "%20")}`;
+            const reccePhotoUrl = getFullImageUrl(currentReccePhoto.photo);
             await addImageWithAspectRatio(
               boardSlide,
               reccePhotoUrl,
@@ -612,7 +617,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             );
 
             if (installPhoto) {
-              const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, "%20")}`;
+              const installPhotoUrl = getFullImageUrl(installPhoto.installationPhoto);
               await addImageWithAspectRatio(
                 boardSlide,
                 installPhotoUrl,
@@ -720,7 +725,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           }
         } else if (type === "recce" && currentReccePhoto) {
           // Single recce photo
-          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${currentReccePhoto.photo.replace(/\s+/g, "%20")}`;
+          const reccePhotoUrl = getFullImageUrl(currentReccePhoto.photo);
           await addImageWithAspectRatio(
             boardSlide,
             reccePhotoUrl,

@@ -1,4 +1,10 @@
 import { Request, Response } from "express";
+const getFullImageUrl = (path: string) => {
+  if (!path) return "";
+  if (path.startsWith("http")) return path;
+  const cleanedPath = path.replace(/^\/+/, "");
+  return encodeURI(`https://storage.enamorimpex.com/eloraftp/${cleanedPath}`);
+};
 import Store from "./store.model";
 import fs from "fs";
 import path from "path";
@@ -133,7 +139,7 @@ export const generateCompactBulkPDF = async (req: Request, res: Response) => {
           doc.restore();
           
           // Load recce image from URL
-          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+          const reccePhotoUrl = getFullImageUrl(reccePhoto.photo);
           console.log('Loading recce image:', reccePhotoUrl);
           try {
             const axios = require('axios');
@@ -184,7 +190,7 @@ export const generateCompactBulkPDF = async (req: Request, res: Response) => {
           
           if (installPhoto) {
             // Load installation image from URL
-            const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
+            const installPhotoUrl = getFullImageUrl(installPhoto.installationPhoto);
             console.log('Loading installation image:', installPhotoUrl);
             try {
               const axios = require('axios');
@@ -255,7 +261,7 @@ export const generateCompactBulkPDF = async (req: Request, res: Response) => {
           doc.restore();
           
           // Load recce photo from URL
-          const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+          const reccePhotoUrl = getFullImageUrl(reccePhoto.photo);
           console.log('Loading recce photo for grid:', reccePhotoUrl);
           try {
             const axios = require('axios');
@@ -420,7 +426,7 @@ export const generateCompactBulkPPT = async (req: Request, res: Response) => {
         const installPhoto = store.installation.photos.find((p: any) => p.reccePhotoIndex === 0);
         
         // BEFORE image with red border effect
-        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+        const reccePhotoUrl = getFullImageUrl(reccePhoto.photo);
         slide.addImage({
           path: reccePhotoUrl,
           x: 0.5, y: 2.5, cx: 4, cy: 3.5
@@ -435,7 +441,7 @@ export const generateCompactBulkPPT = async (req: Request, res: Response) => {
         
         if (installPhoto) {
           // AFTER image with green border effect
-          const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
+          const installPhotoUrl = getFullImageUrl(installPhoto.installationPhoto);
           slide.addImage({
             path: installPhotoUrl,
             x: 5, y: 2.5, cx: 4, cy: 3.5
@@ -459,7 +465,7 @@ export const generateCompactBulkPPT = async (req: Request, res: Response) => {
       } else if (type === "recce" && store.recce?.reccePhotos) {
         // Single recce photo
         const reccePhoto = store.recce.reccePhotos[0];
-        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+        const reccePhotoUrl = getFullImageUrl(reccePhoto.photo);
         
         slide.addImage({
           path: reccePhotoUrl,

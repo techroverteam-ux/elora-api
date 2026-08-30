@@ -1,4 +1,10 @@
 import { Request, Response } from "express";
+const getFullImageUrl = (path: string) => {
+  if (!path) return "";
+  if (path.startsWith("http")) return path;
+  const cleanedPath = path.replace(/^\/+/, "");
+  return encodeURI(`https://storage.enamorimpex.com/eloraftp/${cleanedPath}`);
+};
 import Store from "./store.model";
 import fs from "fs";
 import path from "path";
@@ -95,7 +101,7 @@ export const generateCompactInstallationPDF = async (req: Request, res: Response
         doc.restore();
         
         // Load recce image from URL
-        const reccePhotoUrl = `https://storage.enamorimpex.com/eloraftp/${reccePhoto.photo.replace(/\s+/g, '%20')}`;
+        const reccePhotoUrl = getFullImageUrl(reccePhoto.photo);
         console.log('Loading recce image:', reccePhotoUrl);
         try {
           const axios = require('axios');
@@ -140,7 +146,7 @@ export const generateCompactInstallationPDF = async (req: Request, res: Response
         doc.restore();
         
         if (installPhoto) {
-          const installPhotoUrl = `https://storage.enamorimpex.com/eloraftp/${installPhoto.installationPhoto.replace(/\s+/g, '%20')}`;
+          const installPhotoUrl = getFullImageUrl(installPhoto.installationPhoto);
           console.log('Loading installation image:', installPhotoUrl);
           try {
             const axios = require('axios');
