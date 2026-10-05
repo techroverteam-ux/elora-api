@@ -1339,8 +1339,8 @@ export const generateReccePPT = async (req: Request, res: Response) => {
   }
 };
 
-// --- NEW: Review Recce (Approve/Reject) ---
-export const reviewRecce = async (req: Request, res: Response) => {
+// --- NEW: Review Recce (Approve/Reject All Together) ---
+export const reviewRecce = async (req: Request | any, res: Response) => {
   try {
     const { id } = req.params;
     const { status, remarks } = req.body; // Expecting status: "APPROVED" or "REJECTED"
@@ -1351,30 +1351,55 @@ export const reviewRecce = async (req: Request, res: Response) => {
         .json({ message: "Invalid status. Use APPROVED or REJECTED." });
     }
 
+    const store = await Store.findById(id);
+    if (!store) return res.status(404).json({ message: "Store not found" });
+
     const newStatus =
       status === "APPROVED"
         ? StoreStatus.RECCE_APPROVED
         : StoreStatus.RECCE_REJECTED;
 
-    const store = await Store.findByIdAndUpdate(
-      id,
-      {
-        currentStatus: newStatus,
-        // If rejecting, also clear any installation assignment to prevent confusion
-        ...(status === "REJECTED" && {
-          "workflow.installationAssignedTo": null,
-          "workflow.installationAssignedBy": null,
-          "installation.assignedDate": null,
-        }),
-        // Optional: Save admin remarks if rejected so staff knows what to fix
-        "recce.notes": remarks
-          ? `[Admin]: ${remarks} | ${new Date().toLocaleDateString()}`
-          : undefined,
-      },
-      { new: true },
-    );
+    const userId = req.user?._id;
+    const now = new Date();
 
-    if (!store) return res.status(404).json({ message: "Store not found" });
+    if (store.recce?.reccePhotos && store.recce.reccePhotos.length > 0) {
+      store.recce.reccePhotos.forEach((photo: any) => {
+        photo.approvalStatus = status as "APPROVED" | "REJECTED";
+        if (status === "APPROVED") {
+          photo.approvedBy = userId;
+          photo.approvedAt = now;
+          photo.rejectionReason = undefined;
+        } else {
+          photo.rejectionReason = remarks || "Recce rejected";
+        }
+      });
+
+      store.recce.approvedPhotosCount = status === "APPROVED" ? store.recce.reccePhotos.length : 0;
+      store.recce.rejectedPhotosCount = status === "REJECTED" ? store.recce.reccePhotos.length : 0;
+      store.recce.pendingPhotosCount = 0;
+    }
+
+    store.currentStatus = newStatus;
+
+    // If rejecting, also clear any installation assignment to prevent confusion
+    if (status === "REJECTED") {
+      store.workflow = store.workflow || ({} as any);
+      store.workflow.installationAssignedTo = undefined;
+      store.workflow.installationAssignedBy = undefined;
+      store.installation = undefined;
+    }
+
+    if (remarks) {
+      if (!store.recce) store.recce = {} as any;
+      (store.recce as any).notes = `[Admin]: ${remarks} | ${now.toLocaleDateString()}`;
+    }
+
+    store.markModified("recce");
+    store.markModified("workflow");
+    await store.save();
+
+    await store.populate("workflow.recceAssignedTo", "name");
+    await store.populate("workflow.installationAssignedTo", "name");
 
     res.status(200).json({
       message: `Recce ${status.toLowerCase()} successfully`,
@@ -1401,15 +1426,20 @@ export const reviewReccePhoto = async (req: Request | any, res: Response) => {
     }
 
     const photoIdx = parseInt(photoIndex);
-    if (photoIdx < 0 || photoIdx >= store.recce.reccePhotos.length) {
+    if (isNaN(photoIdx) || photoIdx < 0 || photoIdx >= store.recce.reccePhotos.length) {
       return res.status(400).json({ message: "Invalid photo index" });
     }
 
+    const userId = req.user?._id;
+    const now = new Date();
+
     store.recce.reccePhotos[photoIdx].approvalStatus = status as "APPROVED" | "REJECTED";
-    store.recce.reccePhotos[photoIdx].approvedBy = req.user._id;
-    store.recce.reccePhotos[photoIdx].approvedAt = new Date();
-    if (status === "REJECTED" && rejectionReason) {
-      store.recce.reccePhotos[photoIdx].rejectionReason = rejectionReason;
+    if (status === "APPROVED") {
+      store.recce.reccePhotos[photoIdx].approvedBy = userId;
+      store.recce.reccePhotos[photoIdx].approvedAt = now;
+      store.recce.reccePhotos[photoIdx].rejectionReason = undefined;
+    } else if (status === "REJECTED") {
+      store.recce.reccePhotos[photoIdx].rejectionReason = rejectionReason || "Photo rejected";
     }
 
     // Update photo counts and overall status
@@ -1428,7 +1458,7 @@ export const reviewReccePhoto = async (req: Request | any, res: Response) => {
     } else if (approved === 0 && rejected === store.recce.reccePhotos.length) {
       // Only mark as rejected if ALL photos are rejected
       store.currentStatus = StoreStatus.RECCE_REJECTED;
-      // Clear installation assignment if all photos are rejected
+      store.workflow = store.workflow || ({} as any);
       store.workflow.installationAssignedTo = undefined;
       store.workflow.installationAssignedBy = undefined;
       store.installation = undefined;
@@ -1437,7 +1467,12 @@ export const reviewReccePhoto = async (req: Request | any, res: Response) => {
       store.currentStatus = StoreStatus.RECCE_SUBMITTED;
     }
 
+    store.markModified("recce");
+    store.markModified("workflow");
     await store.save();
+
+    await store.populate("workflow.recceAssignedTo", "name");
+    await store.populate("workflow.installationAssignedTo", "name");
 
     res.status(200).json({
       message: `Photo ${photoIdx + 1} ${status.toLowerCase()} successfully`,
@@ -1451,34 +1486,8 @@ export const reviewReccePhoto = async (req: Request | any, res: Response) => {
 
 // --- NEW: Bulk Approve All Recce Photos ---
 export const bulkApproveReccePhotos = async (req: Request | any, res: Response) => {
-  try {
-    const { id } = req.params;
-
-    const store = await Store.findById(id);
-    if (!store || !store.recce?.reccePhotos) {
-      return res.status(404).json({ message: "Store or recce photos not found" });
-    }
-
-    store.recce.reccePhotos.forEach(photo => {
-      photo.approvalStatus = "APPROVED";
-      photo.approvedBy = req.user._id;
-      photo.approvedAt = new Date();
-    });
-
-    store.recce.approvedPhotosCount = store.recce.reccePhotos.length;
-    store.recce.rejectedPhotosCount = 0;
-    store.recce.pendingPhotosCount = 0;
-    store.currentStatus = StoreStatus.RECCE_APPROVED;
-
-    await store.save();
-
-    res.status(200).json({
-      message: "All photos approved successfully",
-      store
-    });
-  } catch (error: any) {
-    res.status(500).json({ message: "Bulk approval failed", error: error.message });
-  }
+  req.body = { ...req.body, status: "APPROVED" };
+  return reviewRecce(req, res);
 };
 
 // --- UPDATED: Submit Installation Data (Multiple Images matching Recce Photos) ---
