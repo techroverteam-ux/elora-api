@@ -353,11 +353,45 @@ export const createStore = async (req: Request | any, res: Response) => {
       };
     }
 
+    // ------------------------------------------------------------------
+    // Auto-assign to the creator when a FIELD user creates the store.
+    //   • RECCE user, normal flow          → recce assigned to themselves
+    //   • INSTALLATION user, direct install → installation assigned to themselves
+    // Admins (SUPER_ADMIN / ADMIN / SUB_ADMIN) are never auto-assigned — they
+    // keep assigning manually as before. Without this, a field user couldn't
+    // even see a store they just created (getAllStores only shows field roles
+    // the stores assigned to them).
+    // ------------------------------------------------------------------
+    const creatorRoleCodes: string[] = (req.user.roles || []).map((r: any) => String(r?.code || "").toUpperCase());
+    const creatorIsAdmin = creatorRoleCodes.some((c) => ["SUPER_ADMIN", "ADMIN", "SUB_ADMIN"].includes(c));
+    const creatorIsRecce = creatorRoleCodes.includes("RECCE");
+    const creatorIsInstallation = creatorRoleCodes.includes("INSTALLATION");
+    let autoAssigned: "RECCE" | "INSTALLATION" | null = null;
+
+    if (!creatorIsAdmin) {
+      if (!directInstallation && creatorIsRecce) {
+        store.set("workflow.recceAssignedTo", req.user._id);
+        store.set("workflow.recceAssignedBy", req.user._id);
+        store.set("recce.assignedDate", new Date());
+        store.currentStatus = StoreStatus.RECCE_ASSIGNED;
+        autoAssigned = "RECCE";
+      } else if (directInstallation && creatorIsInstallation) {
+        store.set("workflow.installationAssignedTo", req.user._id);
+        store.set("workflow.installationAssignedBy", req.user._id);
+        store.set("installation.assignedDate", new Date());
+        store.currentStatus = StoreStatus.INSTALLATION_ASSIGNED;
+        autoAssigned = "INSTALLATION";
+      }
+    }
+
     await store.save();
 
     res.status(201).json({
-      message: "Store created successfully",
+      message: autoAssigned
+        ? `Store created and ${autoAssigned === "RECCE" ? "recce" : "installation"} assigned to you`
+        : "Store created successfully",
       store,
+      autoAssigned,
     });
   } catch (error: any) {
     if (error.code === 11000) {
