@@ -8,54 +8,141 @@ const getFullImageUrl = (path: string) => {
 import Store from "./store.model";
 import path from "path";
 import fs from "fs";
+import sharp from "sharp";
+const sizeOf = require("image-size");
 const axios = require("axios");
 
-// ====== HELPER: Load image from URL as base64 with proper sizing ======
+// ====== HELPER: Load image from URL or path as base64 with true dimensions ======
 const loadImageBase64 = async (
   url: string,
 ): Promise<{ data: string; width: number; height: number } | null> => {
   try {
-    const response = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-    });
-    if (response.ok) {
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      const contentType = response.headers.get("content-type") || "image/jpeg";
-      
-      const base64 = `data:${contentType};base64,${buffer.toString("base64")}`;
+    let buffer: Buffer | null = null;
+    let contentType = "image/jpeg";
 
-      return {
-        data: base64,
-        width: 1920,
-        height: 1080,
-      };
+    if (fs.existsSync(url)) {
+      buffer = fs.readFileSync(url);
+      const ext = path.extname(url).toLowerCase();
+      if (ext === ".png") contentType = "image/png";
+      else if (ext === ".webp") contentType = "image/webp";
+    } else if (url.startsWith("http://") || url.startsWith("https://")) {
+      const response = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0" },
+      });
+      if (response.ok) {
+        const arrayBuffer = await response.arrayBuffer();
+        buffer = Buffer.from(arrayBuffer);
+        contentType = response.headers.get("content-type") || "image/jpeg";
+      }
     }
+
+    if (!buffer) return null;
+
+    let width = 0;
+    let height = 0;
+
+    // Detect actual dimensions and handle smartphone EXIF orientation
+    try {
+      const meta = await sharp(buffer).metadata();
+      if (meta.width && meta.height) {
+        if (meta.orientation && meta.orientation >= 5 && meta.orientation <= 8) {
+          buffer = await sharp(buffer).rotate().toBuffer();
+          const rotatedMeta = await sharp(buffer).metadata();
+          width = rotatedMeta.width || meta.height;
+          height = rotatedMeta.height || meta.width;
+        } else {
+          width = meta.width;
+          height = meta.height;
+        }
+      }
+    } catch (sharpErr) {
+      try {
+        const dims = sizeOf(buffer);
+        width = dims.width || 0;
+        height = dims.height || 0;
+      } catch (sizeOfErr) {}
+    }
+
+    if (!width || !height) {
+      width = 1920;
+      height = 1080;
+    }
+
+    const base64 = `data:${contentType};base64,${buffer.toString("base64")}`;
+
+    return {
+      data: base64,
+      width,
+      height,
+    };
   } catch (e) {
     console.error("Error loading image:", e);
   }
   return null;
 };
 
-// ====== HELPER: Add image with proper aspect ratio ======
+// ====== HELPER: Calculate proportional contain/fit dimensions within bounding box ======
+const calculateFittedDimensions = (
+  imgWidth: number,
+  imgHeight: number,
+  boxX: number,
+  boxY: number,
+  maxW: number,
+  maxH: number,
+) => {
+  if (!imgWidth || !imgHeight) {
+    return { x: boxX, y: boxY, w: maxW, h: maxH };
+  }
+  const imgRatio = imgWidth / imgHeight;
+  const boxRatio = maxW / maxH;
+  let finalW: number;
+  let finalH: number;
+  let finalX: number;
+  let finalY: number;
+
+  if (imgRatio > boxRatio) {
+    // Image is wider than bounding box -> width constrained
+    finalW = maxW;
+    finalH = maxW / imgRatio;
+    finalX = boxX;
+    finalY = boxY + (maxH - finalH) / 2;
+  } else {
+    // Image is taller than bounding box -> height constrained
+    finalH = maxH;
+    finalW = maxH * imgRatio;
+    finalX = boxX + (maxW - finalW) / 2;
+    finalY = boxY;
+  }
+
+  return { x: finalX, y: finalY, w: finalW, h: finalH };
+};
+
+// ====== HELPER: Add image with proper aspect ratio centered inside bounding box ======
 const addImageWithAspectRatio = async (
   slide: any,
   imageUrl: string,
-  x: number,
-  y: number,
+  boxX: number,
+  boxY: number,
   maxWidth: number,
   maxHeight: number,
 ) => {
   try {
     const imageData = await loadImageBase64(imageUrl);
     if (imageData) {
+      const dims = calculateFittedDimensions(
+        imageData.width,
+        imageData.height,
+        boxX,
+        boxY,
+        maxWidth,
+        maxHeight,
+      );
       slide.addImage({
         data: imageData.data,
-        x: x,
-        y: y,
-        w: maxWidth,
-        h: maxHeight,
-        sizing: { type: "contain" },
+        x: dims.x,
+        y: dims.y,
+        w: dims.w,
+        h: dims.h,
       });
       return true;
     }
@@ -456,34 +543,61 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             const imgWidth = 3.6;
             const imgHeight = 4.8;
 
+            // BEFORE Card & Image
+            boardSlide.addShape(prs.ShapeType.rect, {
+              x: 0.2,
+              y: contentStartY,
+              w: imgWidth,
+              h: imgHeight,
+              fill: { color: "FFFFFF" },
+              line: { color: RED, width: 2 },
+            });
             const reccePhotoUrl = getFullImageUrl(currentReccePhoto.photo);
             await addImageWithAspectRatio(
               boardSlide,
               reccePhotoUrl,
-              0.2,
-              contentStartY,
-              imgWidth,
-              imgHeight,
+              0.25,
+              contentStartY + 0.05,
+              imgWidth - 0.1,
+              imgHeight - 0.1,
             );
 
+            // AFTER 1 Card & Image
+            boardSlide.addShape(prs.ShapeType.rect, {
+              x: 4.0,
+              y: contentStartY,
+              w: imgWidth,
+              h: imgHeight,
+              fill: { color: "FFFFFF" },
+              line: { color: GREEN, width: 2 },
+            });
             const installPhoto1Url = getFullImageUrl(installPhotos[0].installationPhoto);
             await addImageWithAspectRatio(
               boardSlide,
               installPhoto1Url,
-              4.0,
-              contentStartY,
-              imgWidth,
-              imgHeight,
+              4.05,
+              contentStartY + 0.05,
+              imgWidth - 0.1,
+              imgHeight - 0.1,
             );
 
+            // AFTER 2 Card & Image
+            boardSlide.addShape(prs.ShapeType.rect, {
+              x: 7.8,
+              y: contentStartY,
+              w: imgWidth,
+              h: imgHeight,
+              fill: { color: "FFFFFF" },
+              line: { color: GREEN, width: 2 },
+            });
             const installPhoto2Url = getFullImageUrl(installPhotos[1].installationPhoto);
             await addImageWithAspectRatio(
               boardSlide,
               installPhoto2Url,
-              7.8,
-              contentStartY,
-              imgWidth,
-              imgHeight,
+              7.85,
+              contentStartY + 0.05,
+              imgWidth - 0.1,
+              imgHeight - 0.1,
             );
 
             // BEFORE label
@@ -547,10 +661,11 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             });
 
             // Measurements
+            let currentBottomY = contentStartY + imgHeight + 0.38;
             if (currentReccePhoto.measurements) {
               boardSlide.addShape(prs.ShapeType.rect, {
                 x: 0.2,
-                y: contentStartY + imgHeight + 0.38,
+                y: currentBottomY,
                 w: 11.29,
                 h: 0.25,
                 fill: { color: "FFFFFF" },
@@ -560,7 +675,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
                 `Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`,
                 {
                   x: 0.2,
-                  y: contentStartY + imgHeight + 0.38,
+                  y: currentBottomY,
                   w: 11.29,
                   h: 0.25,
                   fontSize: 10,
@@ -570,6 +685,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
                   valign: "middle",
                 },
               );
+              currentBottomY += 0.28;
             }
 
             // Elements
@@ -582,7 +698,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
                 .join(" | ");
               boardSlide.addShape(prs.ShapeType.rect, {
                 x: 0.2,
-                y: contentStartY + imgHeight + 0.66,
+                y: currentBottomY,
                 w: 11.29,
                 h: 0.22,
                 fill: { color: "FEF3C7" },
@@ -590,7 +706,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
               });
               boardSlide.addText(`Elements: ${elementsText}`, {
                 x: 0.2,
-                y: contentStartY + imgHeight + 0.66,
+                y: currentBottomY,
                 w: 11.29,
                 h: 0.22,
                 fontSize: 9,
@@ -606,25 +722,43 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             const imgHeight = 4.8;
             const installPhoto = installPhotos[0];
 
+            // BEFORE Card & Image
+            boardSlide.addShape(prs.ShapeType.rect, {
+              x: 0.2,
+              y: contentStartY,
+              w: imgWidth,
+              h: imgHeight,
+              fill: { color: "FFFFFF" },
+              line: { color: RED, width: 2 },
+            });
             const reccePhotoUrl = getFullImageUrl(currentReccePhoto.photo);
             await addImageWithAspectRatio(
               boardSlide,
               reccePhotoUrl,
-              0.2,
-              contentStartY,
-              imgWidth,
-              imgHeight,
+              0.25,
+              contentStartY + 0.05,
+              imgWidth - 0.1,
+              imgHeight - 0.1,
             );
 
+            // AFTER Card & Image
+            boardSlide.addShape(prs.ShapeType.rect, {
+              x: 6.0,
+              y: contentStartY,
+              w: imgWidth,
+              h: imgHeight,
+              fill: { color: "FFFFFF" },
+              line: { color: GREEN, width: 2 },
+            });
             if (installPhoto) {
               const installPhotoUrl = getFullImageUrl(installPhoto.installationPhoto);
               await addImageWithAspectRatio(
                 boardSlide,
                 installPhotoUrl,
-                6.0,
-                contentStartY,
-                imgWidth,
-                imgHeight,
+                6.05,
+                contentStartY + 0.05,
+                imgWidth - 0.1,
+                imgHeight - 0.1,
               );
             }
 
@@ -669,10 +803,11 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             });
 
             // Measurements
+            let currentBottomY = contentStartY + imgHeight + 0.43;
             if (currentReccePhoto.measurements) {
               boardSlide.addShape(prs.ShapeType.rect, {
                 x: 0.2,
-                y: contentStartY + imgHeight + 0.43,
+                y: currentBottomY,
                 w: 11.29,
                 h: 0.25,
                 fill: { color: "FFFFFF" },
@@ -682,7 +817,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
                 `Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`,
                 {
                   x: 0.2,
-                  y: contentStartY + imgHeight + 0.43,
+                  y: currentBottomY,
                   w: 11.29,
                   h: 0.25,
                   fontSize: 10,
@@ -692,6 +827,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
                   valign: "middle",
                 },
               );
+              currentBottomY += 0.28;
             }
 
             // Elements
@@ -704,7 +840,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
                 .join(" | ");
               boardSlide.addShape(prs.ShapeType.rect, {
                 x: 0.2,
-                y: contentStartY + imgHeight + 0.71,
+                y: currentBottomY,
                 w: 11.29,
                 h: 0.22,
                 fill: { color: "FEF3C7" },
@@ -712,7 +848,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
               });
               boardSlide.addText(`Elements: ${elementsText}`, {
                 x: 0.2,
-                y: contentStartY + imgHeight + 0.71,
+                y: currentBottomY,
                 w: 11.29,
                 h: 0.22,
                 fontSize: 9,
@@ -724,23 +860,38 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             }
           }
         } else if (type === "recce" && currentReccePhoto) {
-          // Single recce photo
+          // Single recce photo with container frame and proportional fit
+          const boxX = 0.3;
+          const boxY = contentStartY;
+          const boxW = 11.09;
+          const boxH = 4.8;
+
+          boardSlide.addShape(prs.ShapeType.rect, {
+            x: boxX,
+            y: boxY,
+            w: boxW,
+            h: boxH,
+            fill: { color: "FFFFFF" },
+            line: { color: GOLD, width: 2 },
+          });
+
           const reccePhotoUrl = getFullImageUrl(currentReccePhoto.photo);
           await addImageWithAspectRatio(
             boardSlide,
             reccePhotoUrl,
-            0.3,
-            contentStartY,
-            11.09,
-            4.8,
+            boxX + 0.05,
+            boxY + 0.05,
+            boxW - 0.1,
+            boxH - 0.1,
           );
 
           // Measurements
+          let currentBottomY = boxY + boxH + 0.03;
           if (currentReccePhoto.measurements) {
             boardSlide.addShape(prs.ShapeType.rect, {
-              x: 0.3,
-              y: contentStartY + 4.83,
-              w: 11.09,
+              x: boxX,
+              y: currentBottomY,
+              w: boxW,
               h: 0.25,
               fill: { color: "FFFFFF" },
               line: { color: GOLD, width: 1 },
@@ -748,9 +899,9 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
             boardSlide.addText(
               `Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`,
               {
-                x: 0.3,
-                y: contentStartY + 4.83,
-                w: 11.09,
+                x: boxX,
+                y: currentBottomY,
+                w: boxW,
                 h: 0.25,
                 fontSize: 10,
                 bold: true,
@@ -759,6 +910,7 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
                 valign: "middle",
               },
             );
+            currentBottomY += 0.28;
           }
 
           // Elements
@@ -770,17 +922,17 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
               .map((el: any) => `${el.elementName} (Qty: ${el.quantity})`)
               .join(" | ");
             boardSlide.addShape(prs.ShapeType.rect, {
-              x: 0.3,
-              y: contentStartY + 5.11,
-              w: 11.09,
+              x: boxX,
+              y: currentBottomY,
+              w: boxW,
               h: 0.22,
               fill: { color: "FEF3C7" },
               line: { color: GOLD, width: 1 },
             });
             boardSlide.addText(`Elements: ${elementsText}`, {
-              x: 0.3,
-              y: contentStartY + 5.11,
-              w: 11.09,
+              x: boxX,
+              y: currentBottomY,
+              w: boxW,
               h: 0.22,
               fontSize: 9,
               bold: true,
@@ -799,10 +951,12 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
       "Content-Type",
       "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     );
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="Report_${type}_${stores.length}_Stores_${new Date().toISOString().split("T")[0]}.pptx"`,
-    );
+    const filename =
+      stores.length === 1
+        ? `${type === "recce" ? "Recce" : "Installation"}_${stores[0].dealerCode || stores[0].storeName || stores[0].storeId}.pptx`
+        : `Report_${type}_${stores.length}_Stores_${new Date().toISOString().split("T")[0]}.pptx`;
+
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.send(buffer);
   } catch (error: any) {
     if (!res.headersSent) {
@@ -811,4 +965,18 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         .json({ message: "Error generating bulk PPT", error: error.message });
     }
   }
+};
+
+// ====== CONTROLLER: Generate Individual Recce PPT ======
+export const generateReccePPT = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  req.body = { storeIds: [id], type: "recce" };
+  return generateBulkPPT(req, res);
+};
+
+// ====== CONTROLLER: Generate Individual Installation PPT ======
+export const generateInstallationPPT = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  req.body = { storeIds: [id], type: "installation" };
+  return generateBulkPPT(req, res);
 };
