@@ -11,12 +11,10 @@ import {
   assignStoresBulk,
   unassignStoresBulk,
   submitRecce,
-  generateReccePPT,
   reviewRecce,
   reviewReccePhoto,
   bulkApproveReccePhotos,
   submitInstallation,
-  generateInstallationPPT,
   downloadStoreTemplate,
   exportRecceTasks,
   exportInstallationTasks,
@@ -29,7 +27,7 @@ import {
   getCities,
 } from "./store.controller";
 import { generateReccePDF, generateInstallationPDF, generateBulkPDF } from "./pdf.controller";
-import { generateBulkPPT } from "./ppt.controller";
+import { generateBulkPPT, generateReccePPT, generateInstallationPPT } from "./ppt.controller";
 import { protect } from "../../middlewares/auth.middleware";
 import { checkPermission } from "../../middlewares/rbac.middleware";
 

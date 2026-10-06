@@ -6,6 +6,8 @@ import * as XLSX from "xlsx";
 import fs from "fs";
 import PptxGenJS from "pptxgenjs";
 import path from "path";
+import sharp from "sharp";
+const sizeOf = require("image-size");
 import { Row, Cell } from "exceljs";
 import uploadService from "../../utils/uploadService";
 import enhancedUploadService from "../../utils/enhancedUploadService";
@@ -23,6 +25,62 @@ const isAdminUser = (user: any) => userHasRole(user, "SUPER_ADMIN", "ADMIN", "SU
 const isRecceUser = (user: any) => userHasRole(user, "RECCE");
 const isInstallationUser = (user: any) => userHasRole(user, "INSTALLATION");
 
+const calculateFittedDimensions = (
+  imgWidth: number,
+  imgHeight: number,
+  boxX: number,
+  boxY: number,
+  maxW: number,
+  maxH: number,
+) => {
+  if (!imgWidth || !imgHeight) {
+    return { x: boxX, y: boxY, w: maxW, h: maxH };
+  }
+  const imgRatio = imgWidth / imgHeight;
+  const boxRatio = maxW / maxH;
+  let finalW: number;
+  let finalH: number;
+  let finalX: number;
+  let finalY: number;
+
+  if (imgRatio > boxRatio) {
+    finalW = maxW;
+    finalH = maxW / imgRatio;
+    finalX = boxX;
+    finalY = boxY + (maxH - finalH) / 2;
+  } else {
+    finalH = maxH;
+    finalW = maxH * imgRatio;
+    finalX = boxX + (maxW - finalW) / 2;
+    finalY = boxY;
+  }
+
+  return { x: finalX, y: finalY, w: finalW, h: finalH };
+};
+
+const getImageDimensions = async (filePath: string): Promise<{ width: number; height: number }> => {
+  let width = 0;
+  let height = 0;
+  try {
+    const meta = await sharp(filePath).metadata();
+    if (meta.width && meta.height) {
+      if (meta.orientation && meta.orientation >= 5 && meta.orientation <= 8) {
+        width = meta.height;
+        height = meta.width;
+      } else {
+        width = meta.width;
+        height = meta.height;
+      }
+    }
+  } catch (e) {
+    try {
+      const dims = sizeOf(filePath);
+      width = dims.width || 0;
+      height = dims.height || 0;
+    } catch (err) {}
+  }
+  return { width, height };
+};
 
 // Helper: fuzzy search for column headers
 const findKey = (row: any, keywords: string[]): string | undefined => {
@@ -1283,12 +1341,14 @@ export const generateReccePPT = async (req: Request, res: Response) => {
           const photoPath = await imagePathResolver.resolveImagePath(imagePath);
           
           if (fs.existsSync(photoPath)) {
+            const { width, height } = await getImageDimensions(photoPath);
+            const dims = calculateFittedDimensions(width, height, pos.x, pos.y, photoWidth, photoHeight);
             currentSlide.addImage({
               path: photoPath,
-              x: pos.x,
-              y: pos.y,
-              w: photoWidth,
-              h: photoHeight
+              x: dims.x,
+              y: dims.y,
+              w: dims.w,
+              h: dims.h
             });
             tempFilesToCleanup.push(photoPath);
           }
@@ -1322,12 +1382,14 @@ export const generateReccePPT = async (req: Request, res: Response) => {
           photoPath = await imagePathResolver.resolveImagePath(imagePath);
           
           if (fs.existsSync(photoPath)) {
+            const { width, height } = await getImageDimensions(photoPath);
+            const dims = calculateFittedDimensions(width, height, 1.0, 0.8, 8.0, 5.5);
             photoSlide.addImage({
               path: photoPath,
-              x: 1.0,
-              y: 0.8,
-              w: 8.0,
-              h: 5.5
+              x: dims.x,
+              y: dims.y,
+              w: dims.w,
+              h: dims.h
             });
             tempFilesToCleanup.push(photoPath);
           }
@@ -1952,12 +2014,14 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
           const photoPath = await imagePathResolver.resolveImagePath(imagePath);
 
           if (fs.existsSync(photoPath)) {
+            const { width, height } = await getImageDimensions(photoPath);
+            const dims = calculateFittedDimensions(width, height, pos.x, pos.y, photoWidth, photoHeight);
             currentSlide.addImage({
               path: photoPath,
-              x: pos.x,
-              y: pos.y,
-              w: photoWidth,
-              h: photoHeight
+              x: dims.x,
+              y: dims.y,
+              w: dims.w,
+              h: dims.h
             });
             imagePathResolver.cleanupTempFile(photoPath);
           }
@@ -2015,12 +2079,14 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
           reccePhotoPath = await imagePathResolver.resolveImagePath(imagePath);
           
           if (fs.existsSync(reccePhotoPath)) {
+            const { width, height } = await getImageDimensions(reccePhotoPath);
+            const dims = calculateFittedDimensions(width, height, 0.5, 1.5, 4.5, 4.5);
             comparisonSlide.addImage({
               path: reccePhotoPath,
-              x: 0.5,
-              y: 1.5,
-              w: 4.5,
-              h: 4.5
+              x: dims.x,
+              y: dims.y,
+              w: dims.w,
+              h: dims.h
             });
           }
         } catch (error) {
@@ -2054,12 +2120,14 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
             installPhotoPath = await imagePathResolver.resolveImagePath(imagePath);
             
             if (fs.existsSync(installPhotoPath)) {
+              const { width, height } = await getImageDimensions(installPhotoPath);
+              const dims = calculateFittedDimensions(width, height, 5.3, 1.5, 4.5, 4.5);
               comparisonSlide.addImage({
                 path: installPhotoPath,
-                x: 5.3,
-                y: 1.5,
-                w: 4.5,
-                h: 4.5
+                x: dims.x,
+                y: dims.y,
+                w: dims.w,
+                h: dims.h
               });
             }
           } catch (error) {
@@ -2469,12 +2537,14 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
           try {
             const photoPath = await imagePathResolver.resolveImagePath(imagePath);
             if (fs.existsSync(photoPath)) {
+              const { width, height } = await getImageDimensions(photoPath);
+              const dims = calculateFittedDimensions(width, height, x + 0.05, y + 0.05, 2.9, 2.0);
               slide.addImage({
                 path: photoPath,
-                x: x + 0.05,
-                y: y + 0.05,
-                w: 2.9,
-                h: 2.0,
+                x: dims.x,
+                y: dims.y,
+                w: dims.w,
+                h: dims.h,
               });
               imagePathResolver.cleanupTempFile(photoPath);
             }
