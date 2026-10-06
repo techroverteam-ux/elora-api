@@ -10,6 +10,62 @@ import { Row, Cell } from "exceljs";
 import uploadService from "../../utils/uploadService";
 import enhancedUploadService from "../../utils/enhancedUploadService";
 import imagePathResolver from "../../utils/imagePathResolver";
+import { loadReportImage, prefetchReportImages, collectStoreImagePaths, containBox, toPptData } from "../../utils/reportImages";
+
+// ---- PPT layout helpers ----
+// Slides are LAYOUT_WIDE (13.33in) but every element is positioned for a 10in
+// canvas, so content used to hug the left edge with an empty strip on the
+// right. This shifts every positioned element so the 10in canvas is centred.
+const WIDE_OFFSET = (13.333 - 10) / 2;
+const centerContentOnWideSlides = (pres: any) => {
+  const origAddSlide = pres.addSlide.bind(pres);
+  pres.addSlide = (...args: any[]) => {
+    const slide = origAddSlide(...args);
+    (["addText", "addShape", "addImage", "addTable"] as const).forEach((m) => {
+      const fn = slide[m].bind(slide);
+      slide[m] = (a: any, b?: any) => {
+        const opts = m === "addImage" ? a : b;
+        // Full-bleed backgrounds use w: "100%" — leave those alone.
+        if (opts && typeof opts.x === "number" && typeof opts.w !== "string") opts.x += WIDE_OFFSET;
+        return m === "addImage" ? fn(opts) : fn(a, opts);
+      };
+    });
+    return slide;
+  };
+};
+
+const BOARD_STATUS: Record<string, { label: string; color: string }> = {
+  APPROVED: { label: "APPROVED", color: "16A34A" },
+  REJECTED: { label: "REJECTED", color: "DC2626" },
+  HOLD: { label: "ON HOLD", color: "D97706" },
+  PENDING: { label: "PENDING", color: "6B7280" },
+};
+
+/** Footer on content slides: store identity left, page number right. */
+const addSlideFooter = (slide: any, store: any, label: string) => {
+  slide.addShape("line", { x: 0.4, y: 7.0, w: 9.2, h: 0, line: { color: "E5E7EB", width: 1 } });
+  slide.addText(`${store.storeId || store.dealerCode || ""}  ·  ${store.storeName || ""}  ·  ${label}`, {
+    x: 0.4, y: 7.05, w: 7.6, h: 0.3, fontSize: 9, color: "6B7280", valign: "middle",
+  });
+  slide.slideNumber = { x: WIDE_OFFSET + 8.9, y: 7.05, w: 0.7, h: 0.3, fontSize: 9, color: "6B7280", align: "right" };
+};
+
+// ---- Report images (shared with pdf.controller via utils/reportImages) ----
+// Adds a photo fitted inside the box (aspect ratio kept, centred) from an
+// in-memory JPEG — no temp files, so nothing can be deleted before pptxgenjs
+// writes the deck. Shows a "Photo unavailable" placeholder if it can't load.
+const addReportImage = async (slide: any, pathOrUrl: any, x: number, y: number, w: number, h: number) => {
+  const img = await loadReportImage(pathOrUrl);
+  if (img) {
+    slide.addImage({ data: toPptData(img), ...containBox(img.width, img.height, x, y, w, h) });
+    return true;
+  }
+  slide.addText("Photo unavailable", {
+    x, y, w, h, align: "center", valign: "middle", fontSize: 12, italic: true,
+    color: "9CA3AF", fill: { color: "F3F4F6" },
+  });
+  return false;
+};
 
 // ---------------------------------------------------------------------------
 // Role helpers. Roles are admin-defined, and parts of this API match on
@@ -1065,10 +1121,14 @@ export const generateReccePPT = async (req: Request, res: Response) => {
 
     if (!store || !store.recce) {
       return res.status(404).json({ message: "Store or Recce data not found" });
+
     }
+    // Download every photo up front, 4 at a time (was one-by-one).
+    await prefetchReportImages(collectStoreImagePaths(store));
 
     const pres = new PptxGenJS();
     pres.layout = "LAYOUT_WIDE";
+    centerContentOnWideSlides(pres);
     pres.title = `Recce Report - ${store.storeName}`;
 
     const colors = {
@@ -1211,6 +1271,27 @@ export const generateReccePPT = async (req: Request, res: Response) => {
       color: colors.text,
     });
 
+    // Board status summary (Total / Approved / Rejected / On hold / Pending)
+    {
+      const boards: any[] = store.recce.reccePhotos || [];
+      const count = (st: string) => boards.filter((b: any) => (b.approvalStatus || "PENDING") === st).length;
+      const tiles = [
+        { label: "TOTAL BOARDS", value: boards.length, color: colors.text },
+        { label: "APPROVED", value: count("APPROVED"), color: BOARD_STATUS.APPROVED.color },
+        { label: "REJECTED", value: count("REJECTED"), color: BOARD_STATUS.REJECTED.color },
+        { label: "ON HOLD", value: count("HOLD"), color: BOARD_STATUS.HOLD.color },
+        { label: "PENDING", value: count("PENDING"), color: BOARD_STATUS.PENDING.color },
+      ];
+      const tileW = (9.6 - 0.2 * (tiles.length - 1)) / tiles.length;
+      tiles.forEach((t, k) => {
+        const x = 0.2 + k * (tileW + 0.2);
+        infoSlide.addShape("roundRect", { x, y: 4.45, w: tileW, h: 1.2, rectRadius: 0.08, fill: { color: colors.white }, line: { color: "E5E7EB", width: 1 } });
+        infoSlide.addText(String(t.value), { x, y: 4.55, w: tileW, h: 0.65, fontSize: 30, bold: true, color: t.color, align: "center", valign: "middle" });
+        infoSlide.addText(t.label, { x, y: 5.2, w: tileW, h: 0.35, fontSize: 10, bold: true, color: "6B7280", align: "center", valign: "middle" });
+      });
+      addSlideFooter(infoSlide, store, "Recce report");
+    }
+
     // INITIAL PHOTOS SLIDES
     if (store.recce.initialPhotos && store.recce.initialPhotos.length > 0) {
       const initialSlide = pres.addSlide();
@@ -1280,18 +1361,8 @@ export const generateReccePPT = async (req: Request, res: Response) => {
         const imagePath = store.recce.initialPhotos[i];
         
         try {
-          const photoPath = await imagePathResolver.resolveImagePath(imagePath);
-          
-          if (fs.existsSync(photoPath)) {
-            currentSlide.addImage({
-              path: photoPath,
-              x: pos.x,
-              y: pos.y,
-              w: photoWidth,
-              h: photoHeight
-            });
-            tempFilesToCleanup.push(photoPath);
-          }
+          const photoPath = null as any;
+          await addReportImage(currentSlide, imagePath, pos.x, pos.y, photoWidth, photoHeight);
         } catch (error) {
           console.error(`Failed to load image: ${imagePath}`, error);
         }
@@ -1316,73 +1387,52 @@ export const generateReccePPT = async (req: Request, res: Response) => {
           photoSlide.addImage({ path: logoPath, x: 0.3, y: 0.15, w: 1.5, h: 0.45 });
         }
 
-        let photoPath: string | null = null;
+        // ---- Board header: "Board n of N" + status badge ----
+        const total = store.recce.reccePhotos.length;
+        const status = BOARD_STATUS[(reccePhoto as any).approvalStatus || "PENDING"] || BOARD_STATUS.PENDING;
+        photoSlide.addText(`Board ${i + 1} of ${total}`, {
+          x: 2.1, y: 0.12, w: 5.6, h: 0.5, fontSize: 22, bold: true, color: colors.text, valign: "middle",
+        });
+        photoSlide.addShape("roundRect", { x: 7.9, y: 0.17, w: 1.7, h: 0.4, rectRadius: 0.2, fill: { color: status.color }, line: { color: status.color } });
+        photoSlide.addText(status.label, { x: 7.9, y: 0.17, w: 1.7, h: 0.4, fontSize: 11, bold: true, color: "FFFFFF", align: "center", valign: "middle" });
+
+        // ---- Photo (left, aspect ratio kept) ----
+        photoSlide.addShape("rect", { x: 0.4, y: 0.8, w: 6.3, h: 6.0, fill: { color: "0F172A" }, line: { color: colors.borderDark, width: 1.5 } });
         try {
-          const imagePath = reccePhoto.photo;
-          photoPath = await imagePathResolver.resolveImagePath(imagePath);
-          
-          if (fs.existsSync(photoPath)) {
-            photoSlide.addImage({
-              path: photoPath,
-              x: 1.0,
-              y: 0.8,
-              w: 8.0,
-              h: 5.5
-            });
-            tempFilesToCleanup.push(photoPath);
-          }
+          await addReportImage(photoSlide, reccePhoto.photo, 0.45, 0.85, 6.2, 5.9);
         } catch (error) {
           console.error(`Failed to load recce photo: ${reccePhoto.photo}`, error);
         }
-        photoSlide.addShape("rect", {
-          x: 1.0,
-          y: 6.4,
-          w: 8.0,
-          h: 0.6,
-          line: { color: colors.borderDark, width: 2 },
-          fill: { color: colors.white },
-        });
-        photoSlide.addText(
-          `Measurements: ${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`,
-          {
-            x: 1.0,
-            y: 6.4,
-            w: 8.0,
-            h: 0.6,
-            fontSize: 18,
-            bold: true,
-            color: colors.text,
-            align: "center",
-            valign: "middle",
-          },
-        );
 
-        // Elements section
-        if (reccePhoto.elements && reccePhoto.elements.length > 0) {
-          const elementsText = reccePhoto.elements
-            .map((el: any) => `${el.elementName} (Qty: ${el.quantity})`)
-            .join(" | ");
-          
-          photoSlide.addShape("rect", {
-            x: 1.0,
-            y: 7.1,
-            w: 8.0,
-            h: 0.5,
-            line: { color: colors.borderDark, width: 2 },
-            fill: { color: colors.lightBg },
-          });
-          photoSlide.addText(`Elements: ${elementsText}`, {
-            x: 1.0,
-            y: 7.1,
-            w: 8.0,
-            h: 0.5,
-            fontSize: 14,
-            bold: true,
-            color: colors.text,
-            align: "center",
-            valign: "middle",
-          });
+        // ---- Spec panel (right) ----
+        const m: any = reccePhoto.measurements || {};
+        const unit = String(m.unit || "in").toLowerCase();
+        const toFt = unit.startsWith("ft") || unit.startsWith("feet") ? 1 : unit.startsWith("cm") ? 1 / 30.48 : unit.startsWith("m") ? 3.28084 : 1 / 12;
+        const areaSqFt = (Number(m.width) || 0) * toFt * (Number(m.height) || 0) * toFt;
+        const panelX = 6.9;
+        const panelW = 2.7;
+        photoSlide.addShape("roundRect", { x: panelX, y: 0.8, w: panelW, h: 6.0, rectRadius: 0.06, fill: { color: colors.white }, line: { color: "E5E7EB", width: 1 } });
+        const specRow = (label: string, value: string, y: number, big = false) => {
+          photoSlide.addText(label, { x: panelX + 0.2, y, w: panelW - 0.4, h: 0.3, fontSize: 9, bold: true, color: "6B7280" });
+          photoSlide.addText(value, { x: panelX + 0.2, y: y + 0.28, w: panelW - 0.4, h: big ? 0.55 : 0.4, fontSize: big ? 20 : 13, bold: true, color: colors.text, valign: "top" });
+        };
+        specRow("SIZE (W × H)", `${m.width ?? 0} × ${m.height ?? 0} ${m.unit || "in"}`, 1.0, true);
+        specRow("AREA", areaSqFt > 0 ? `${areaSqFt.toFixed(2)} sq ft` : "—", 1.95);
+        const elementsText = (reccePhoto.elements || [])
+          .map((el: any) => `${el.elementName}${el.quantity ? ` × ${el.quantity}` : ""}`)
+          .join("\n");
+        photoSlide.addText("ELEMENTS", { x: panelX + 0.2, y: 2.75, w: panelW - 0.4, h: 0.3, fontSize: 9, bold: true, color: "6B7280" });
+        photoSlide.addText(elementsText || "—", { x: panelX + 0.2, y: 3.03, w: panelW - 0.4, h: 1.6, fontSize: 12, bold: true, color: colors.text, valign: "top" });
+        const reason = (reccePhoto as any).rejectionReason || (reccePhoto as any).holdReason;
+        if (reason && status !== BOARD_STATUS.APPROVED) {
+          photoSlide.addShape("roundRect", { x: panelX + 0.15, y: 4.8, w: panelW - 0.3, h: 1.8, rectRadius: 0.05, fill: { color: status.color, transparency: 88 }, line: { color: status.color, width: 1 } });
+          photoSlide.addText([
+            { text: status === BOARD_STATUS.REJECTED ? "REJECTION REASON\n" : "HOLD REASON\n", options: { fontSize: 9, bold: true, color: status.color } },
+            { text: String(reason), options: { fontSize: 11, color: colors.text } },
+          ], { x: panelX + 0.25, y: 4.85, w: panelW - 0.5, h: 1.7, valign: "top" });
         }
+
+        addSlideFooter(photoSlide, store, `Recce ${store.recce.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : ""}`);
       }
     }
 
@@ -1443,11 +1493,14 @@ const syncRecceStatusFromPhotos = (store: any) => {
   const photos = store.recce.reccePhotos;
   const approved = photos.filter((p: any) => p.approvalStatus === "APPROVED").length;
   const rejected = photos.filter((p: any) => p.approvalStatus === "REJECTED").length;
+  const held = photos.filter((p: any) => p.approvalStatus === "HOLD").length;
+  // Only PENDING boards still need a decision. HOLD counts as reviewed.
   const pending = photos.filter((p: any) => !p.approvalStatus || p.approvalStatus === "PENDING").length;
 
   store.recce.approvedPhotosCount = approved;
   store.recce.rejectedPhotosCount = rejected;
   store.recce.pendingPhotosCount = pending;
+  store.recce.heldPhotosCount = held;
 
   if (approved === 0 && rejected === photos.length) {
     // Every board rejected: whole recce rejected, drop any installation hand-off.
@@ -1459,12 +1512,14 @@ const syncRecceStatusFromPhotos = (store: any) => {
   } else if (store.currentStatus === StoreStatus.INSTALLATION_ASSIGNED) {
     // Already handed to an installer: don't move the store backwards.
   } else if (approved > 0 && pending === 0) {
-    // At least one approved and nothing pending (some may be rejected).
+    // Every board decided (approved / rejected / on hold) and at least one
+    // approved: recce approved, ready for installation of the approved boards.
     store.currentStatus = StoreStatus.RECCE_APPROVED;
   } else {
+    // Still pending boards, or nothing approved yet (e.g. all on hold).
     store.currentStatus = StoreStatus.RECCE_SUBMITTED;
   }
-  return { approved, rejected, pending };
+  return { approved, rejected, held, pending };
 };
 
 // --- NEW: Review Recce (Approve/Reject All Together) ---
@@ -1494,6 +1549,7 @@ export const reviewRecce = async (req: Request | any, res: Response) => {
     if (store.recce?.reccePhotos && store.recce.reccePhotos.length > 0) {
       store.recce.reccePhotos.forEach((photo: any) => {
         photo.approvalStatus = status as "APPROVED" | "REJECTED";
+        photo.holdReason = undefined;
         if (status === "APPROVED") {
           photo.approvedBy = userId;
           photo.approvedAt = now;
@@ -1545,10 +1601,10 @@ export const reviewRecce = async (req: Request | any, res: Response) => {
 export const reviewReccePhoto = async (req: Request | any, res: Response) => {
   try {
     const { id, photoIndex } = req.params;
-    const { status, rejectionReason } = req.body;
+    const { status, rejectionReason, holdReason } = req.body;
 
-    if (!["APPROVED", "REJECTED"].includes(status)) {
-      return res.status(400).json({ message: "Invalid status. Use APPROVED or REJECTED." });
+    if (!["APPROVED", "REJECTED", "HOLD"].includes(status)) {
+      return res.status(400).json({ message: "Invalid status. Use APPROVED, REJECTED or HOLD." });
     }
 
     const store = await Store.findById(id);
@@ -1565,8 +1621,14 @@ export const reviewReccePhoto = async (req: Request | any, res: Response) => {
     const userId = req.user?._id;
     const now = new Date();
 
-    store.recce.reccePhotos[photoIdx].approvalStatus = status as "APPROVED" | "REJECTED";
-    if (status === "APPROVED") {
+    store.recce.reccePhotos[photoIdx].approvalStatus = status as "APPROVED" | "REJECTED" | "HOLD";
+    store.recce.reccePhotos[photoIdx].holdReason = undefined;
+    if (status === "HOLD") {
+      store.recce.reccePhotos[photoIdx].holdReason = holdReason || "On hold";
+      store.recce.reccePhotos[photoIdx].rejectionReason = undefined;
+      store.recce.reccePhotos[photoIdx].approvedBy = undefined;
+      store.recce.reccePhotos[photoIdx].approvedAt = undefined;
+    } else if (status === "APPROVED") {
       store.recce.reccePhotos[photoIdx].approvedBy = userId;
       store.recce.reccePhotos[photoIdx].approvedAt = now;
       store.recce.reccePhotos[photoIdx].rejectionReason = undefined;
@@ -1576,7 +1638,7 @@ export const reviewReccePhoto = async (req: Request | any, res: Response) => {
       store.recce.reccePhotos[photoIdx].approvedAt = undefined;
     }
 
-    const { approved, rejected, pending } = syncRecceStatusFromPhotos(store);
+    const { approved, rejected, held, pending } = syncRecceStatusFromPhotos(store);
 
     store.markModified("recce");
     store.markModified("workflow");
@@ -1588,7 +1650,7 @@ export const reviewReccePhoto = async (req: Request | any, res: Response) => {
     res.status(200).json({
       message: `Photo ${photoIdx + 1} ${status.toLowerCase()} successfully`,
       store,
-      summary: { approved, rejected, pending }
+      summary: { approved, rejected, held, pending }
     });
   } catch (error: any) {
     res.status(500).json({ message: "Review failed", error: error.message });
@@ -1733,10 +1795,14 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
 
     if (!store || !store.installation) {
       return res.status(404).json({ message: "Store or Installation data not found" });
+
     }
+    // Download every photo up front, 4 at a time (was one-by-one).
+    await prefetchReportImages(collectStoreImagePaths(store));
 
     const pres = new PptxGenJS();
     pres.layout = "LAYOUT_WIDE";
+    centerContentOnWideSlides(pres);
     pres.title = `Installation Report - ${store.storeName}`;
 
     const colors = {
@@ -1949,18 +2015,8 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
         const imagePath = store.recce.initialPhotos[i];
         
         try {
-          const photoPath = await imagePathResolver.resolveImagePath(imagePath);
-
-          if (fs.existsSync(photoPath)) {
-            currentSlide.addImage({
-              path: photoPath,
-              x: pos.x,
-              y: pos.y,
-              w: photoWidth,
-              h: photoHeight
-            });
-            imagePathResolver.cleanupTempFile(photoPath);
-          }
+          const photoPath = null as any;
+          await addReportImage(currentSlide, imagePath, pos.x, pos.y, photoWidth, photoHeight);
         } catch (error) {
           console.error(`Failed to load image: ${imagePath}`, error);
         }
@@ -2012,17 +2068,8 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
         let reccePhotoPath: string | null = null;
         try {
           const imagePath = reccePhoto.photo;
-          reccePhotoPath = await imagePathResolver.resolveImagePath(imagePath);
-          
-          if (fs.existsSync(reccePhotoPath)) {
-            comparisonSlide.addImage({
-              path: reccePhotoPath,
-              x: 0.5,
-              y: 1.5,
-              w: 4.5,
-              h: 4.5
-            });
-          }
+          reccePhotoPath = null;
+          await addReportImage(comparisonSlide, imagePath, 0.5, 1.5, 4.5, 4.5);
         } catch (error) {
           console.error(`Failed to load recce photo: ${reccePhoto.photo}`, error);
         }
@@ -2051,17 +2098,8 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
         if (installPhoto) {
           try {
             const imagePath = installPhoto.installationPhoto;
-            installPhotoPath = await imagePathResolver.resolveImagePath(imagePath);
-            
-            if (fs.existsSync(installPhotoPath)) {
-              comparisonSlide.addImage({
-                path: installPhotoPath,
-                x: 5.3,
-                y: 1.5,
-                w: 4.5,
-                h: 4.5
-              });
-            }
+            installPhotoPath = null;
+          await addReportImage(comparisonSlide, imagePath, 5.3, 1.5, 4.5, 4.5);
           } catch (error) {
             console.error(`Failed to load installation photo: ${installPhoto.installationPhoto}`, error);
           }
@@ -2175,10 +2213,14 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
 
     if (stores.length === 0) {
       return res.status(404).json({ message: "No stores found" });
+
     }
+    // Download every photo for every store up front, 4 at a time.
+    await prefetchReportImages(stores.flatMap((st: any) => collectStoreImagePaths(st)));
 
     const pres = new PptxGenJS();
     pres.layout = "LAYOUT_WIDE";
+    centerContentOnWideSlides(pres);
     pres.title = `${type === "recce" ? "Recce" : "Installation"} Report - ${stores.length} Stores`;
     pres.author = "Elora System";
     pres.subject = `${type === "recce" ? "Recce Inspection" : "Installation Completion"} Report`;
@@ -2467,17 +2509,8 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
         });
         if (imagePath) {
           try {
-            const photoPath = await imagePathResolver.resolveImagePath(imagePath);
-            if (fs.existsSync(photoPath)) {
-              slide.addImage({
-                path: photoPath,
-                x: x + 0.05,
-                y: y + 0.05,
-                w: 2.9,
-                h: 2.0,
-              });
-              imagePathResolver.cleanupTempFile(photoPath);
-            }
+            const photoPath = null as any;
+          await addReportImage(slide, imagePath, x + 0.05, y + 0.05, 2.9, 2.0);
           } catch (err) {
             console.error(`Failed to load image in bulk PPT: ${imagePath}`, err);
           }
@@ -4073,7 +4106,7 @@ export const importRecceApproval = async (req: Request | any, res: Response) => 
         return;
       }
 
-      if (!status || !["PENDING", "APPROVED", "REJECTED"].includes(status)) {
+      if (!status || !["PENDING", "APPROVED", "REJECTED", "HOLD"].includes(status)) {
         errors.push({ row: rowNumber, error: `Invalid status: ${status}` });
         return;
       }
@@ -4095,28 +4128,24 @@ export const importRecceApproval = async (req: Request | any, res: Response) => 
         const photoIdx = parseInt(update.photoIndex);
         if (photoIdx < 0 || photoIdx >= store.recce.reccePhotos.length) continue;
 
+        if (!RECCE_REVIEWABLE_STATUSES.includes(store.currentStatus)) {
+          errors.push({ storeId: update.storeId, photoIndex: update.photoIndex, error: `Store is ${store.currentStatus}; recce can no longer be changed` });
+          continue;
+        }
+
         store.recce.reccePhotos[photoIdx].approvalStatus = update.status;
         store.recce.reccePhotos[photoIdx].approvedBy = req.user._id;
         store.recce.reccePhotos[photoIdx].approvedAt = new Date();
         if (update.status === "REJECTED" && update.rejectionReason) {
           store.recce.reccePhotos[photoIdx].rejectionReason = update.rejectionReason;
         }
+        store.recce.reccePhotos[photoIdx].holdReason =
+          update.status === "HOLD" ? (update.rejectionReason || "On hold") : undefined;
 
-        const approved = store.recce.reccePhotos.filter(p => p.approvalStatus === "APPROVED").length;
-        const rejected = store.recce.reccePhotos.filter(p => p.approvalStatus === "REJECTED").length;
-        const pending = store.recce.reccePhotos.filter(p => !p.approvalStatus || p.approvalStatus === "PENDING").length;
-
-        store.recce.approvedPhotosCount = approved;
-        store.recce.rejectedPhotosCount = rejected;
-        store.recce.pendingPhotosCount = pending;
-
-        if (approved > 0 && pending === 0) {
-          store.currentStatus = StoreStatus.RECCE_APPROVED;
-        } else if (approved === 0 && rejected === store.recce.reccePhotos.length) {
-          store.currentStatus = StoreStatus.RECCE_REJECTED;
-        } else {
-          store.currentStatus = StoreStatus.RECCE_SUBMITTED;
-        }
+        // Same status rule as the in-app review (HOLD counts as reviewed).
+        syncRecceStatusFromPhotos(store);
+        store.markModified("recce");
+        store.markModified("workflow");
 
         await store.save();
         successCount++;

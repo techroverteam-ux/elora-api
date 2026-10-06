@@ -1,11 +1,9 @@
 import { Request, Response } from "express";
-const getFullImageUrl = (path: string) => {
-  if (!path) return "";
-  if (path.startsWith("http")) return path;
-  const cleanedPath = path.replace(/^\/+/, "");
-  return encodeURI(`https://storage.enamorimpex.com/eloraftp/${cleanedPath}`);
-};
+// The shared loader (utils/reportImages) builds and encodes the URL exactly
+// once; encodeURI() here used to turn a stored "%20" into "%2520" (404).
+const getFullImageUrl = (path: string) => path || "";
 import Store from "./store.model";
+import { loadReportImage, prefetchReportImages, collectStoreImagePaths } from "../../utils/reportImages";
 import fs from "fs";
 import path from "path";
 const axios = require('axios');
@@ -86,18 +84,26 @@ const drawStoreDetailsHeader = (doc: any, store: any, type: 'recce' | 'installat
   return boxY + boxH + 6; // returns content start Y
 };
 
-// ====== HELPER: Load image from URL ======
+// ====== HELPER: Load image (retries, timeout, JPEG-normalised, memoised) ======
 const loadImageFromUrl = async (url: string): Promise<Buffer | null> => {
-  try {
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
-    if (response.ok) {
-      const arrayBuffer = await response.arrayBuffer();
-      return Buffer.from(arrayBuffer);
-    }
-  } catch (e) { }
-  return null;
+  const img = await loadReportImage(url);
+  return img ? img.buffer : null;
+};
+
+// Draw a photo fitted (not stretched) and centred in its box, or a
+// "Photo unavailable" placeholder so a missing photo is obvious, not blank.
+const drawImageInBox = (doc: any, buf: Buffer | null, x: number, y: number, w: number, h: number) => {
+      try {
+    doc.image(buf, x, y, { fit: [w, h], align: 'center', valign: 'center' });
+    return;
+    } catch (e) {
+    console.warn('[pdf] could not draw image', e);
+  }
+  doc.save();
+  doc.rect(x, y, w, h).fillOpacity(1).fill('#F3F4F6');
+  doc.restore();
+  doc.fillColor('#9CA3AF').fontSize(11).font('Helvetica-Oblique')
+    .text('Photo unavailable', x, y + h / 2 - 6, { width: w, align: 'center', lineBreak: false });
 };
 
 // ====== RECCE PDF ======
@@ -108,6 +114,10 @@ export const generateReccePDF = async (req: Request, res: Response) => {
     if (!store || !store.recce) {
       return res.status(404).json({ message: "Store or Recce data not found" });
     }
+
+    // Fetch all photos (4 at a time) BEFORE streaming the PDF, so a slow photo
+    // can't leave a half-written file behind.
+    await prefetchReportImages(collectStoreImagePaths(store));
 
     const PDFDocument = require('pdfkit');
     const doc = new PDFDocument({ size: 'A4', margin: 0, layout: 'landscape' });
@@ -164,9 +174,7 @@ export const generateReccePDF = async (req: Request, res: Response) => {
         try {
           const photoUrl = getFullImageUrl(store.recce.initialPhotos[i]);
           const buffer = await loadImageFromUrl(photoUrl);
-          if (buffer) {
-            doc.image(buffer, x + 5, y + 5, { width: photoWidth - 10, height: photoHeight - 10, fit: [photoWidth - 10, photoHeight - 10] });
-          }
+          drawImageInBox(doc, buffer, x + 5, y + 5, photoWidth - 10, photoHeight - 10);
         } catch (e) {
           console.log(`Failed to load initial photo ${i + 1}`);
         }
@@ -178,7 +186,8 @@ export const generateReccePDF = async (req: Request, res: Response) => {
       for (let i = 0; i < store.recce.reccePhotos.length; i++) {
         const reccePhoto = store.recce.reccePhotos[i];
         doc.addPage();
-        const contentStartY = drawStoreDetailsHeader(doc, store, 'recce', `Board ${i + 1}/${store.recce.reccePhotos.length}`);
+        const statusLabel = ({ APPROVED: 'APPROVED', REJECTED: 'REJECTED', HOLD: 'ON HOLD' } as Record<string, string>)[(reccePhoto as any).approvalStatus] || 'PENDING';
+        const contentStartY = drawStoreDetailsHeader(doc, store, 'recce', `Board ${i + 1}/${store.recce.reccePhotos.length} · ${statusLabel}`);
 
         const imgY = contentStartY;
         const imgWidth = 720;
@@ -192,9 +201,7 @@ export const generateReccePDF = async (req: Request, res: Response) => {
         try {
           const photoUrl = getFullImageUrl(reccePhoto.photo);
           const buffer = await loadImageFromUrl(photoUrl);
-          if (buffer) {
-            doc.image(buffer, 45, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
-          }
+          drawImageInBox(doc, buffer, 45, imgY + 5, imgWidth - 10, imgHeight - 10);
         } catch (e) {
           console.log('Failed to load recce photo');
         }
@@ -235,6 +242,9 @@ export const generateInstallationPDF = async (req: Request, res: Response) => {
     if (!store || !store.installation) {
       return res.status(404).json({ message: "Store or Installation data not found" });
     }
+
+    // Fetch all photos (4 at a time) BEFORE streaming the PDF.
+    await prefetchReportImages(collectStoreImagePaths(store));
 
     const PDFDocument = require('pdfkit');
     const doc = new PDFDocument({ size: 'A4', margin: 0, layout: 'landscape' });
@@ -290,9 +300,7 @@ export const generateInstallationPDF = async (req: Request, res: Response) => {
         try {
           const photoUrl = getFullImageUrl(store.recce.initialPhotos[i]);
           const buffer = await loadImageFromUrl(photoUrl);
-          if (buffer) {
-            doc.image(buffer, x + 5, y + 5, { width: photoWidth - 10, height: photoHeight - 10, fit: [photoWidth - 10, photoHeight - 10] });
-          }
+          drawImageInBox(doc, buffer, x + 5, y + 5, photoWidth - 10, photoHeight - 10);
         } catch (e) {
           console.log(`Failed to load initial photo ${i + 1}`);
         }
@@ -314,25 +322,21 @@ export const generateInstallationPDF = async (req: Request, res: Response) => {
         const spacing = 30;
 
         // BEFORE (Left)
-        const reccePhotoPath = path.join(process.cwd(), reccePhoto.photo);
+        const reccePhotoBuf = await loadImageFromUrl(reccePhoto.photo); // was a local-disk path that never exists on the server
         doc.save();
         doc.rect(40, imgY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(2).stroke();
         doc.restore();
 
-        if (fs.existsSync(reccePhotoPath)) {
-          doc.image(reccePhotoPath, 45, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
-        }
+        drawImageInBox(doc, reccePhotoBuf, 45, imgY + 5, imgWidth - 10, imgHeight - 10);
 
         // AFTER (Right)
         if (installPhoto) {
-          const installPhotoPath = path.join(process.cwd(), installPhoto.installationPhoto);
+          const installPhotoBuf = await loadImageFromUrl(installPhoto.installationPhoto);
           doc.save();
           doc.rect(40 + imgWidth + spacing, imgY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(2).stroke();
           doc.restore();
 
-          if (fs.existsSync(installPhotoPath)) {
-            doc.image(installPhotoPath, 45 + imgWidth + spacing, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
-          }
+          drawImageInBox(doc, installPhotoBuf, 45 + imgWidth + spacing, imgY + 5, imgWidth - 10, imgHeight - 10);
         }
 
         // Labels
@@ -392,6 +396,9 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
     if (stores.length === 0) {
       return res.status(404).json({ message: "No stores found" });
     }
+
+    // Fetch every store's photos (4 at a time) before streaming the PDF.
+    await prefetchReportImages(stores.flatMap((st: any) => collectStoreImagePaths(st)));
 
     const PDFDocument = require('pdfkit');
     const doc = new PDFDocument({ size: 'A4', margin: 0, layout: 'landscape' });
@@ -454,9 +461,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
           try {
             const photoUrl = getFullImageUrl(store.recce.initialPhotos[i]);
             const buffer = await loadImageFromUrl(photoUrl);
-            if (buffer) {
-              doc.image(buffer, x + 5, y + 5, { width: photoWidth - 10, height: photoHeight - 10, fit: [photoWidth - 10, photoHeight - 10] });
-            }
+            drawImageInBox(doc, buffer, x + 5, y + 5, photoWidth - 10, photoHeight - 10);
           } catch (e) {
             console.log(`Failed to load initial photo ${i + 1}`);
           }
@@ -480,30 +485,24 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
 
             // BEFORE
             const beforeBuffer = await loadImageFromUrl(getFullImageUrl(currentReccePhoto.photo));
-            if (beforeBuffer) {
-              doc.save();
-              doc.rect(30, imgY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(3).stroke();
-              doc.restore();
-              doc.image(beforeBuffer, 35, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
-            }
+            doc.save();
+            doc.rect(30, imgY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(3).stroke();
+            doc.restore();
+            drawImageInBox(doc, beforeBuffer, 35, imgY + 5, imgWidth - 10, imgHeight - 10);
 
             // AFTER 1
             const after1Buffer = await loadImageFromUrl(getFullImageUrl(installPhotos[0].installationPhoto));
-            if (after1Buffer) {
-              doc.save();
-              doc.rect(30 + imgWidth, imgY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
-              doc.restore();
-              doc.image(after1Buffer, 35 + imgWidth, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
-            }
+            doc.save();
+            doc.rect(30 + imgWidth, imgY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
+            doc.restore();
+            drawImageInBox(doc, after1Buffer, 35 + imgWidth, imgY + 5, imgWidth - 10, imgHeight - 10);
 
             // AFTER 2
             const after2Buffer = await loadImageFromUrl(getFullImageUrl(installPhotos[1].installationPhoto));
-            if (after2Buffer) {
-              doc.save();
-              doc.rect(30 + imgWidth * 2, imgY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
-              doc.restore();
-              doc.image(after2Buffer, 35 + imgWidth * 2, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
-            }
+            doc.save();
+            doc.rect(30 + imgWidth * 2, imgY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
+            doc.restore();
+            drawImageInBox(doc, after2Buffer, 35 + imgWidth * 2, imgY + 5, imgWidth - 10, imgHeight - 10);
 
             // Labels
             const labelY = imgY + imgHeight + 5;
@@ -528,21 +527,17 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
             const installPhoto = installPhotos[0];
 
             const beforeBuffer = await loadImageFromUrl(getFullImageUrl(currentReccePhoto.photo));
-            if (beforeBuffer) {
-              doc.save();
-              doc.rect(30, imgY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(3).stroke();
-              doc.restore();
-              doc.image(beforeBuffer, 35, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
-            }
+            doc.save();
+            doc.rect(30, imgY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(3).stroke();
+            doc.restore();
+            drawImageInBox(doc, beforeBuffer, 35, imgY + 5, imgWidth - 10, imgHeight - 10);
 
             if (installPhoto) {
               const afterBuffer = await loadImageFromUrl(getFullImageUrl(installPhoto.installationPhoto));
-              if (afterBuffer) {
-                doc.save();
-                doc.rect(30 + imgWidth, imgY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
-                doc.restore();
-                doc.image(afterBuffer, 35 + imgWidth, imgY + 5, { width: imgWidth - 10, height: imgHeight - 10, fit: [imgWidth - 10, imgHeight - 10] });
-              }
+              doc.save();
+              doc.rect(30 + imgWidth, imgY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
+              doc.restore();
+              drawImageInBox(doc, afterBuffer, 35 + imgWidth, imgY + 5, imgWidth - 10, imgHeight - 10);
             }
 
             // Labels
@@ -583,12 +578,10 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
           const imgHeight = 400;
 
           const buffer = await loadImageFromUrl(getFullImageUrl(currentReccePhoto.photo));
-          if (buffer) {
-            doc.save();
-            doc.rect(30, imgY, doc.page.width - 60, imgHeight).strokeColor('#EAB308').lineWidth(3).stroke();
-            doc.restore();
-            doc.image(buffer, 35, imgY + 5, { width: doc.page.width - 70, height: imgHeight - 10, fit: [doc.page.width - 70, imgHeight - 10] });
-          }
+          doc.save();
+          doc.rect(30, imgY, doc.page.width - 60, imgHeight).strokeColor('#EAB308').lineWidth(3).stroke();
+          doc.restore();
+          drawImageInBox(doc, buffer, 35, imgY + 5, doc.page.width - 70, imgHeight - 10);
 
           // Measurements
           const measureY = imgY + imgHeight + 8;

@@ -2,6 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import https from 'https';
 import http from 'http';
+import os from 'os';
+
+// NOTE: PDF/PPT reports now use utils/reportImages (in-memory, retries, JPEG).
+// This resolver is kept for anything else that still imports it.
 
 class ImagePathResolver {
   private storageType: string;
@@ -30,7 +34,8 @@ class ImagePathResolver {
 
   private async downloadImageTemporarily(url: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const tempDir = path.join(process.cwd(), 'temp');
+      // Vercel's filesystem is read-only except the OS temp dir (/tmp).
+      const tempDir = path.join(os.tmpdir(), 'elora-report-images');
       if (!fs.existsSync(tempDir)) {
         fs.mkdirSync(tempDir, { recursive: true });
       }
@@ -70,9 +75,12 @@ class ImagePathResolver {
   }
 
   // Clean up temporary files
-  cleanupTempFile(filePath: string): void {
-    if (filePath.includes('/temp/') && fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+  cleanupTempFile(filePath?: string | null): void {
+    if (!filePath) return;
+    try {
+      if (filePath.includes('elora-report-images') && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch {
+      // best effort
     }
   }
 

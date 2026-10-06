@@ -5,33 +5,51 @@ import { seedSuperAdmin } from "../src/config/seedSuperAdmin";
 
 dotenv.config();
 
-const MONGO_URI = "mongodb+srv://elora_crafting_arts:elora_crafting_arts%402026@elora-art.7osood6.mongodb.net/elora_crafting_arts?retryWrites=true&w=majority";
+// SECURITY: this connection string (with password) is committed to git.
+// Set MONGO_URI in the Vercel project's Environment Variables, rotate the
+// Atlas password, then delete the fallback below.
+const MONGO_URI =
+  process.env.MONGO_URI ||
+  process.env.MONGODB_URI ||
+  "mongodb+srv://elora_crafting_arts:elora_crafting_arts%402026@elora-art.7osood6.mongodb.net/elora_crafting_arts?retryWrites=true&w=majority";
 
-let isConnected = false;
+// One shared connection promise per serverless instance. Concurrent requests
+// on a cold start (the app fires /stores, /stores/cities, /clients together)
+// all await the SAME connect instead of each opening their own.
+let connectPromise: Promise<typeof mongoose> | null = null;
+let seeded = false;
 
 const connectDB = async () => {
-  if (isConnected) return;
-  
-  try {
-    if (!MONGO_URI) {
-      console.error("Environment variables:", {
-        MONGO_URI: process.env.MONGO_URI,
-        MONGODB_URI: process.env.MONGODB_URI,
-        NODE_ENV: process.env.NODE_ENV
-      });
-      throw new Error("MONGO_URI is not defined in environment variables");
-    }
+  // 1 = connected. Re-check the real state so a dropped connection reconnects
+  // instead of every query hanging on a stale "isConnected = true" flag.
+  if (mongoose.connection.readyState === 1) return;
 
+  if (!connectPromise) {
     console.log("Connecting to MongoDB...");
-    await mongoose.connect(MONGO_URI);
-    isConnected = true;
-    console.log("✅ MongoDB connected successfully");
-    
-    await seedSuperAdmin();
-  } catch (error) {
-    console.error("❌ MongoDB connection failed:", error);
-    throw error;
+    const started = Date.now();
+    connectPromise = mongoose
+      .connect(MONGO_URI, {
+        serverSelectionTimeoutMS: 8000, // fail in 8s, not the 30s default
+        connectTimeoutMS: 8000,
+        maxPoolSize: 5,
+      })
+      .then((m) => {
+        console.log(`✅ MongoDB connected in ${Date.now() - started}ms`);
+        // Seed once per instance, in the background — never make a user's
+        // request wait for these writes.
+        if (!seeded) {
+          seeded = true;
+          seedSuperAdmin().catch((e) => console.error("seedSuperAdmin failed:", e));
+        }
+        return m;
+      })
+      .catch((error) => {
+        console.error("❌ MongoDB connection failed:", error);
+        connectPromise = null; // allow the next request to retry
+        throw error;
+      });
   }
+  await connectPromise;
 };
 
 export default async (req: any, res: any) => {
