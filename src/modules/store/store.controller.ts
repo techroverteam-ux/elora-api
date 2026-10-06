@@ -11,6 +11,19 @@ import uploadService from "../../utils/uploadService";
 import enhancedUploadService from "../../utils/enhancedUploadService";
 import imagePathResolver from "../../utils/imagePathResolver";
 
+// ---------------------------------------------------------------------------
+// Role helpers. Roles are admin-defined, and parts of this API match on
+// role.code while others match on role.name — so check both, case-insensitively.
+// ---------------------------------------------------------------------------
+const roleKeys = (role: any): string[] =>
+  [role?.code, role?.name].filter(Boolean).map((v: any) => String(v).trim().toUpperCase());
+const userHasRole = (user: any, ...wanted: string[]) =>
+  (user?.roles || []).some((r: any) => roleKeys(r).some((k) => wanted.includes(k)));
+const isAdminUser = (user: any) => userHasRole(user, "SUPER_ADMIN", "ADMIN", "SUB_ADMIN");
+const isRecceUser = (user: any) => userHasRole(user, "RECCE");
+const isInstallationUser = (user: any) => userHasRole(user, "INSTALLATION");
+
+
 // Helper: fuzzy search for column headers
 const findKey = (row: any, keywords: string[]): string | undefined => {
   const keys = Object.keys(row);
@@ -362,10 +375,9 @@ export const createStore = async (req: Request | any, res: Response) => {
     // even see a store they just created (getAllStores only shows field roles
     // the stores assigned to them).
     // ------------------------------------------------------------------
-    const creatorRoleCodes: string[] = (req.user.roles || []).map((r: any) => String(r?.code || "").toUpperCase());
-    const creatorIsAdmin = creatorRoleCodes.some((c) => ["SUPER_ADMIN", "ADMIN", "SUB_ADMIN"].includes(c));
-    const creatorIsRecce = creatorRoleCodes.includes("RECCE");
-    const creatorIsInstallation = creatorRoleCodes.includes("INSTALLATION");
+    const creatorIsAdmin = isAdminUser(req.user);
+    const creatorIsRecce = isRecceUser(req.user);
+    const creatorIsInstallation = isInstallationUser(req.user);
     let autoAssigned: "RECCE" | "INSTALLATION" | null = null;
 
     if (!creatorIsAdmin) {
@@ -443,11 +455,34 @@ export const getAllStores = async (req: Request | any, res: Response) => {
       return storesPermission?.view === true;
     });
 
-    // Check if user is strictly a field role (RECCE or INSTALLATION)
-    const isFieldRole = userRoles.some((role: any) => 
-      role.code === "RECCE" || role.code === "INSTALLATION" || 
-      role.code === "recce" || role.code === "installation"
-    );
+    // Check if user is strictly a field role (RECCE or INSTALLATION) — by role code OR name
+    const isFieldRole = !isSuperAdmin && !isSubAdmin && (isRecceUser(req.user) || isInstallationUser(req.user));
+
+    // Self-heal: stores a RECCE user created before auto-assign existed (or
+    // while it wasn't deployed) are still unassigned. Assign them to their
+    // creator now, so they show up in that user's Recce list. Scoped to the
+    // requesting user's own unassigned stores; a no-op once they're fixed.
+    if (isFieldRole && isRecceUser(req.user) && !isAdminUser(req.user)) {
+      try {
+        await Store.updateMany(
+          {
+            createdBy: req.user._id,
+            currentStatus: StoreStatus.MANUALLY_ADDED,
+            $or: [{ "workflow.recceAssignedTo": { $exists: false } }, { "workflow.recceAssignedTo": null }],
+          },
+          {
+            $set: {
+              "workflow.recceAssignedTo": req.user._id,
+              "workflow.recceAssignedBy": req.user._id,
+              "recce.assignedDate": new Date(),
+              currentStatus: StoreStatus.RECCE_ASSIGNED,
+            },
+          },
+        );
+      } catch (healError) {
+        console.error("getAllStores: self-assign of creator's stores failed", healError);
+      }
+    }
 
     // Apply access control based on role hierarchy
     if (isSuperAdmin) {
@@ -460,6 +495,8 @@ export const getAllStores = async (req: Request | any, res: Response) => {
       query.$or = [
         { "workflow.recceAssignedTo": req.user._id },
         { "workflow.installationAssignedTo": req.user._id },
+        // Field users always see stores they created themselves
+        { createdBy: req.user._id },
       ];
     }
     // If user has stores.view permission but is not Super/Sub Admin and not a Field Role, they can see all stores
@@ -1373,6 +1410,63 @@ export const generateReccePPT = async (req: Request, res: Response) => {
   }
 };
 
+// --- Recce review helpers ---
+// Stores whose recce can still be reviewed. Once installation photos are
+// submitted, changing recce approvals would orphan / wipe that work.
+const RECCE_REVIEWABLE_STATUSES: string[] = [
+  StoreStatus.RECCE_SUBMITTED,
+  StoreStatus.RECCE_APPROVED,
+  StoreStatus.RECCE_REJECTED,
+  StoreStatus.INSTALLATION_ASSIGNED,
+];
+
+/** Returns an error response if this user/store can't be reviewed, else null. */
+const recceReviewGuard = (req: any, res: Response, store: any) => {
+  // Field users must never approve their own boards, even if a custom role
+  // happens to grant stores.edit.
+  if (isRecceUser(req.user) && !isAdminUser(req.user)) {
+    return res.status(403).json({ message: "Only admins can review a recce." });
+  }
+  if (!store.recce?.reccePhotos || store.recce.reccePhotos.length === 0) {
+    return res.status(400).json({ message: "This store has no submitted recce boards to review." });
+  }
+  if (!RECCE_REVIEWABLE_STATUSES.includes(store.currentStatus)) {
+    return res.status(400).json({
+      message: `Recce can't be reviewed when the store is ${store.currentStatus}.`,
+    });
+  }
+  return null;
+};
+
+/** Recompute photo counts + store status from the per-board approval states. */
+const syncRecceStatusFromPhotos = (store: any) => {
+  const photos = store.recce.reccePhotos;
+  const approved = photos.filter((p: any) => p.approvalStatus === "APPROVED").length;
+  const rejected = photos.filter((p: any) => p.approvalStatus === "REJECTED").length;
+  const pending = photos.filter((p: any) => !p.approvalStatus || p.approvalStatus === "PENDING").length;
+
+  store.recce.approvedPhotosCount = approved;
+  store.recce.rejectedPhotosCount = rejected;
+  store.recce.pendingPhotosCount = pending;
+
+  if (approved === 0 && rejected === photos.length) {
+    // Every board rejected: whole recce rejected, drop any installation hand-off.
+    store.currentStatus = StoreStatus.RECCE_REJECTED;
+    store.workflow = store.workflow || ({} as any);
+    store.workflow.installationAssignedTo = undefined;
+    store.workflow.installationAssignedBy = undefined;
+    store.installation = undefined;
+  } else if (store.currentStatus === StoreStatus.INSTALLATION_ASSIGNED) {
+    // Already handed to an installer: don't move the store backwards.
+  } else if (approved > 0 && pending === 0) {
+    // At least one approved and nothing pending (some may be rejected).
+    store.currentStatus = StoreStatus.RECCE_APPROVED;
+  } else {
+    store.currentStatus = StoreStatus.RECCE_SUBMITTED;
+  }
+  return { approved, rejected, pending };
+};
+
 // --- NEW: Review Recce (Approve/Reject All Together) ---
 export const reviewRecce = async (req: Request | any, res: Response) => {
   try {
@@ -1387,6 +1481,7 @@ export const reviewRecce = async (req: Request | any, res: Response) => {
 
     const store = await Store.findById(id);
     if (!store) return res.status(404).json({ message: "Store not found" });
+    if (recceReviewGuard(req, res, store)) return;
 
     const newStatus =
       status === "APPROVED"
@@ -1405,6 +1500,8 @@ export const reviewRecce = async (req: Request | any, res: Response) => {
           photo.rejectionReason = undefined;
         } else {
           photo.rejectionReason = remarks || "Recce rejected";
+          photo.approvedBy = undefined;
+          photo.approvedAt = undefined;
         }
       });
 
@@ -1458,6 +1555,7 @@ export const reviewReccePhoto = async (req: Request | any, res: Response) => {
     if (!store || !store.recce?.reccePhotos) {
       return res.status(404).json({ message: "Store or recce photos not found" });
     }
+    if (recceReviewGuard(req, res, store)) return;
 
     const photoIdx = parseInt(photoIndex);
     if (isNaN(photoIdx) || photoIdx < 0 || photoIdx >= store.recce.reccePhotos.length) {
@@ -1474,32 +1572,11 @@ export const reviewReccePhoto = async (req: Request | any, res: Response) => {
       store.recce.reccePhotos[photoIdx].rejectionReason = undefined;
     } else if (status === "REJECTED") {
       store.recce.reccePhotos[photoIdx].rejectionReason = rejectionReason || "Photo rejected";
+      store.recce.reccePhotos[photoIdx].approvedBy = undefined;
+      store.recce.reccePhotos[photoIdx].approvedAt = undefined;
     }
 
-    // Update photo counts and overall status
-    const approved = store.recce.reccePhotos.filter(p => p.approvalStatus === "APPROVED").length;
-    const rejected = store.recce.reccePhotos.filter(p => p.approvalStatus === "REJECTED").length;
-    const pending = store.recce.reccePhotos.filter(p => !p.approvalStatus || p.approvalStatus === "PENDING").length;
-
-    store.recce.approvedPhotosCount = approved;
-    store.recce.rejectedPhotosCount = rejected;
-    store.recce.pendingPhotosCount = pending;
-
-    // NEW LOGIC: If at least one photo is approved and no pending photos, mark as APPROVED
-    // This allows installation assignment even if some photos are rejected
-    if (approved > 0 && pending === 0) {
-      store.currentStatus = StoreStatus.RECCE_APPROVED;
-    } else if (approved === 0 && rejected === store.recce.reccePhotos.length) {
-      // Only mark as rejected if ALL photos are rejected
-      store.currentStatus = StoreStatus.RECCE_REJECTED;
-      store.workflow = store.workflow || ({} as any);
-      store.workflow.installationAssignedTo = undefined;
-      store.workflow.installationAssignedBy = undefined;
-      store.installation = undefined;
-    } else {
-      // Still has pending photos or mixed status
-      store.currentStatus = StoreStatus.RECCE_SUBMITTED;
-    }
+    const { approved, rejected, pending } = syncRecceStatusFromPhotos(store);
 
     store.markModified("recce");
     store.markModified("workflow");
@@ -1519,9 +1596,44 @@ export const reviewReccePhoto = async (req: Request | any, res: Response) => {
 };
 
 // --- NEW: Bulk Approve All Recce Photos ---
+// Approves only the boards still PENDING. Boards an admin already rejected
+// stay rejected (this used to re-approve everything and wipe the reasons).
 export const bulkApproveReccePhotos = async (req: Request | any, res: Response) => {
-  req.body = { ...req.body, status: "APPROVED" };
-  return reviewRecce(req, res);
+  try {
+    const store = await Store.findById(req.params.id);
+    if (!store) return res.status(404).json({ message: "Store not found" });
+    if (recceReviewGuard(req, res, store)) return;
+
+    const userId = req.user?._id;
+    const now = new Date();
+    let changed = 0;
+    store.recce!.reccePhotos!.forEach((photo: any) => {
+      if (!photo.approvalStatus || photo.approvalStatus === "PENDING") {
+        photo.approvalStatus = "APPROVED";
+        photo.approvedBy = userId;
+        photo.approvedAt = now;
+        photo.rejectionReason = undefined;
+        changed++;
+      }
+    });
+
+    const summary = syncRecceStatusFromPhotos(store);
+
+    store.markModified("recce");
+    store.markModified("workflow");
+    await store.save();
+
+    await store.populate("workflow.recceAssignedTo", "name");
+    await store.populate("workflow.installationAssignedTo", "name");
+
+    res.status(200).json({
+      message: changed > 0 ? `${changed} pending board(s) approved` : "No pending boards to approve",
+      store,
+      summary,
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: "Review failed", error: error.message });
+  }
 };
 
 // --- UPDATED: Submit Installation Data (Multiple Images matching Recce Photos) ---
