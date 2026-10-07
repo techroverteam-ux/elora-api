@@ -8,9 +8,12 @@ dotenv.config();
 // SECURITY: this connection string (with password) is committed to git.
 // Set MONGO_URI in the Vercel project's Environment Variables, rotate the
 // Atlas password, then delete the fallback below.
+// Only trust an env value that is actually a MongoDB URI. The Vercel project
+// has a MONGO_URI/MONGODB_URI set to something else, which crashed every
+// request with "Invalid scheme" once env took priority over the fallback.
+const isMongoUri = (v?: string) => !!v && /^mongodb(\+srv)?:\/\//.test(v.trim());
 const MONGO_URI =
-  process.env.MONGO_URI ||
-  process.env.MONGODB_URI ||
+  [process.env.MONGO_URI, process.env.MONGODB_URI].find(isMongoUri)?.trim() ||
   "mongodb+srv://elora_crafting_arts:elora_crafting_arts%402026@elora-art.7osood6.mongodb.net/elora_crafting_arts?retryWrites=true&w=majority";
 
 // One shared connection promise per serverless instance. Concurrent requests
