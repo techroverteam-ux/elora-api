@@ -338,7 +338,7 @@ export const createStore = async (req: Request | any, res: Response) => {
       });
     }
 
-    const {
+    let {
       dealerCode,
       storeName,
       vendorCode,
@@ -350,7 +350,30 @@ export const createStore = async (req: Request | any, res: Response) => {
       specs,
       directInstallation,
       boards,
+      installationAssignedTo,
     } = req.body;
+
+    if (typeof location === "string") {
+      try { location = JSON.parse(location); } catch {}
+    }
+    if (typeof contact === "string") {
+      try { contact = JSON.parse(contact); } catch {}
+    }
+    if (typeof commercials === "string") {
+      try { commercials = JSON.parse(commercials); } catch {}
+    }
+    if (typeof costDetails === "string") {
+      try { costDetails = JSON.parse(costDetails); } catch {}
+    }
+    if (typeof specs === "string") {
+      try { specs = JSON.parse(specs); } catch {}
+    }
+    if (typeof boards === "string") {
+      try { boards = JSON.parse(boards); } catch {}
+    }
+    if (typeof directInstallation === "string") {
+      directInstallation = directInstallation === "true";
+    }
 
     if (!dealerCode) {
       return res.status(400).json({ message: "Dealer Code is required" });
@@ -359,6 +382,58 @@ export const createStore = async (req: Request | any, res: Response) => {
     // Validate required fields for storeId generation
     if (!location?.city || !location?.district) {
       return res.status(400).json({ message: "City and District are required for Store ID generation" });
+    }
+
+    const uploadedInitialPhotos: string[] = [];
+
+    if (directInstallation) {
+      if (!Array.isArray(boards) || boards.length === 0) {
+        return res.status(400).json({ message: "At least one board is required for direct installation" });
+      }
+
+      for (let i = 0; i < boards.length; i++) {
+        const board = boards[i];
+        if (!board.width || !board.height || !board.elementId) {
+          return res.status(400).json({ message: `Board ${i + 1} requires width, height, and element` });
+        }
+      }
+
+      const effectiveInstallationUser = installationAssignedTo || (!isAdminUser(req.user) && isInstallationUser(req.user) ? req.user._id : null);
+      if (!effectiveInstallationUser) {
+        return res.status(400).json({ message: "Installation user assignment is required for direct installation" });
+      }
+
+      // Process optional initial store photos if uploaded
+      const filesArray = (req.files as Express.Multer.File[]) || [];
+      const initialPhotoFiles = filesArray.filter(f =>
+        f.fieldname === "initialPhotos" ||
+        f.fieldname === "initialPhotos[]" ||
+        f.fieldname.startsWith("initialPhoto") ||
+        f.fieldname === "files"
+      );
+
+      if (initialPhotoFiles.length > 0) {
+        const cityPrefix = (location.city || "").trim().substring(0, 3).toUpperCase();
+        const districtPrefix = (location.district || "").trim().substring(0, 3).toUpperCase();
+        const cleanDealerCode = (dealerCode || "").trim().toUpperCase();
+        const storeIdForUpload = `${cityPrefix}${districtPrefix}${cleanDealerCode}`;
+        const userName = req.user?.name || req.user?.email?.split("@")[0] || "Admin";
+        const clientCodeToUse = clientCode || dealerCode || "DEFAULT";
+
+        for (let i = 0; i < initialPhotoFiles.length; i++) {
+          const file = initialPhotoFiles[i];
+          const link = await enhancedUploadService.uploadFile(
+            file.buffer,
+            `initial_${Date.now()}_${i}.jpg`,
+            file.mimetype,
+            clientCodeToUse,
+            storeIdForUpload,
+            "initial",
+            userName.replace(/\s+/g, "_"),
+          );
+          uploadedInitialPhotos.push(link);
+        }
+      }
     }
 
     let clientId = null;
@@ -387,34 +462,26 @@ export const createStore = async (req: Request | any, res: Response) => {
 
     if (directInstallation) {
       // Map boards to reccePhotos
-      const reccePhotos = Array.isArray(boards) && boards.length > 0
-        ? boards.map((board: any) => ({
-            photo: "",
-            measurements: {
-              width: Number(board.width) || 0,
-              height: Number(board.height) || 0,
-              unit: board.unit || "ft"
-            },
-            elements: board.elementId ? [{
-              elementId: board.elementId,
-              elementName: board.elementName,
-              quantity: Number(board.quantity) || 1,
-              customRate: Number(board.customRate) || 0
-            }] : [],
-            approvalStatus: "APPROVED" as const,
-            approvedAt: new Date(),
-            approvedBy: req.user._id
-          }))
-        : [{
-            photo: "",
-            measurements: { width: 0, height: 0, unit: "ft" },
-            elements: [],
-            approvalStatus: "APPROVED" as const,
-            approvedAt: new Date(),
-            approvedBy: req.user._id
-          }];
+      const reccePhotos = boards.map((board: any) => ({
+        photo: "",
+        measurements: {
+          width: Number(board.width) || 0,
+          height: Number(board.height) || 0,
+          unit: board.unit || "ft"
+        },
+        elements: board.elementId ? [{
+          elementId: board.elementId,
+          elementName: board.elementName,
+          quantity: Number(board.quantity) || 1,
+          customRate: Number(board.customRate) || 0
+        }] : [],
+        approvalStatus: "APPROVED" as const,
+        approvedAt: new Date(),
+        approvedBy: req.user._id
+      }));
 
       store.recce = {
+        initialPhotos: uploadedInitialPhotos,
         reccePhotos: reccePhotos,
         approvedPhotosCount: reccePhotos.length,
         pendingPhotosCount: 0,
@@ -423,32 +490,54 @@ export const createStore = async (req: Request | any, res: Response) => {
     }
 
     // ------------------------------------------------------------------
-    // Auto-assign to the creator when a FIELD user creates the store.
-    //   • RECCE user, normal flow          → recce assigned to themselves
-    //   • INSTALLATION user, direct install → installation assigned to themselves
-    // Admins (SUPER_ADMIN / ADMIN / SUB_ADMIN) are never auto-assigned — they
-    // keep assigning manually as before. Without this, a field user couldn't
-    // even see a store they just created (getAllStores only shows field roles
-    // the stores assigned to them).
+    // Explicit installation assignment: when the creator picks a specific
+    // installation user via the UI during direct-installation flow.
     // ------------------------------------------------------------------
-    const creatorIsAdmin = isAdminUser(req.user);
-    const creatorIsRecce = isRecceUser(req.user);
-    const creatorIsInstallation = isInstallationUser(req.user);
     let autoAssigned: "RECCE" | "INSTALLATION" | null = null;
 
-    if (!creatorIsAdmin) {
-      if (!directInstallation && creatorIsRecce) {
-        store.set("workflow.recceAssignedTo", req.user._id);
-        store.set("workflow.recceAssignedBy", req.user._id);
-        store.set("recce.assignedDate", new Date());
-        store.currentStatus = StoreStatus.RECCE_ASSIGNED;
-        autoAssigned = "RECCE";
-      } else if (directInstallation && creatorIsInstallation) {
-        store.set("workflow.installationAssignedTo", req.user._id);
-        store.set("workflow.installationAssignedBy", req.user._id);
-        store.set("installation.assignedDate", new Date());
-        store.currentStatus = StoreStatus.INSTALLATION_ASSIGNED;
-        autoAssigned = "INSTALLATION";
+    if (directInstallation && installationAssignedTo) {
+      // Validate that the target user exists and has the INSTALLATION role
+      const targetUser = await User.findById(installationAssignedTo).populate("roles");
+      if (!targetUser) {
+        return res.status(400).json({ message: "Selected installation user not found" });
+      }
+      const targetIsInstallation = isInstallationUser(targetUser);
+      if (!targetIsInstallation) {
+        return res.status(400).json({ message: "Selected user does not have the Installation role" });
+      }
+
+      store.set("workflow.installationAssignedTo", installationAssignedTo);
+      store.set("workflow.installationAssignedBy", req.user._id);
+      store.set("installation.assignedDate", new Date());
+      store.currentStatus = StoreStatus.INSTALLATION_ASSIGNED;
+      autoAssigned = "INSTALLATION";
+    } else {
+      // ------------------------------------------------------------------
+      // Fallback: Auto-assign to the creator when a FIELD user creates the
+      // store and no explicit assignee was provided.
+      //   • RECCE user, normal flow          → recce assigned to themselves
+      //   • INSTALLATION user, direct install → installation assigned to themselves
+      // Admins (SUPER_ADMIN / ADMIN / SUB_ADMIN) are never auto-assigned — they
+      // keep assigning manually as before.
+      // ------------------------------------------------------------------
+      const creatorIsAdmin = isAdminUser(req.user);
+      const creatorIsRecce = isRecceUser(req.user);
+      const creatorIsInstallation = isInstallationUser(req.user);
+
+      if (!creatorIsAdmin) {
+        if (!directInstallation && creatorIsRecce) {
+          store.set("workflow.recceAssignedTo", req.user._id);
+          store.set("workflow.recceAssignedBy", req.user._id);
+          store.set("recce.assignedDate", new Date());
+          store.currentStatus = StoreStatus.RECCE_ASSIGNED;
+          autoAssigned = "RECCE";
+        } else if (directInstallation && creatorIsInstallation) {
+          store.set("workflow.installationAssignedTo", req.user._id);
+          store.set("workflow.installationAssignedBy", req.user._id);
+          store.set("installation.assignedDate", new Date());
+          store.currentStatus = StoreStatus.INSTALLATION_ASSIGNED;
+          autoAssigned = "INSTALLATION";
+        }
       }
     }
 
@@ -687,6 +776,7 @@ export const getAllStores = async (req: Request | any, res: Response) => {
       .populate("workflow.installationAssignedTo", "name email")
       .populate("workflow.installationAssignedBy", "name email")
       .populate("clientId", "clientName")
+      .populate("createdBy", "name email")
       .sort({ updatedAt: -1, createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -774,24 +864,42 @@ export const updateStore = async (req: Request | any, res: Response) => {
 
 export const deleteStore = async (req: Request | any, res: Response) => {
   try {
-    // Check if user has permission to delete stores
+    const store = await Store.findById(req.params.id);
+    if (!store) {
+      return res.status(404).json({ message: "Store not found" });
+    }
+
+    // Role check:
+    // Admin, Sub-admin, and all forms of admin (or users with explicit stores.delete permission) can delete any store
     const userRoles = req.user.roles || [];
     const hasStoresDeletePermission = userRoles.some((role: any) => {
-      const storesPermission = role.permissions?.get('stores');
+      const storesPermission = role.permissions?.get ? role.permissions.get("stores") : role.permissions?.stores;
       return storesPermission?.delete === true;
     });
 
-    if (!hasStoresDeletePermission) {
-      return res.status(403).json({ 
-        message: "Access denied. You don't have permission to delete stores." 
-      });
+    const isAnyAdmin =
+      isAdminUser(req.user) ||
+      (userRoles || []).some((r: any) =>
+        roleKeys(r).some((k) => k.includes("ADMIN"))
+      ) ||
+      hasStoresDeletePermission;
+
+    if (!isAnyAdmin) {
+      // Recce and Installation users can ONLY delete their own created stores
+      const isFieldUser = isRecceUser(req.user) || isInstallationUser(req.user);
+      const isCreator = store.createdBy && store.createdBy.toString() === req.user._id.toString();
+
+      if (!isFieldUser || !isCreator) {
+        return res.status(403).json({
+          message: "Access denied. You can only delete stores created by you.",
+        });
+      }
     }
 
-    const store = await Store.findByIdAndDelete(req.params.id);
-    if (!store) return res.status(404).json({ message: "Store not found" });
+    await Store.findByIdAndDelete(req.params.id);
     res.status(200).json({ message: "Store deleted successfully" });
   } catch (error: any) {
-    res.status(500).json({ message: "Failed to delete store" });
+    res.status(500).json({ message: "Failed to delete store", error: error.message });
   }
 };
 

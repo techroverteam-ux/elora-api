@@ -67,7 +67,7 @@ router.post("/pdf/bulk", generateBulkPDF);
 
 router
   .route("/")
-  .post(checkPermission("stores", "create"), createStore)
+  .post(upload.any(), checkPermission("stores", "create"), createStore)
   .get(checkPermission("stores", "view"), getAllStores);
 
 router.post("/assign", checkPermission("stores", "edit"), assignStoresBulk);
@@ -90,7 +90,7 @@ router
   .route("/:id")
   .get(checkPermission("stores", "view"), getStoreById)
   .put(checkPermission("stores", "edit"), updateStore)
-  .delete(checkPermission("stores", "delete"), deleteStore);
+  .delete(deleteStore);
 
 router.post(
   "/:id/recce/review",
