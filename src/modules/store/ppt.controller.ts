@@ -1,123 +1,24 @@
 import { Request, Response } from "express";
-const getFullImageUrl = (path: string) => {
-  if (!path) return "";
-  if (path.startsWith("http")) return path;
-  const cleanedPath = path.replace(/^\/+/, "");
-  return encodeURI(`https://storage.enamorimpex.com/eloraftp/${cleanedPath}`);
-};
 import Store from "./store.model";
 import path from "path";
 import fs from "fs";
-import sharp from "sharp";
-const sizeOf = require("image-size");
-const axios = require("axios");
+import {
+  loadReportImage,
+  prefetchReportImages,
+  collectStoreImagePaths,
+  containBox,
+  toPptData,
+} from "../../utils/reportImages";
 
-// ====== HELPER: Load image from URL or path as base64 with true dimensions ======
-const loadImageBase64 = async (
-  url: string,
-): Promise<{ data: string; width: number; height: number } | null> => {
-  try {
-    let buffer: Buffer | null = null;
-    let contentType = "image/jpeg";
+// The shared loader (utils/reportImages) builds and encodes the storage URL
+// itself (and decodes first, so a stored "%20" doesn't become "%2520"), so
+// pass the stored path through untouched. Same as the PDF generator.
+const getFullImageUrl = (p: string) => p || "";
 
-    if (fs.existsSync(url)) {
-      buffer = fs.readFileSync(url);
-      const ext = path.extname(url).toLowerCase();
-      if (ext === ".png") contentType = "image/png";
-      else if (ext === ".webp") contentType = "image/webp";
-    } else if (url.startsWith("http://") || url.startsWith("https://")) {
-      const response = await fetch(url, {
-        headers: { "User-Agent": "Mozilla/5.0" },
-      });
-      if (response.ok) {
-        const arrayBuffer = await response.arrayBuffer();
-        buffer = Buffer.from(arrayBuffer);
-        contentType = response.headers.get("content-type") || "image/jpeg";
-      }
-    }
-
-    if (!buffer) return null;
-
-    let width = 0;
-    let height = 0;
-
-    // Detect actual dimensions and handle smartphone EXIF orientation
-    try {
-      const meta = await sharp(buffer).metadata();
-      if (meta.width && meta.height) {
-        if (meta.orientation && meta.orientation >= 5 && meta.orientation <= 8) {
-          buffer = await sharp(buffer).rotate().toBuffer();
-          const rotatedMeta = await sharp(buffer).metadata();
-          width = rotatedMeta.width || meta.height;
-          height = rotatedMeta.height || meta.width;
-        } else {
-          width = meta.width;
-          height = meta.height;
-        }
-      }
-    } catch (sharpErr) {
-      try {
-        const dims = sizeOf(buffer);
-        width = dims.width || 0;
-        height = dims.height || 0;
-      } catch (sizeOfErr) {}
-    }
-
-    if (!width || !height) {
-      width = 1920;
-      height = 1080;
-    }
-
-    const base64 = `data:${contentType};base64,${buffer.toString("base64")}`;
-
-    return {
-      data: base64,
-      width,
-      height,
-    };
-  } catch (e) {
-    console.error("Error loading image:", e);
-  }
-  return null;
-};
-
-// ====== HELPER: Calculate proportional contain/fit dimensions within bounding box ======
-const calculateFittedDimensions = (
-  imgWidth: number,
-  imgHeight: number,
-  boxX: number,
-  boxY: number,
-  maxW: number,
-  maxH: number,
-) => {
-  if (!imgWidth || !imgHeight) {
-    return { x: boxX, y: boxY, w: maxW, h: maxH };
-  }
-  const imgRatio = imgWidth / imgHeight;
-  const boxRatio = maxW / maxH;
-  let finalW: number;
-  let finalH: number;
-  let finalX: number;
-  let finalY: number;
-
-  if (imgRatio > boxRatio) {
-    // Image is wider than bounding box -> width constrained
-    finalW = maxW;
-    finalH = maxW / imgRatio;
-    finalX = boxX;
-    finalY = boxY + (maxH - finalH) / 2;
-  } else {
-    // Image is taller than bounding box -> height constrained
-    finalH = maxH;
-    finalW = maxH * imgRatio;
-    finalX = boxX + (maxW - finalW) / 2;
-    finalY = boxY;
-  }
-
-  return { x: finalX, y: finalY, w: finalW, h: finalH };
-};
-
-// ====== HELPER: Add image with proper aspect ratio centered inside bounding box ======
+// ====== HELPER: Add image fitted (not stretched) and centred in its box ======
+// Uses the same loader as the PDF: retries + timeout, EXIF rotation, HEIC/WEBP
+// converted to JPEG, resized to max 1600px. If a photo really can't be loaded,
+// draw a "Photo unavailable" placeholder so it's obvious, not a blank box.
 const addImageWithAspectRatio = async (
   slide: any,
   imageUrl: string,
@@ -127,28 +28,23 @@ const addImageWithAspectRatio = async (
   maxHeight: number,
 ) => {
   try {
-    const imageData = await loadImageBase64(imageUrl);
-    if (imageData) {
-      const dims = calculateFittedDimensions(
-        imageData.width,
-        imageData.height,
-        boxX,
-        boxY,
-        maxWidth,
-        maxHeight,
-      );
-      slide.addImage({
-        data: imageData.data,
-        x: dims.x,
-        y: dims.y,
-        w: dims.w,
-        h: dims.h,
-      });
+    const img = await loadReportImage(imageUrl);
+    if (img) {
+      const dims = containBox(img.width, img.height, boxX, boxY, maxWidth, maxHeight);
+      slide.addImage({ data: toPptData(img), x: dims.x, y: dims.y, w: dims.w, h: dims.h });
       return true;
     }
   } catch (e) {
-    console.error("Error adding image with aspect ratio:", e);
+    console.warn("[ppt] could not add image", e);
   }
+  slide.addShape("rect", {
+    x: boxX, y: boxY, w: maxWidth, h: maxHeight,
+    fill: { color: "F3F4F6" }, line: { color: "F3F4F6", width: 0 },
+  });
+  slide.addText("Photo unavailable", {
+    x: boxX, y: boxY, w: maxWidth, h: maxHeight,
+    fontSize: 11, italic: true, color: "9CA3AF", align: "center", valign: "middle",
+  });
   return false;
 };
 
@@ -460,6 +356,9 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
     // ── Per-store slides ───────────────────────────────────────────────
     // contentStartY = 2.03 (sep2 at 1.95 + 0.08 gap) — updated to match new header height
     const contentStartY = 2.03;
+
+    // Fetch all photos (4 at a time) before building slides, same as the PDF.
+    await prefetchReportImages(stores.flatMap((st: any) => collectStoreImagePaths(st)));
 
     for (const store of stores) {
       if (type === "recce" && !store.recce) continue;
