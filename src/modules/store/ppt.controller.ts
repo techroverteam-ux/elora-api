@@ -8,7 +8,9 @@ import {
   collectStoreImagePaths,
   containBox,
   toPptData,
+  withReportDeadline,
 } from "../../utils/reportImages";
+import { getLogoPptData } from "../../utils/reportLogo";
 
 // The shared loader (utils/reportImages) builds and encodes the storage URL
 // itself (and decodes first, so a stored "%20" doesn't become "%2520"), so
@@ -65,14 +67,7 @@ const addStoreDetailsHeader = (
   // ── Logo ──────────────────────────────────────────────────────────────
   // Logo PNG is 970x239px → aspect ratio 4.0586:1
   // At h=0.55in: w = 0.55 * (970/239) = 2.232in — preserves correct proportions
-  let logoBase64 = "";
-  const logoPath = path.join(process.cwd(), "public", "logo.png");
-  if (fs.existsSync(logoPath)) {
-    try {
-      const logoBuffer = fs.readFileSync(logoPath);
-      logoBase64 = `data:image/png;base64,${logoBuffer.toString("base64")}`;
-    } catch (e) {}
-  }
+  const logoBase64 = getLogoPptData();
   if (logoBase64) {
     slide.addImage({ data: logoBase64, x: 0.15, y: 0.08, w: 2.232, h: 0.55 });
   }
@@ -272,7 +267,10 @@ const addStoreDetailsHeader = (
 };
 
 // ====== CONTROLLER: Generate Bulk PPT ======
-export const generateBulkPPT = async (req: Request, res: Response) => {
+export const generateBulkPPT = (req: Request, res: Response) =>
+  withReportDeadline(() => buildBulkPPT(req, res));
+
+const buildBulkPPT = async (req: Request, res: Response) => {
   try {
     const { storeIds, type } = req.body;
     if (!storeIds || !Array.isArray(storeIds) || storeIds.length === 0) {
@@ -297,15 +295,8 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
     const GREEN = "22C55E";
     const RED = "EF4444";
 
-    // ── Load logo once (shared across all slides) ──────────────────────
-    let logoBase64 = "";
-    const logoPath = path.join(process.cwd(), "public", "logo.png");
-    if (fs.existsSync(logoPath)) {
-      try {
-        const logoBuffer = fs.readFileSync(logoPath);
-        logoBase64 = `data:image/png;base64,${logoBuffer.toString("base64")}`;
-      } catch (e) {}
-    }
+    // ── Logo (embedded fallback, so it never goes missing on Vercel) ──
+    const logoBase64 = getLogoPptData();
 
     // ── SLIDE 1: Cover page ────────────────────────────────────────────
     // Logo is 970x239px → ratio 4.0586:1

@@ -3,14 +3,14 @@ import { Request, Response } from "express";
 // once; encodeURI() here used to turn a stored "%20" into "%2520" (404).
 const getFullImageUrl = (path: string) => path || "";
 import Store from "./store.model";
-import { loadReportImage, prefetchReportImages, collectStoreImagePaths } from "../../utils/reportImages";
+import { loadReportImage, prefetchReportImages, collectStoreImagePaths, withReportDeadline } from "../../utils/reportImages";
+import { getLogoBuffer } from "../../utils/reportLogo";
 import fs from "fs";
 import path from "path";
 const axios = require('axios');
 
 // ====== HELPER: Draw store details header (top 20%) on every content slide ======
 const drawStoreDetailsHeader = (doc: any, store: any, type: 'recce' | 'installation', boardInfo?: string) => {
-  const logoPath = path.join(process.cwd(), "public", "logo.png");
   const headerColor = type === "recce" ? '#EAB308' : '#22C55E';
 
   // Background
@@ -19,9 +19,7 @@ const drawStoreDetailsHeader = (doc: any, store: any, type: 'recce' | 'installat
   doc.restore();
 
   // Logo
-  if (fs.existsSync(logoPath)) {
-    doc.image(logoPath, 40, 15, { width: 80, height: 24 });
-  }
+  doc.image(getLogoBuffer(), 40, 15, { width: 80, height: 24 });
 
   // Title
   let title = type === "recce" ? 'RECCE INSPECTION REPORT' : 'INSTALLATION COMPLETION REPORT';
@@ -107,7 +105,10 @@ const drawImageInBox = (doc: any, buf: Buffer | null, x: number, y: number, w: n
 };
 
 // ====== RECCE PDF ======
-export const generateReccePDF = async (req: Request, res: Response) => {
+export const generateReccePDF = (req: Request, res: Response) =>
+  withReportDeadline(() => generateReccePDFImpl(req, res));
+
+const generateReccePDFImpl = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const store = await Store.findById(id);
@@ -125,7 +126,6 @@ export const generateReccePDF = async (req: Request, res: Response) => {
     res.setHeader('Content-Disposition', `attachment; filename="RECCE_${store.storeName}_${store.storeId}.pdf"`);
     doc.pipe(res);
 
-    const logoPath = path.join(process.cwd(), "public", "logo.png");
 
     // ===== SLIDE 1: COVER PAGE =====
     doc.save();
@@ -137,9 +137,7 @@ export const generateReccePDF = async (req: Request, res: Response) => {
       .text('WE INSTALL YOUR BRAND', 100, 185, { width: 600, align: 'left', lineBreak: false })
       .text('INTO THE REAL WORLD.', 100, 220, { width: 600, align: 'left', lineBreak: false });
 
-    if (fs.existsSync(logoPath)) {
-      doc.image(logoPath, 240, 280, { width: 300, height: 90 });
-    }
+    doc.image(getLogoBuffer(), 240, 280, { width: 300, height: 90 });
 
     doc.fillColor('#1F2937').fontSize(12).font('Helvetica')
       .text('We help businesses stand out with custom branding,', 300, 420, { width: 500, align: 'right', lineBreak: false })
@@ -235,7 +233,10 @@ export const generateReccePDF = async (req: Request, res: Response) => {
 };
 
 // ====== INSTALLATION PDF ======
-export const generateInstallationPDF = async (req: Request, res: Response) => {
+export const generateInstallationPDF = (req: Request, res: Response) =>
+  withReportDeadline(() => generateInstallationPDFImpl(req, res));
+
+const generateInstallationPDFImpl = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const store = await Store.findById(id);
@@ -252,7 +253,6 @@ export const generateInstallationPDF = async (req: Request, res: Response) => {
     res.setHeader('Content-Disposition', `attachment; filename="INSTALLATION_${store.storeName}_${store.storeId}.pdf"`);
     doc.pipe(res);
 
-    const logoPath = path.join(process.cwd(), "public", "logo.png");
 
     // ===== SLIDE 1: COVER PAGE =====
     doc.save();
@@ -264,9 +264,7 @@ export const generateInstallationPDF = async (req: Request, res: Response) => {
       .text('WE INSTALL YOUR BRAND', 100, 185, { width: 600, align: 'left', lineBreak: false })
       .text('INTO THE REAL WORLD.', 100, 220, { width: 600, align: 'left', lineBreak: false });
 
-    if (fs.existsSync(logoPath)) {
-      doc.image(logoPath, 240, 280, { width: 300, height: 90 });
-    }
+    doc.image(getLogoBuffer(), 240, 280, { width: 300, height: 90 });
 
     doc.fillColor('#1F2937').fontSize(12).font('Helvetica')
       .text('We help businesses stand out with custom branding,', 300, 420, { width: 500, align: 'right', lineBreak: false })
@@ -382,7 +380,10 @@ export const generateInstallationPDF = async (req: Request, res: Response) => {
 };
 
 // ====== BULK PDF ======
-export const generateBulkPDF = async (req: Request, res: Response) => {
+export const generateBulkPDF = (req: Request, res: Response) =>
+  withReportDeadline(() => generateBulkPDFImpl(req, res));
+
+const generateBulkPDFImpl = async (req: Request, res: Response) => {
   try {
     const { storeIds, type } = req.body;
     if (!storeIds || !Array.isArray(storeIds) || storeIds.length === 0) {
@@ -406,7 +407,6 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
     res.setHeader('Content-Disposition', `attachment; filename="${type === "recce" ? "Recce" : "Installation"}_Report_${stores.length}_Stores_${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/')}.pdf"`);
     doc.pipe(res);
 
-    const logoPath = path.join(process.cwd(), "public", "logo.png");
 
     // ===== COVER PAGE =====
     doc.save();
@@ -418,9 +418,7 @@ export const generateBulkPDF = async (req: Request, res: Response) => {
       .text('WE INSTALL YOUR BRAND', 100, 185, { width: 600, align: 'left', lineBreak: false })
       .text('INTO THE REAL WORLD.', 100, 220, { width: 600, align: 'left', lineBreak: false });
 
-    if (fs.existsSync(logoPath)) {
-      doc.image(logoPath, 240, 280, { width: 300, height: 90 });
-    }
+    doc.image(getLogoBuffer(), 240, 280, { width: 300, height: 90 });
 
     doc.fillColor('#1F2937').fontSize(12).font('Helvetica')
       .text('We help businesses stand out with custom branding,', 300, 420, { width: 500, align: 'right', lineBreak: false })

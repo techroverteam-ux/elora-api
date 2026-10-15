@@ -14,10 +14,11 @@
  * that uses the same photo twice — or the prefetch below — only downloads once.
  */
 import sharp from "sharp";
+import { AsyncLocalStorage } from "async_hooks";
 
 const STORAGE_BASE = "https://storage.enamorimpex.com/eloraftp/";
 const MAX_SIDE = 1600;
-const TIMEOUT_MS = 12000;
+const TIMEOUT_MS = 8000;
 const RETRIES = 3;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const CACHE_MAX = 300;
@@ -48,10 +49,29 @@ export const buildImageUrl = (pathOrUrl: string): string => {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// ── Per-report time budget ──────────────────────────────────────────────────
+// The photo server sometimes takes >12s for one photo. Without a budget a
+// report could wait for retries past the app's 30s timeout (and Vercel's
+// function limit), so the download failed or came back without photos.
+// withReportDeadline() gives a whole report a time budget: photos still loading
+// when it runs out are drawn as "Photo unavailable" and the file is sent in time.
+const deadlineStore = new AsyncLocalStorage<number>();
+export const DEFAULT_REPORT_BUDGET_MS = 20000;
+
+export const withReportDeadline = <T>(fn: () => Promise<T>, budgetMs = DEFAULT_REPORT_BUDGET_MS): Promise<T> =>
+  deadlineStore.run(Date.now() + budgetMs, fn);
+
+const timeLeft = () => {
+  const d = deadlineStore.getStore();
+  return d === undefined ? Infinity : d - Date.now();
+};
+
 const fetchWithRetry = async (url: string): Promise<Buffer | null> => {
   for (let attempt = 0; attempt < RETRIES; attempt++) {
+    const left = timeLeft();
+    if (left <= 250) return null; // report's time budget used up
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), Math.min(TIMEOUT_MS, left));
     try {
       const res = await fetch(url, {
         headers: { "User-Agent": "Mozilla/5.0 (EloraReports)" },
@@ -74,7 +94,11 @@ const fetchWithRetry = async (url: string): Promise<Buffer | null> => {
     } finally {
       clearTimeout(timer);
     }
-    if (attempt < RETRIES - 1) await sleep(400 * 2 ** attempt);
+    if (attempt < RETRIES - 1) {
+      const wait = 400 * 2 ** attempt;
+      if (timeLeft() <= wait + 250) return null;
+      await sleep(wait);
+    }
   }
   return null;
 };
@@ -114,7 +138,7 @@ export const loadReportImage = (pathOrUrl?: string | null): Promise<ReportImage 
   if (!url) return Promise.resolve(null);
   const now = Date.now();
   const hit = cache.get(url);
-  if (hit && now - hit.at < CACHE_TTL_MS) return hit.p;
+  if (hit && now - hit.at < CACHE_TTL_MS) return withinBudget(hit.p);
 
   const p = fetchWithRetry(url).then((buf) => (buf ? normalise(buf) : null));
   cache.set(url, { at: now, p });
@@ -124,15 +148,26 @@ export const loadReportImage = (pathOrUrl?: string | null): Promise<ReportImage 
     const oldest = [...cache.entries()].sort((a, b) => a[1].at - b[1].at).slice(0, cache.size - CACHE_MAX);
     oldest.forEach(([k]) => cache.delete(k));
   }
-  return p;
+  return withinBudget(p);
+};
+
+/** Resolve null instead of waiting past the current report's deadline. */
+const withinBudget = (p: Promise<ReportImage | null>): Promise<ReportImage | null> => {
+  const left = timeLeft();
+  if (left === Infinity) return p;
+  if (left <= 0) return Promise.race([p, Promise.resolve(null)]);
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(null), left);
+    p.then((v) => { clearTimeout(t); resolve(v); }, () => { clearTimeout(t); resolve(null); });
+  });
 };
 
 /** Download many images in parallel (bounded) before building a report. */
-export const prefetchReportImages = async (paths: Array<string | null | undefined>, concurrency = 4) => {
+export const prefetchReportImages = async (paths: Array<string | null | undefined>, concurrency = 6) => {
   const list = [...new Set(paths.filter(Boolean) as string[])];
   let i = 0;
   const workers = Array.from({ length: Math.min(concurrency, list.length) }, async () => {
-    while (i < list.length) {
+    while (i < list.length && timeLeft() > 250) {
       const next = list[i++];
       await loadReportImage(next);
     }
