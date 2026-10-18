@@ -1,3 +1,4 @@
+import { INSTALL_PHOTO_TYPES, InstallPhotoType, installPhotosByType, pickInstalledPhoto } from "../../utils/installPhotos";
 import { Request, Response } from "express";
 import Store, { StoreStatus } from "./store.model";
 import Client from "../client/client.model";
@@ -1843,7 +1844,7 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
 
     const userName = req.user?.name || req.user?.email?.split('@')[0] || "Unknown_User";
     console.log(`[DEBUG] Installation user - Name: ${req.user?.name}, Email: ${req.user?.email}, Using: ${userName}`);
-    const installationPhotos: Array<{ reccePhotoIndex: number; installationPhoto: string }> = [];
+    const installationPhotos: Array<{ reccePhotoIndex: number; installationPhoto: string; photoType?: InstallPhotoType }> = [];
 
     const photosArray = JSON.parse(installationPhotosData || "[]");
 
@@ -1873,17 +1874,45 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
           userName.replace(/\s+/g, '_'), // Replace spaces with underscores for folder names
         );
 
+        const photoType = (INSTALL_PHOTO_TYPES as string[]).includes(photoData.photoType) ? (photoData.photoType as InstallPhotoType) : undefined;
         installationPhotos.push({
           reccePhotoIndex: photoData.reccePhotoIndex,
           installationPhoto: link,
+          ...(photoType && { photoType }),
         });
       }
     }
 
+    // Keep earlier photos that this upload does not replace (e.g. the portal re-sends only a
+    // replaced "after" photo). A typed upload replaces the same board + type; an untyped upload
+    // (older app versions) replaces the whole board, as before.
+    const existing: any[] = ((store.installation as any)?.photos || []).map((p: any) => (p?.toObject ? p.toObject() : p));
+    // A board re-sent with both before and after (the mobile app always does this) is replaced whole.
+    const has = (i: number, k: InstallPhotoType) => installationPhotos.some((p) => p.reccePhotoIndex === i && p.photoType === k);
+    const boardsUntyped = new Set(
+      installationPhotos.filter((p) => !p.photoType || (has(p.reccePhotoIndex, "before") && has(p.reccePhotoIndex, "after"))).map((p) => p.reccePhotoIndex)
+    );
+    const typedNew = new Set(installationPhotos.filter((p) => p.photoType).map((p) => `${p.reccePhotoIndex}:${p.photoType}`));
+    const boardsTyped = new Set(installationPhotos.filter((p) => p.photoType).map((p) => p.reccePhotoIndex));
+    const kept = existing
+      .filter((p) => !boardsUntyped.has(p.reccePhotoIndex))
+      .map((p) => {
+        // Give old untyped photos their type before merging with typed uploads.
+        if (p.photoType || !boardsTyped.has(p.reccePhotoIndex)) return p;
+        const byType = installPhotosByType(existing, p.reccePhotoIndex);
+        const t = INSTALL_PHOTO_TYPES.find((k) => byType[k] === p);
+        return t ? { ...p, photoType: t } : p;
+      })
+      .filter((p) => !(p.photoType && typedNew.has(`${p.reccePhotoIndex}:${p.photoType}`)));
+    const order = (p: any) => (p.photoType ? INSTALL_PHOTO_TYPES.indexOf(p.photoType) : 9);
+    const mergedPhotos = [...kept, ...installationPhotos]
+      .map(({ _id, ...rest }: any) => rest)
+      .sort((a, b) => a.reccePhotoIndex - b.reccePhotoIndex || order(a) - order(b));
+
     const installUpdate: any = {
       "installation.submittedDate": new Date(),
       "installation.submittedBy": userName,
-      "installation.photos": installationPhotos,
+      "installation.photos": mergedPhotos,
       currentStatus: StoreStatus.INSTALLATION_SUBMITTED,
     };
 
@@ -2135,7 +2164,7 @@ export const generateInstallationPPT = async (req: Request, res: Response) => {
     if (store.recce?.reccePhotos && store.recce.reccePhotos.length > 0 && store.installation.photos) {
       for (let i = 0; i < store.recce.reccePhotos.length; i++) {
         const reccePhoto = store.recce.reccePhotos[i];
-        const installPhoto = store.installation.photos.find((p: any) => p.reccePhotoIndex === i);
+        const installPhoto = pickInstalledPhoto(store.installation.photos as any, i);
         
         const comparisonSlide = pres.addSlide();
         comparisonSlide.background = { fill: "FFFEF5" };

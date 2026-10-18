@@ -119,6 +119,7 @@ export interface StoreDocument extends Document {
     photos?: Array<{
       reccePhotoIndex: number; // Index of corresponding recce photo
       installationPhoto: string; // Google Drive link
+      photoType?: "before" | "after" | "closeup"; // Set by mobile/web uploads; older records have none
     }>;
     submittedBy?: string; // User name who submitted
   };
@@ -255,6 +256,7 @@ const StoreSchema = new Schema<StoreDocument>(
         {
           reccePhotoIndex: { type: Number, required: true },
           installationPhoto: { type: String, required: true },
+          photoType: { type: String, enum: ["before", "after", "closeup"] },
         },
       ],
       submittedBy: String,

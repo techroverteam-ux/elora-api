@@ -1,3 +1,4 @@
+import { pickInstalledPhoto } from "../../utils/installPhotos";
 import { Request, Response } from "express";
 const getFullImageUrl = (path: string) => {
   if (!path) return "";
@@ -122,7 +123,7 @@ export const generateCompactBulkPDF = async (req: Request, res: Response) => {
         
         for (let row = 0; row < 2 && photoIndex < maxPhotos; row++) {
           const reccePhoto = store.recce.reccePhotos[photoIndex];
-          const installPhoto = store.installation.photos.find((p: any) => p.reccePhotoIndex === photoIndex);
+          const installPhoto = pickInstalledPhoto(store.installation.photos as any, photoIndex);
           
           const rowY = contentStartY;
           
@@ -423,7 +424,7 @@ export const generateCompactBulkPPT = async (req: Request, res: Response) => {
       if (type === "installation" && store.recce?.reccePhotos && store.installation?.photos) {
         // Before/After comparison (85% of slide)
         const reccePhoto = store.recce.reccePhotos[0];
-        const installPhoto = store.installation.photos.find((p: any) => p.reccePhotoIndex === 0);
+        const installPhoto = pickInstalledPhoto(store.installation.photos as any, 0);
         
         // BEFORE image with red border effect
         const reccePhotoUrl = getFullImageUrl(reccePhoto.photo);

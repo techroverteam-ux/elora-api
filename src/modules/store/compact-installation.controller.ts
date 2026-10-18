@@ -1,3 +1,4 @@
+import { pickInstalledPhoto } from "../../utils/installPhotos";
 import { Request, Response } from "express";
 const getFullImageUrl = (path: string) => {
   if (!path) return "";
@@ -90,7 +91,7 @@ export const generateCompactInstallationPDF = async (req: Request, res: Response
       
       for (let row = 0; row < rowsPerPage && photoIndex < store.recce.reccePhotos.length; row++) {
         const reccePhoto = store.recce.reccePhotos[photoIndex];
-        const installPhoto = store.installation.photos.find((p: any) => p.reccePhotoIndex === photoIndex);
+        const installPhoto = pickInstalledPhoto(store.installation.photos as any, photoIndex);
         
         // BEFORE (Left)
         const beforeX = 30;
@@ -259,7 +260,7 @@ export const generateCompactInstallationPPT = async (req: Request, res: Response
     if (store.recce?.reccePhotos && store.installation.photos) {
       for (let i = 0; i < Math.min(5, store.recce.reccePhotos.length); i++) {
         const reccePhoto = store.recce.reccePhotos[i];
-        const installPhoto = store.installation.photos.find((p: any) => p.reccePhotoIndex === i);
+        const installPhoto = pickInstalledPhoto(store.installation.photos as any, i);
         
         const slide = pptx.makeNewSlide();
         slide.name = `Before After ${i + 1}`;

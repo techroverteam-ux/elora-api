@@ -1,3 +1,4 @@
+import { pickInstalledPhoto } from "../../utils/installPhotos";
 import { Request, Response } from "express";
 // The shared loader (utils/reportImages) builds and encodes the URL exactly
 // once; encodeURI() here used to turn a stored "%20" into "%2520" (404).
@@ -309,7 +310,7 @@ const generateInstallationPDFImpl = async (req: Request, res: Response) => {
     if (store.recce?.reccePhotos && store.recce.reccePhotos.length > 0 && store.installation.photos) {
       for (let i = 0; i < store.recce.reccePhotos.length; i++) {
         const reccePhoto = store.recce.reccePhotos[i];
-        const installPhoto = store.installation.photos.find((p: any) => p.reccePhotoIndex === i);
+        const installPhoto = pickInstalledPhoto(store.installation.photos as any, i);
 
         doc.addPage();
         const contentStartY = drawStoreDetailsHeader(doc, store, 'installation', `Board ${i + 1}/${store.recce.reccePhotos.length}`);
