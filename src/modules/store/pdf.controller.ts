@@ -1,379 +1,40 @@
-import { pickInstalledPhoto } from "../../utils/installPhotos";
 import { Request, Response } from "express";
-// The shared loader (utils/reportImages) builds and encodes the URL exactly
-// once; encodeURI() here used to turn a stored "%20" into "%2520" (404).
-const getFullImageUrl = (path: string) => path || "";
 import Store from "./store.model";
-import { loadReportImage, prefetchReportImages, collectStoreImagePaths, withReportDeadline } from "../../utils/reportImages";
-import { getLogoBuffer } from "../../utils/reportLogo";
-import fs from "fs";
-import path from "path";
-const axios = require('axios');
+import { prefetchReportImages, collectStoreImagePaths, withReportDeadline } from "../../utils/reportImages";
+import { buildReportPages } from "../../utils/report/reportDesign";
+import { renderReportPdf } from "../../utils/report/reportRender";
 
-// ====== HELPER: Draw store details header (top 20%) on every content slide ======
-const drawStoreDetailsHeader = (doc: any, store: any, type: 'recce' | 'installation', boardInfo?: string) => {
-  const headerColor = type === "recce" ? '#EAB308' : '#22C55E';
+// The page layout lives in utils/report/reportDesign.ts and is shared with the PPT,
+// so a PDF and a PPT of the same store look the same.
 
-  // Background
-  doc.save();
-  doc.rect(0, 0, doc.page.width, doc.page.height).fillOpacity(1).fill('#FFFEF5');
-  doc.restore();
+type ReportType = "recce" | "installation";
+const TITLE: Record<ReportType, string> = { recce: "Recce Inspection Report", installation: "Installation Completion Report" };
 
-  // Logo
-  doc.image(getLogoBuffer(), 40, 15, { width: 80, height: 24 });
+const safeName = (s: unknown) => String(s ?? "").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_") || "Store";
 
-  // Title
-  let title = type === "recce" ? 'RECCE INSPECTION REPORT' : 'INSTALLATION COMPLETION REPORT';
-  if (boardInfo) title += ` - ${boardInfo}`;
-  doc.fillColor(headerColor).fontSize(18).font('Helvetica-Bold')
-    .text(title, 160, 18, { width: 500, align: 'center' });
-
-  // Company info (top right)
-  doc.fillColor('#EAB308').fontSize(9).font('Helvetica')
-    .text('ELORA CREATIVE ART', 650, 12, { width: 150, align: 'right' })
-    .text('www.eloracreativeart.in', 650, 24, { width: 150, align: 'right' });
-
-  // Separator line - use consistent yellow branding color
-  doc.save();
-  doc.strokeColor('#EAB308').lineWidth(2).moveTo(30, 50).lineTo(770, 50).stroke();
-  doc.restore();
-
-  // Store details box (full width, compact, top 20% area)
-  const boxY = 55;
-  const boxH = 65;
-  doc.save();
-  doc.rect(30, boxY, 740, boxH).strokeColor('#EAB308').lineWidth(1).stroke();
-  doc.restore();
-
-  const dateValue = type === "recce"
-    ? (store.recce?.submittedDate ? new Date(store.recce.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A')
-    : (store.installation?.submittedDate ? new Date(store.installation.submittedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/') : 'N/A');
-
-  let y = boxY + 10;
-  doc.fillColor('#000000').fontSize(9).font('Helvetica-Bold');
-  doc.text('Dealer Code:', 40, y, { width: 80 });
-  doc.font('Helvetica').text(store.dealerCode || 'N/A', 120, y, { width: 180 });
-
-  doc.font('Helvetica-Bold').text('Store Name:', 310, y, { width: 80 });
-  doc.font('Helvetica').text(store.storeName || 'N/A', 390, y, { width: 200 });
-
-  doc.font('Helvetica-Bold').text('Store ID:', 600, y, { width: 60 });
-  doc.font('Helvetica').text(store.storeId || store.storeCode || 'N/A', 660, y, { width: 100 });
-
-  y += 16;
-  doc.font('Helvetica-Bold').text('City:', 40, y, { width: 80 });
-  doc.font('Helvetica').text(store.location?.city || 'N/A', 120, y, { width: 180 });
-
-  doc.font('Helvetica-Bold').text('State:', 310, y, { width: 80 });
-  doc.font('Helvetica').text(store.location?.state || 'N/A', 390, y, { width: 200 });
-
-  doc.font('Helvetica-Bold').text('Address:', 600, y, { width: 80 });
-  doc.font('Helvetica').text(store.location?.address || 'N/A', 680, y, { width: 90 });
-
-  if (type === 'installation') {
-    y += 16;
-    doc.fillColor('#22C55E').font('Helvetica-Bold').text('✓ COMPLETED', 600, y, { width: 150 });
-  }
-
-  // Bottom separator of header area - use consistent yellow branding color
-  doc.save();
-  doc.strokeColor('#EAB308').lineWidth(1).moveTo(30, boxY + boxH + 2).lineTo(770, boxY + boxH + 2).stroke();
-  doc.restore();
-
-  return boxY + boxH + 6; // returns content start Y
-};
-
-// ====== HELPER: Load image (retries, timeout, JPEG-normalised, memoised) ======
-const loadImageFromUrl = async (url: string): Promise<Buffer | null> => {
-  const img = await loadReportImage(url);
-  return img ? img.buffer : null;
-};
-
-// Draw a photo fitted (not stretched) and centred in its box, or a
-// "Photo unavailable" placeholder so a missing photo is obvious, not blank.
-const drawImageInBox = (doc: any, buf: Buffer | null, x: number, y: number, w: number, h: number) => {
-      try {
-    doc.image(buf, x, y, { fit: [w, h], align: 'center', valign: 'center' });
-    return;
-    } catch (e) {
-    console.warn('[pdf] could not draw image', e);
-  }
-  doc.save();
-  doc.rect(x, y, w, h).fillOpacity(1).fill('#F3F4F6');
-  doc.restore();
-  doc.fillColor('#9CA3AF').fontSize(11).font('Helvetica-Oblique')
-    .text('Photo unavailable', x, y + h / 2 - 6, { width: w, align: 'center', lineBreak: false });
+/** Builds every page first (photos already fetched), then streams the PDF, so a failure returns JSON, not half a file. */
+const sendPdf = async (res: Response, stores: any[], type: ReportType, filename: string) => {
+  await prefetchReportImages(stores.flatMap((st: any) => collectStoreImagePaths(st)));
+  const pages = await buildReportPages(stores, type);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  renderReportPdf(pages, res, { title: TITLE[type] });
 };
 
 // ====== RECCE PDF ======
-export const generateReccePDF = (req: Request, res: Response) =>
-  withReportDeadline(() => generateReccePDFImpl(req, res));
-
-const generateReccePDFImpl = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const store = await Store.findById(id);
-    if (!store || !store.recce) {
-      return res.status(404).json({ message: "Store or Recce data not found" });
-    }
-
-    // Fetch all photos (4 at a time) BEFORE streaming the PDF, so a slow photo
-    // can't leave a half-written file behind.
-    await prefetchReportImages(collectStoreImagePaths(store));
-
-    const PDFDocument = require('pdfkit');
-    const doc = new PDFDocument({ size: 'A4', margin: 0, layout: 'landscape' });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="RECCE_${store.storeName}_${store.storeId}.pdf"`);
-    doc.pipe(res);
-
-
-    // ===== SLIDE 1: COVER PAGE =====
-    doc.save();
-    doc.rect(0, 0, doc.page.width, doc.page.height).fillOpacity(1).fill('#FFFEF5');
-    doc.restore();
-
-    doc.fillColor('#EAB308').fontSize(24).font('Helvetica-Bold')
-      .text('WE DON\'T JUST PRINT.', 100, 150, { width: 600, align: 'left', lineBreak: false })
-      .text('WE INSTALL YOUR BRAND', 100, 185, { width: 600, align: 'left', lineBreak: false })
-      .text('INTO THE REAL WORLD.', 100, 220, { width: 600, align: 'left', lineBreak: false });
-
-    doc.image(getLogoBuffer(), 240, 280, { width: 300, height: 90 });
-
-    doc.fillColor('#1F2937').fontSize(12).font('Helvetica')
-      .text('We help businesses stand out with custom branding,', 300, 420, { width: 500, align: 'right', lineBreak: false })
-      .text('high-quality banner printing, and professional on-site installation.', 200, 438, { width: 600, align: 'right', lineBreak: false });
-
-    // ===== SLIDE 2: STORE DETAILS + 4 INITIAL PHOTOS =====
-    if (store.recce.initialPhotos && store.recce.initialPhotos.length > 0) {
-      doc.addPage();
-      const contentStartY = drawStoreDetailsHeader(doc, store, 'recce');
-
-      // Photo grid area: 80% of page - 2x2 grid using full width
-      const photoY = contentStartY + 10; // Reduced spacing
-      const availableWidth = doc.page.width - 80; // Full width minus margins
-      const availableHeight = doc.page.height - contentStartY - 40; // 80% bottom space
-      const photoWidth = (availableWidth - 20) / 2; // 2 photos per row with spacing
-      const photoHeight = (availableHeight - 20) / 2; // 2 rows with spacing
-      const spacingX = 20;
-      const spacingY = 20;
-      const gridStartX = 40;
-
-      for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 4); i++) {
-        const col = i % 2;
-        const row = Math.floor(i / 2);
-        const x = gridStartX + col * (photoWidth + spacingX);
-        const y = photoY + row * (photoHeight + spacingY);
-
-        doc.save();
-        doc.rect(x, y, photoWidth, photoHeight).strokeColor('#EAB308').lineWidth(2).stroke();
-        doc.restore();
-
-        // Load image from URL instead of local path
-        try {
-          const photoUrl = getFullImageUrl(store.recce.initialPhotos[i]);
-          const buffer = await loadImageFromUrl(photoUrl);
-          drawImageInBox(doc, buffer, x + 5, y + 5, photoWidth - 10, photoHeight - 10);
-        } catch (e) {
-          console.log(`Failed to load initial photo ${i + 1}`);
-        }
-      }
-    }
-
-    // ===== SLIDE 3+: STORE DETAILS + RECCE PHOTO (per board) =====
-    if (store.recce.reccePhotos && store.recce.reccePhotos.length > 0) {
-      for (let i = 0; i < store.recce.reccePhotos.length; i++) {
-        const reccePhoto = store.recce.reccePhotos[i];
-        doc.addPage();
-        const statusLabel = ({ APPROVED: 'APPROVED', REJECTED: 'REJECTED', HOLD: 'ON HOLD' } as Record<string, string>)[(reccePhoto as any).approvalStatus] || 'PENDING';
-        const contentStartY = drawStoreDetailsHeader(doc, store, 'recce', `Board ${i + 1}/${store.recce.reccePhotos.length} · ${statusLabel}`);
-
-        const imgY = contentStartY;
-        const imgWidth = 720;
-        const imgHeight = 380;
-
-        doc.save();
-        doc.rect(40, imgY, imgWidth, imgHeight).strokeColor('#EAB308').lineWidth(2).stroke();
-        doc.restore();
-
-        // Load image from URL instead of local path
-        try {
-          const photoUrl = getFullImageUrl(reccePhoto.photo);
-          const buffer = await loadImageFromUrl(photoUrl);
-          drawImageInBox(doc, buffer, 45, imgY + 5, imgWidth - 10, imgHeight - 10);
-        } catch (e) {
-          console.log('Failed to load recce photo');
-        }
-
-        // Measurements
-        const measureY = imgY + imgHeight + 5;
-        doc.save();
-        doc.rect(40, measureY, imgWidth, 22).fillOpacity(1).fillAndStroke('#FFFFFF', '#EAB308');
-        doc.restore();
-        doc.fillColor('#1F2937').fontSize(10).font('Helvetica-Bold')
-          .text(`Measurements: ${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, 40, measureY + 6, { width: imgWidth, align: 'center' });
-
-        // Elements
-        if (reccePhoto.elements && reccePhoto.elements.length > 0) {
-          const elementsText = reccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
-          const elemY = measureY + 25;
-          doc.save();
-          doc.rect(40, elemY, imgWidth, 20).fillOpacity(1).fillAndStroke('#FEF3C7', '#EAB308');
-          doc.restore();
-          doc.fillColor('#1F2937').fontSize(9).font('Helvetica-Bold')
-            .text(`Elements: ${elementsText}`, 40, elemY + 5, { width: imgWidth, align: 'center' });
-        }
-      }
-    }
-
-    doc.end();
-  } catch (error: any) {
-    console.error("PDF Gen Error:", error);
-    if (!res.headersSent) res.status(500).json({ message: "Error generating PDF" });
-  }
-};
+export const generateReccePDF = (req: Request, res: Response) => withReportDeadline(() => generateSinglePDF(req, res, "recce"));
 
 // ====== INSTALLATION PDF ======
-export const generateInstallationPDF = (req: Request, res: Response) =>
-  withReportDeadline(() => generateInstallationPDFImpl(req, res));
+export const generateInstallationPDF = (req: Request, res: Response) => withReportDeadline(() => generateSinglePDF(req, res, "installation"));
 
-const generateInstallationPDFImpl = async (req: Request, res: Response) => {
+const generateSinglePDF = async (req: Request, res: Response, type: ReportType) => {
   try {
-    const { id } = req.params;
-    const store = await Store.findById(id);
-    if (!store || !store.installation) {
-      return res.status(404).json({ message: "Store or Installation data not found" });
+    const id = String(req.params.id);
+    const store: any = await Store.findById(id);
+    if (!store || !store[type]) {
+      return res.status(404).json({ message: `Store or ${type === "recce" ? "Recce" : "Installation"} data not found` });
     }
-
-    // Fetch all photos (4 at a time) BEFORE streaming the PDF.
-    await prefetchReportImages(collectStoreImagePaths(store));
-
-    const PDFDocument = require('pdfkit');
-    const doc = new PDFDocument({ size: 'A4', margin: 0, layout: 'landscape' });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="INSTALLATION_${store.storeName}_${store.storeId}.pdf"`);
-    doc.pipe(res);
-
-
-    // ===== SLIDE 1: COVER PAGE =====
-    doc.save();
-    doc.rect(0, 0, doc.page.width, doc.page.height).fillOpacity(1).fill('#FFFEF5');
-    doc.restore();
-
-    doc.fillColor('#EAB308').fontSize(24).font('Helvetica-Bold')
-      .text('WE DON\'T JUST PRINT.', 100, 150, { width: 600, align: 'left', lineBreak: false })
-      .text('WE INSTALL YOUR BRAND', 100, 185, { width: 600, align: 'left', lineBreak: false })
-      .text('INTO THE REAL WORLD.', 100, 220, { width: 600, align: 'left', lineBreak: false });
-
-    doc.image(getLogoBuffer(), 240, 280, { width: 300, height: 90 });
-
-    doc.fillColor('#1F2937').fontSize(12).font('Helvetica')
-      .text('We help businesses stand out with custom branding,', 300, 420, { width: 500, align: 'right', lineBreak: false })
-      .text('high-quality banner printing, and professional on-site installation.', 200, 438, { width: 600, align: 'right', lineBreak: false });
-
-    // ===== SLIDE 2: STORE DETAILS + 4 INITIAL PHOTOS =====
-    if (store.recce?.initialPhotos && store.recce.initialPhotos.length > 0) {
-      doc.addPage();
-      const contentStartY = drawStoreDetailsHeader(doc, store, 'installation');
-
-      const photoY = contentStartY;
-      const availableWidth = doc.page.width - 80;
-      const availableHeight = doc.page.height - contentStartY - 60;
-      const photoWidth = (availableWidth - 30) / 2;
-      const photoHeight = (availableHeight - 30) / 2;
-      const spacingX = 30;
-      const spacingY = 30;
-      const gridStartX = 40;
-
-      for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 4); i++) {
-        const col = i % 2;
-        const row = Math.floor(i / 2);
-        const x = gridStartX + col * (photoWidth + spacingX);
-        const y = photoY + row * (photoHeight + spacingY);
-
-        doc.save();
-        doc.rect(x, y, photoWidth, photoHeight).strokeColor('#EAB308').lineWidth(2).stroke();
-        doc.restore();
-
-        // Load image from URL instead of local path
-        try {
-          const photoUrl = getFullImageUrl(store.recce.initialPhotos[i]);
-          const buffer = await loadImageFromUrl(photoUrl);
-          drawImageInBox(doc, buffer, x + 5, y + 5, photoWidth - 10, photoHeight - 10);
-        } catch (e) {
-          console.log(`Failed to load initial photo ${i + 1}`);
-        }
-      }
-    }
-
-    // ===== SLIDE 3+: STORE DETAILS + BEFORE/AFTER (per board) =====
-    if (store.recce?.reccePhotos && store.recce.reccePhotos.length > 0 && store.installation.photos) {
-      for (let i = 0; i < store.recce.reccePhotos.length; i++) {
-        const reccePhoto = store.recce.reccePhotos[i];
-        const installPhoto = pickInstalledPhoto(store.installation.photos as any, i);
-
-        doc.addPage();
-        const contentStartY = drawStoreDetailsHeader(doc, store, 'installation', `Board ${i + 1}/${store.recce.reccePhotos.length}`);
-
-        const imgY = contentStartY;
-        const imgWidth = 355;
-        const imgHeight = 380;
-        const spacing = 30;
-
-        // BEFORE (Left)
-        const reccePhotoBuf = await loadImageFromUrl(reccePhoto.photo); // was a local-disk path that never exists on the server
-        doc.save();
-        doc.rect(40, imgY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(2).stroke();
-        doc.restore();
-
-        drawImageInBox(doc, reccePhotoBuf, 45, imgY + 5, imgWidth - 10, imgHeight - 10);
-
-        // AFTER (Right)
-        if (installPhoto) {
-          const installPhotoBuf = await loadImageFromUrl(installPhoto.installationPhoto);
-          doc.save();
-          doc.rect(40 + imgWidth + spacing, imgY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(2).stroke();
-          doc.restore();
-
-          drawImageInBox(doc, installPhotoBuf, 45 + imgWidth + spacing, imgY + 5, imgWidth - 10, imgHeight - 10);
-        }
-
-        // Labels
-        const labelY = imgY + imgHeight + 3;
-        doc.save();
-        doc.rect(40, labelY, imgWidth, 22).fillOpacity(1).fillAndStroke('#EF4444', '#EF4444');
-        doc.restore();
-        doc.fillColor('#FFFFFF').fontSize(11).font('Helvetica-Bold')
-          .text('BEFORE', 40, labelY + 6, { width: imgWidth, align: 'center' });
-
-        doc.save();
-        doc.rect(40 + imgWidth + spacing, labelY, imgWidth, 22).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
-        doc.restore();
-        doc.fillColor('#FFFFFF').fontSize(11).font('Helvetica-Bold')
-          .text('AFTER', 40 + imgWidth + spacing, labelY + 6, { width: imgWidth, align: 'center' });
-
-        // Measurements
-        const measureY = labelY + 27;
-        doc.save();
-        doc.rect(40, measureY, imgWidth * 2 + spacing, 20).fillOpacity(1).fillAndStroke('#FFFFFF', '#EAB308');
-        doc.restore();
-        doc.fillColor('#1F2937').fontSize(10).font('Helvetica-Bold')
-          .text(`Measurements: ${reccePhoto.measurements.width} x ${reccePhoto.measurements.height} ${reccePhoto.measurements.unit}`, 40, measureY + 5, { width: imgWidth * 2 + spacing, align: 'center' });
-
-        // Elements
-        if (reccePhoto.elements && reccePhoto.elements.length > 0) {
-          const elementsText = reccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
-          const elemY = measureY + 23;
-          doc.save();
-          doc.rect(40, elemY, imgWidth * 2 + spacing, 18).fillOpacity(1).fillAndStroke('#FEF3C7', '#EAB308');
-          doc.restore();
-          doc.fillColor('#1F2937').fontSize(9).font('Helvetica-Bold')
-            .text(`Elements: ${elementsText}`, 40, elemY + 4, { width: imgWidth * 2 + spacing, align: 'center' });
-        }
-      }
-    }
-
-    doc.end();
+    await sendPdf(res, [store], type, `${type.toUpperCase()}_${safeName(store.storeName)}_${safeName(store.storeId)}.pdf`);
   } catch (error: any) {
     console.error("PDF Gen Error:", error);
     if (!res.headersSent) res.status(500).json({ message: "Error generating PDF" });
@@ -381,8 +42,7 @@ const generateInstallationPDFImpl = async (req: Request, res: Response) => {
 };
 
 // ====== BULK PDF ======
-export const generateBulkPDF = (req: Request, res: Response) =>
-  withReportDeadline(() => generateBulkPDFImpl(req, res));
+export const generateBulkPDF = (req: Request, res: Response) => withReportDeadline(() => generateBulkPDFImpl(req, res));
 
 const generateBulkPDFImpl = async (req: Request, res: Response) => {
   try {
@@ -394,217 +54,15 @@ const generateBulkPDFImpl = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Invalid type" });
     }
 
-    const stores = await Store.find({ _id: { $in: storeIds } });
-    if (stores.length === 0) {
+    const found = await Store.find({ _id: { $in: storeIds } });
+    if (found.length === 0) {
       return res.status(404).json({ message: "No stores found" });
     }
+    const order = new Map(storeIds.map((id: any, i: number) => [String(id), i]));
+    const stores = [...found].sort((a: any, b: any) => (order.get(String(a._id)) ?? 0) - (order.get(String(b._id)) ?? 0));
 
-    // Fetch every store's photos (4 at a time) before streaming the PDF.
-    await prefetchReportImages(stores.flatMap((st: any) => collectStoreImagePaths(st)));
-
-    const PDFDocument = require('pdfkit');
-    const doc = new PDFDocument({ size: 'A4', margin: 0, layout: 'landscape' });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${type === "recce" ? "Recce" : "Installation"}_Report_${stores.length}_Stores_${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/')}.pdf"`);
-    doc.pipe(res);
-
-
-    // ===== COVER PAGE =====
-    doc.save();
-    doc.rect(0, 0, doc.page.width, doc.page.height).fillOpacity(1).fill('#FFFEF5');
-    doc.restore();
-
-    doc.fillColor('#EAB308').fontSize(24).font('Helvetica-Bold')
-      .text('WE DON\'T JUST PRINT.', 100, 150, { width: 600, align: 'left', lineBreak: false })
-      .text('WE INSTALL YOUR BRAND', 100, 185, { width: 600, align: 'left', lineBreak: false })
-      .text('INTO THE REAL WORLD.', 100, 220, { width: 600, align: 'left', lineBreak: false });
-
-    doc.image(getLogoBuffer(), 240, 280, { width: 300, height: 90 });
-
-    doc.fillColor('#1F2937').fontSize(12).font('Helvetica')
-      .text('We help businesses stand out with custom branding,', 300, 420, { width: 500, align: 'right', lineBreak: false })
-      .text('high-quality banner printing, and professional on-site installation.', 200, 438, { width: 600, align: 'right', lineBreak: false });
-
-    for (const store of stores) {
-      if (type === "recce" && !store.recce) continue;
-      if (type === "installation" && !store.installation) continue;
-
-      const reccePhotos = store.recce?.reccePhotos || [];
-      const boardCount = Math.max(1, reccePhotos.length);
-
-      // ===== PER STORE: Initial Photos Slide =====
-      if (store.recce?.initialPhotos && store.recce.initialPhotos.length > 0) {
-        doc.addPage();
-        const contentStartY = drawStoreDetailsHeader(doc, store, type);
-
-        const photoY = contentStartY;
-        const availableWidth = doc.page.width - 80;
-        const availableHeight = doc.page.height - contentStartY - 60;
-        const photoWidth = (availableWidth - 30) / 2;
-        const photoHeight = (availableHeight - 30) / 2;
-        const spacingX = 30;
-        const spacingY = 30;
-        const gridStartX = 40;
-
-        for (let i = 0; i < Math.min(store.recce.initialPhotos.length, 4); i++) {
-          const col = i % 2;
-          const row = Math.floor(i / 2);
-          const x = gridStartX + col * (photoWidth + spacingX);
-          const y = photoY + row * (photoHeight + spacingY);
-
-          doc.save();
-          doc.rect(x, y, photoWidth, photoHeight).strokeColor('#EAB308').lineWidth(2).stroke();
-          doc.restore();
-
-          // Load image from URL instead of local path
-          try {
-            const photoUrl = getFullImageUrl(store.recce.initialPhotos[i]);
-            const buffer = await loadImageFromUrl(photoUrl);
-            drawImageInBox(doc, buffer, x + 5, y + 5, photoWidth - 10, photoHeight - 10);
-          } catch (e) {
-            console.log(`Failed to load initial photo ${i + 1}`);
-          }
-        }
-      }
-
-      // ===== PER BOARD: Content Slide =====
-      for (let boardIndex = 0; boardIndex < boardCount; boardIndex++) {
-        const currentReccePhoto = reccePhotos[boardIndex];
-        doc.addPage();
-        const contentStartY = drawStoreDetailsHeader(doc, store, type, reccePhotos.length > 1 ? `Board ${boardIndex + 1}/${reccePhotos.length}` : undefined);
-
-        if (type === "installation" && currentReccePhoto && store.installation?.photos) {
-          const installPhotos = store.installation.photos.filter((p: any) => p.reccePhotoIndex === boardIndex);
-          const imgY = contentStartY;
-          const imgHeight = 380;
-
-          if (installPhotos.length >= 2) {
-            // Three images: Before + After1 + After2
-            const imgWidth = (doc.page.width - 60) / 3;
-
-            // BEFORE
-            const beforeBuffer = await loadImageFromUrl(getFullImageUrl(currentReccePhoto.photo));
-            doc.save();
-            doc.rect(30, imgY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(3).stroke();
-            doc.restore();
-            drawImageInBox(doc, beforeBuffer, 35, imgY + 5, imgWidth - 10, imgHeight - 10);
-
-            // AFTER 1
-            const after1Buffer = await loadImageFromUrl(getFullImageUrl(installPhotos[0].installationPhoto));
-            doc.save();
-            doc.rect(30 + imgWidth, imgY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
-            doc.restore();
-            drawImageInBox(doc, after1Buffer, 35 + imgWidth, imgY + 5, imgWidth - 10, imgHeight - 10);
-
-            // AFTER 2
-            const after2Buffer = await loadImageFromUrl(getFullImageUrl(installPhotos[1].installationPhoto));
-            doc.save();
-            doc.rect(30 + imgWidth * 2, imgY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
-            doc.restore();
-            drawImageInBox(doc, after2Buffer, 35 + imgWidth * 2, imgY + 5, imgWidth - 10, imgHeight - 10);
-
-            // Labels
-            const labelY = imgY + imgHeight + 5;
-            doc.save();
-            doc.rect(30, labelY, imgWidth, 20).fillOpacity(1).fillAndStroke('#EF4444', '#EF4444');
-            doc.restore();
-            doc.fillColor('#FFFFFF').fontSize(11).font('Helvetica-Bold').text('BEFORE', 30, labelY + 5, { width: imgWidth, align: 'center' });
-
-            doc.save();
-            doc.rect(30 + imgWidth, labelY, imgWidth, 20).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
-            doc.restore();
-            doc.fillColor('#FFFFFF').fontSize(11).font('Helvetica-Bold').text('AFTER 1', 30 + imgWidth, labelY + 5, { width: imgWidth, align: 'center' });
-
-            doc.save();
-            doc.rect(30 + imgWidth * 2, labelY, imgWidth, 20).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
-            doc.restore();
-            doc.fillColor('#FFFFFF').fontSize(11).font('Helvetica-Bold').text('AFTER 2', 30 + imgWidth * 2, labelY + 5, { width: imgWidth, align: 'center' });
-
-          } else {
-            // Two images: Before + After
-            const imgWidth = (doc.page.width - 50) / 2;
-            const installPhoto = installPhotos[0];
-
-            const beforeBuffer = await loadImageFromUrl(getFullImageUrl(currentReccePhoto.photo));
-            doc.save();
-            doc.rect(30, imgY, imgWidth, imgHeight).strokeColor('#EF4444').lineWidth(3).stroke();
-            doc.restore();
-            drawImageInBox(doc, beforeBuffer, 35, imgY + 5, imgWidth - 10, imgHeight - 10);
-
-            if (installPhoto) {
-              const afterBuffer = await loadImageFromUrl(getFullImageUrl(installPhoto.installationPhoto));
-              doc.save();
-              doc.rect(30 + imgWidth, imgY, imgWidth, imgHeight).strokeColor('#22C55E').lineWidth(3).stroke();
-              doc.restore();
-              drawImageInBox(doc, afterBuffer, 35 + imgWidth, imgY + 5, imgWidth - 10, imgHeight - 10);
-            }
-
-            // Labels
-            const labelY = imgY + imgHeight + 5;
-            doc.save();
-            doc.rect(30, labelY, imgWidth, 20).fillOpacity(1).fillAndStroke('#EF4444', '#EF4444');
-            doc.restore();
-            doc.fillColor('#FFFFFF').fontSize(11).font('Helvetica-Bold').text('BEFORE', 30, labelY + 5, { width: imgWidth, align: 'center' });
-
-            doc.save();
-            doc.rect(30 + imgWidth, labelY, imgWidth, 20).fillOpacity(1).fillAndStroke('#22C55E', '#22C55E');
-            doc.restore();
-            doc.fillColor('#FFFFFF').fontSize(11).font('Helvetica-Bold').text('AFTER', 30 + imgWidth, labelY + 5, { width: imgWidth, align: 'center' });
-          }
-
-          // Measurements
-          const measureY = imgY + imgHeight + 30;
-          doc.save();
-          doc.rect(30, measureY, doc.page.width - 60, 20).fillOpacity(1).fillAndStroke('#FFFFFF', '#EAB308');
-          doc.restore();
-          doc.fillColor('#1F2937').fontSize(10).font('Helvetica-Bold')
-            .text(`Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`, 30, measureY + 5, { width: doc.page.width - 60, align: 'center' });
-
-          // Elements
-          if (currentReccePhoto.elements && currentReccePhoto.elements.length > 0) {
-            const elementsText = currentReccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
-            const elemY = measureY + 23;
-            doc.save();
-            doc.rect(30, elemY, doc.page.width - 60, 18).fillOpacity(1).fillAndStroke('#FEF3C7', '#EAB308');
-            doc.restore();
-            doc.fillColor('#1F2937').fontSize(9).font('Helvetica-Bold')
-              .text(`Elements: ${elementsText}`, 30, elemY + 4, { width: doc.page.width - 60, align: 'center' });
-          }
-
-        } else if (type === "recce" && currentReccePhoto) {
-          // Single recce photo
-          const imgY = contentStartY;
-          const imgHeight = 400;
-
-          const buffer = await loadImageFromUrl(getFullImageUrl(currentReccePhoto.photo));
-          doc.save();
-          doc.rect(30, imgY, doc.page.width - 60, imgHeight).strokeColor('#EAB308').lineWidth(3).stroke();
-          doc.restore();
-          drawImageInBox(doc, buffer, 35, imgY + 5, doc.page.width - 70, imgHeight - 10);
-
-          // Measurements
-          const measureY = imgY + imgHeight + 8;
-          doc.save();
-          doc.rect(30, measureY, doc.page.width - 60, 22).fillOpacity(1).fillAndStroke('#FFFFFF', '#EAB308');
-          doc.restore();
-          doc.fillColor('#1F2937').fontSize(10).font('Helvetica-Bold')
-            .text(`Measurements: ${currentReccePhoto.measurements.width} x ${currentReccePhoto.measurements.height} ${currentReccePhoto.measurements.unit}`, 30, measureY + 5, { width: doc.page.width - 60, align: 'center' });
-
-          // Elements
-          if (currentReccePhoto.elements && currentReccePhoto.elements.length > 0) {
-            const elementsText = currentReccePhoto.elements.map((el: any) => `${el.elementName} (Qty: ${el.quantity})`).join(' | ');
-            const elemY = measureY + 25;
-            doc.save();
-            doc.rect(30, elemY, doc.page.width - 60, 18).fillOpacity(1).fillAndStroke('#FEF3C7', '#EAB308');
-            doc.restore();
-            doc.fillColor('#1F2937').fontSize(9).font('Helvetica-Bold')
-              .text(`Elements: ${elementsText}`, 30, elemY + 4, { width: doc.page.width - 60, align: 'center' });
-          }
-        }
-      }
-    }
-
-    doc.end();
+    const date = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }).replace(/ /g, "_");
+    await sendPdf(res, stores, type, `${type === "recce" ? "Recce" : "Installation"}_Report_${stores.length}_Stores_${date}.pdf`);
   } catch (error: any) {
     console.error("Bulk PDF Error:", error);
     if (!res.headersSent) res.status(500).json({ message: "Error generating bulk PDF" });
