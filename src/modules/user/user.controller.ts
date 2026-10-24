@@ -3,6 +3,23 @@ import mongoose from "mongoose";
 import User from "./user.model";
 import Role from "../role/role.model";
 import Store from "../store/store.model";
+import Client from "../client/client.model";
+import { isSuperAdminUser, userHasRole, getClientScope, storeScopeFilter, SUPER_ADMIN_ONLY_ROLE_CODES } from "../../utils/access";
+
+// Only a Super Admin may map clients to users, hand out admin-tier roles
+// (Super Admin / Sub Admin), or edit/delete a Super Admin. Everything else a
+// Sub Admin can do like a Super Admin.
+const rolesIncludeAdminTier = (roleDocs: any[]) =>
+  roleDocs.some((r: any) => userHasRole({ roles: [r] }, ...SUPER_ADMIN_ONLY_ROLE_CODES));
+
+const parseClientIds = async (raw: any): Promise<{ ids?: any[]; error?: string }> => {
+  if (raw === undefined) return {};
+  if (!Array.isArray(raw)) return { error: "assignedClients must be an array" };
+  const ids = Array.from(new Set(raw.map((c: any) => String(c?._id ?? c)))).filter((id) => mongoose.isValidObjectId(id));
+  const found = await Client.countDocuments({ _id: { $in: ids } });
+  if (found !== ids.length) return { error: "One or more clients were not found" };
+  return { ids };
+};
 import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
 import fs from "fs";
@@ -18,7 +35,8 @@ export const createUser = async (
 ): Promise<void> => {
   try {
     // 1. Accept 'roles' array instead of single 'roleId'
-    const { name, email, password, roles } = req.body;
+    const { name, email, password, roles, assignedClients } = req.body;
+    const actorIsSuperAdmin = isSuperAdminUser(req.user);
 
     // 2. Check if user exists (case-insensitive)
     const normalizedEmail = email?.trim().toLowerCase();
@@ -44,12 +62,28 @@ export const createUser = async (
       return;
     }
 
+    if (!actorIsSuperAdmin && rolesIncludeAdminTier(foundRoles)) {
+      res.status(403).json({ message: "Only a Super Admin can create Super Admin or Sub Admin users" });
+      return;
+    }
+
+    const clientIds = await parseClientIds(assignedClients);
+    if (clientIds.error) {
+      res.status(400).json({ message: clientIds.error });
+      return;
+    }
+    if (clientIds.ids?.length && !actorIsSuperAdmin) {
+      res.status(403).json({ message: "Only a Super Admin can assign clients" });
+      return;
+    }
+
     // 4. Create User
     const user = await User.create({
       name,
       email: normalizedEmail,
       password,
       roles: roles, // Save array of IDs
+      assignedClients: clientIds.ids || [],
     });
 
     // Populate roles for response
@@ -62,6 +96,7 @@ export const createUser = async (
         name: user.name,
         email: user.email,
         roles: user.roles, // Return array
+        assignedClients: user.assignedClients,
       },
     });
   } catch (error) {
@@ -100,6 +135,7 @@ export const getAllUsers = async (
     const users = await User.find(filter)
       .select("-password")
       .populate("roles", "name code")
+      .populate("assignedClients", "clientName clientCode branchName")
       .skip(skip)
       .limit(limit);
 
@@ -143,7 +179,9 @@ export const getUserStats = async (
       : [];
     const isRecce = userRoleNames.includes("RECCE");
     const isInstallation = userRoleNames.includes("INSTALLATION");
-    const isAdmin = userRoleNames.includes("SUPER_ADMIN") || userRoleNames.includes("ADMIN");
+    const isAdmin = userRoleNames.includes("SUPER_ADMIN") || userRoleNames.includes("ADMIN") || userHasRole(user, "SUPER_ADMIN", "ADMIN", "SUB_ADMIN");
+    // For a Sub Admin, "stores managed" means stores of their mapped clients
+    const viewedUserScope = await getClientScope({ user });
 
     // Initialize stats
     const stats: any = {
@@ -290,7 +328,7 @@ export const getUserStats = async (
       });
 
       const usersManaged = await User.countDocuments({ isActive: true });
-      const storesManaged = await Store.countDocuments({});
+      const storesManaged = await Store.countDocuments(storeScopeFilter(viewedUserScope));
 
       stats.adminStats = {
         totalAssignments,
@@ -325,7 +363,8 @@ export const getUserById = async (
   try {
     const user = await User.findById(req.params.id)
       .select("-password")
-      .populate("roles", "name code permissions"); // Changed 'role' to 'roles'
+      .populate("roles", "name code permissions") // Changed 'role' to 'roles'
+      .populate("assignedClients", "clientName clientCode branchName");
 
     if (!user) {
       res.status(404).json({ message: "User not found" });
@@ -378,11 +417,17 @@ export const updateUser = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const { name, email, roles, isActive, password } = req.body; // 'roles' instead of 'roleId'
+    const { name, email, roles, isActive, password, assignedClients } = req.body; // 'roles' instead of 'roleId'
+    const actorIsSuperAdmin = isSuperAdminUser(req.user);
 
-    const user = await User.findById(req.params.id);
+    const user = await User.findById(req.params.id).populate("roles");
     if (!user) {
       res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    if (!actorIsSuperAdmin && isSuperAdminUser(user)) {
+      res.status(403).json({ message: "Only a Super Admin can edit a Super Admin" });
       return;
     }
 
@@ -405,7 +450,36 @@ export const updateUser = async (
         return;
       }
 
+      // Granting or removing Super Admin / Sub Admin is Super Admin only
+      const currentAdminTier = rolesIncludeAdminTier(user.roles as any[]);
+      if (!actorIsSuperAdmin && (rolesIncludeAdminTier(foundRoles) || currentAdminTier)) {
+        const sameRoles =
+          (user.roles as any[]).map((r: any) => String(r._id)).sort().join(",") === roles.map(String).sort().join(",");
+        if (!sameRoles) {
+          res.status(403).json({ message: "Only a Super Admin can change Super Admin or Sub Admin roles" });
+          return;
+        }
+      }
+
       user.roles = roles as any; // Update array
+    }
+
+    // Client mapping (Sub Admin) — Super Admin only
+    if (assignedClients !== undefined) {
+      const clientIds = await parseClientIds(assignedClients);
+      if (clientIds.error) {
+        res.status(400).json({ message: clientIds.error });
+        return;
+      }
+      const current = (user.assignedClients || []).map(String).sort().join(",");
+      const next = (clientIds.ids || []).map(String).sort().join(",");
+      if (current !== next) {
+        if (!actorIsSuperAdmin) {
+          res.status(403).json({ message: "Only a Super Admin can assign clients" });
+          return;
+        }
+        user.assignedClients = clientIds.ids as any;
+      }
     }
 
     // Handle Password Change
@@ -416,7 +490,8 @@ export const updateUser = async (
     await user.save();
 
     // Populate for response
-    await user.populate("roles", "name");
+    await user.populate("roles", "name code");
+    await user.populate("assignedClients", "clientName clientCode branchName");
 
     res.status(200).json({
       message: "User updated successfully",
@@ -426,6 +501,7 @@ export const updateUser = async (
         email: user.email,
         isActive: user.isActive,
         roles: user.roles,
+        assignedClients: user.assignedClients,
       },
     });
   } catch (error) {
@@ -441,9 +517,14 @@ export const deleteUser = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const user = await User.findById(req.params.id);
+    const user = await User.findById(req.params.id).populate("roles");
     if (!user) {
       res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    if (!isSuperAdminUser(req.user) && isSuperAdminUser(user)) {
+      res.status(403).json({ message: "Only a Super Admin can delete a Super Admin" });
       return;
     }
 

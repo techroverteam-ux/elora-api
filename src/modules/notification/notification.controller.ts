@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { getClientScope, storeScopeFilter, isSubAdminUser } from "../../utils/access";
 import Store from "../store/store.model";
 import Enquiry from "../enquiry/enquiry.model";
 import { StoreStatus } from "../store/store.model";
@@ -13,7 +14,11 @@ export const getNotifications = async (req: Request, res: Response) => {
     const isRecceUser = user.roles.some((r: any) => r.name === "RECCE");
     const isInstallUser = user.roles.some((r: any) => r.name === "INSTALLATION");
 
-    if (isAdmin) {
+    // Sub Admin gets admin notifications, counted over their mapped clients' stores
+    const isSubAdmin = isSubAdminUser(user);
+    const S = storeScopeFilter(await getClientScope(req));
+
+    if (isAdmin || isSubAdmin) {
       const newEnquiries = await Enquiry.countDocuments({ status: "NEW" });
       if (newEnquiries > 0) {
         notifications.push({
@@ -27,7 +32,7 @@ export const getNotifications = async (req: Request, res: Response) => {
         });
       }
 
-      const recceSubmitted = await Store.countDocuments({ currentStatus: StoreStatus.RECCE_SUBMITTED });
+      const recceSubmitted = await Store.countDocuments({ ...S, currentStatus: StoreStatus.RECCE_SUBMITTED });
       if (recceSubmitted > 0) {
         notifications.push({
           id: "recce-submitted",
@@ -40,7 +45,7 @@ export const getNotifications = async (req: Request, res: Response) => {
         });
       }
 
-      const installCompleted = await Store.countDocuments({ currentStatus: StoreStatus.INSTALLATION_SUBMITTED });
+      const installCompleted = await Store.countDocuments({ ...S, currentStatus: StoreStatus.INSTALLATION_SUBMITTED });
       if (installCompleted > 0) {
         notifications.push({
           id: "install-completed",
@@ -53,7 +58,7 @@ export const getNotifications = async (req: Request, res: Response) => {
         });
       }
 
-      const storesUploaded = await Store.countDocuments({ currentStatus: StoreStatus.UPLOADED });
+      const storesUploaded = await Store.countDocuments({ ...S, currentStatus: StoreStatus.UPLOADED });
       if (storesUploaded > 0) {
         notifications.push({
           id: "stores-uploaded",

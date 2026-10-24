@@ -6,6 +6,8 @@ export interface UserDocument extends Document {
   email: string;
   password: string;
   roles: mongoose.Types.ObjectId[];
+  // Clients a SUB_ADMIN manages. Ignored for every other role.
+  assignedClients?: mongoose.Types.ObjectId[];
   isActive: boolean;
   loginCount?: number;
   lastLogin?: Date;
@@ -26,6 +28,7 @@ const UserSchema = new Schema<UserDocument>(
     },
     password: { type: String, required: true },
     roles: [{ type: Schema.Types.ObjectId, ref: "Role", required: true }],
+    assignedClients: [{ type: Schema.Types.ObjectId, ref: "Client" }],
     isActive: { type: Boolean, default: true },
     loginCount: { type: Number, default: 0 },
     lastLogin: { type: Date },

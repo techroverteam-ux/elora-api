@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+import { isSuperAdminUser, isSubAdminUser } from "../utils/access";
 
 /**
  * Checks if the user has at least ONE role that grants the required permission.
@@ -19,6 +20,13 @@ export const checkPermission = (
         req.user.roles.length === 0
       ) {
         res.status(403).json({ message: "Access denied. No roles assigned." });
+        return;
+      }
+
+      // Super Admin and Sub Admin have every permission. A Sub Admin's data is
+      // limited to their mapped clients by the controllers, not here.
+      if (isSuperAdminUser(req.user) || isSubAdminUser(req.user)) {
+        next();
         return;
       }
 

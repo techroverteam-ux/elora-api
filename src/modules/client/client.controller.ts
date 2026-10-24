@@ -1,6 +1,22 @@
 import { Request, Response } from "express";
 import Client from "./client.model";
 import ExcelJS from "exceljs";
+import User from "../user/user.model";
+import { getClientScope, isClientInScope } from "../../utils/access";
+
+// Sub Admin only sees and manages the clients mapped to them.
+const clientScopeQuery = async (req: Request): Promise<any> => {
+  const scope = await getClientScope(req);
+  return scope ? { _id: { $in: scope.ids } } : {};
+};
+const denyIfOutOfScope = async (req: Request, res: Response): Promise<boolean> => {
+  const scope = await getClientScope(req);
+  if (scope && !isClientInScope(scope, req.params.id)) {
+    res.status(404).json({ message: "Client not found" });
+    return true;
+  }
+  return false;
+};
 
 const generateClientCode = (clientName: string, branchName: string): string => {
   const clientPrefix = clientName.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, 'X');
@@ -14,7 +30,7 @@ export const getClients = async (req: Request, res: Response) => {
     const { page = 1, limit = 10, search = "" } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
-    const query: any = {};
+    const query: any = await clientScopeQuery(req);
     if (search) {
       query.$or = [
         { clientName: { $regex: search, $options: "i" } },
@@ -43,6 +59,7 @@ export const getClients = async (req: Request, res: Response) => {
 
 export const getClientById = async (req: Request, res: Response) => {
   try {
+    if (await denyIfOutOfScope(req, res)) return;
     const client = await Client.findById(req.params.id);
     if (!client) {
       return res.status(404).json({ message: "Client not found" });
@@ -80,6 +97,12 @@ export const createClient = async (req: Request, res: Response) => {
     });
 
     await client.save();
+
+    // A Sub Admin who creates a client gets it mapped to them straight away
+    if (await getClientScope(req)) {
+      await User.updateOne({ _id: (req as any).user._id }, { $addToSet: { assignedClients: client._id } });
+    }
+
     res.status(201).json({ message: "Client created successfully", client });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -88,6 +111,7 @@ export const createClient = async (req: Request, res: Response) => {
 
 export const updateClient = async (req: Request, res: Response) => {
   try {
+    if (await denyIfOutOfScope(req, res)) return;
     const { clientName, branchName, gstNumber, elements, enableLocationMapping } = req.body;
 
     // Validate that at least one element is provided
@@ -124,6 +148,7 @@ export const updateClient = async (req: Request, res: Response) => {
 
 export const deleteClient = async (req: Request, res: Response) => {
   try {
+    if (await denyIfOutOfScope(req, res)) return;
     const client = await Client.findByIdAndDelete(req.params.id);
     if (!client) {
       return res.status(404).json({ message: "Client not found" });
@@ -136,7 +161,7 @@ export const deleteClient = async (req: Request, res: Response) => {
 
 export const exportClients = async (req: Request, res: Response) => {
   try {
-    const clients = await Client.find().sort({ createdAt: -1 });
+    const clients = await Client.find(await clientScopeQuery(req)).sort({ createdAt: -1 });
 
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Clients");

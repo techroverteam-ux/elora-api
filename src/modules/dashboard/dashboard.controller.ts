@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import Store, { StoreStatus } from "../store/store.model";
 import User from "../user/user.model";
+import { getClientScope, applyStoreScope, storeScopeFilter, isSubAdminUser } from "../../utils/access";
 
 const parseDate = (dateStr: string): Date | null => {
   if (!dateStr) return null;
@@ -36,8 +37,13 @@ export const getDashboardStats = async (req: Request | any, res: Response) => {
     const isAdmin = userRoles.some((r: any) => r?.code === "ADMIN" || r?.name === "ADMIN");
     const isRecceUser = userRoles.some((r: any) => r?.code === "RECCE" || r?.name === "RECCE");
     const isInstallationUser = userRoles.some((r: any) => r?.code === "INSTALLATION" || r?.name === "INSTALLATION");
+    // Sub Admin: admin view, limited to stores of the clients mapped to them
+    const isSubAdmin = isSubAdminUser(req.user);
+    const clientScope = await getClientScope(req);
 
-    if (!isSuperAdmin && !isAdmin && req.user?._id) {
+    if (isSubAdmin) {
+      applyStoreScope(filter, clientScope);
+    } else if (!isSuperAdmin && !isAdmin && req.user?._id) {
       filter.$or = [
         { "workflow.recceAssignedTo": req.user._id },
         { "workflow.installationAssignedTo": req.user._id },
@@ -127,7 +133,7 @@ export const getDashboardStats = async (req: Request | any, res: Response) => {
       assignedCount: number;
       completedCount: number;
     }> = [];
-    if (isSuperAdmin || isAdmin) {
+    if (isSuperAdmin || isAdmin || isSubAdmin) {
       try {
         const recceUsers = await User.find({ isActive: true }).populate({
           path: 'roles',
@@ -139,6 +145,7 @@ export const getDashboardStats = async (req: Request | any, res: Response) => {
         personnelStats = await Promise.all(validUsers.map(async (user: any) => {
           const role = user.roles[0];
           const assignedStores = await Store.find({
+            ...storeScopeFilter(clientScope),
             $or: [
               { 'workflow.recceAssignedTo': user._id },
               { 'workflow.installationAssignedTo': user._id }
@@ -178,7 +185,7 @@ export const getDashboardStats = async (req: Request | any, res: Response) => {
     res.json({
       kpi: {
         totalStores,
-        totalClients: isSuperAdmin ? await Store.distinct('clientId').then(ids => ids.length) : undefined,
+        totalClients: isSuperAdmin ? await Store.distinct('clientId').then(ids => ids.length) : isSubAdmin ? clientScope?.ids.length ?? 0 : undefined,
         newStoresToday,
         recceAssigned,
         recceDoneTotal,
@@ -192,7 +199,7 @@ export const getDashboardStats = async (req: Request | any, res: Response) => {
       monthlyTrend,
       personnelStats,
       recentStores,
-      isAdmin: isSuperAdmin || isAdmin,
+      isAdmin: isSuperAdmin || isAdmin || isSubAdmin,
       isRecceUser,
       isInstallationUser
     });

@@ -30,6 +30,7 @@ import { generateReccePDF, generateInstallationPDF, generateBulkPDF } from "./pd
 import { generateBulkPPT, generateReccePPT, generateInstallationPPT } from "./ppt.controller";
 import { protect } from "../../middlewares/auth.middleware";
 import { checkPermission } from "../../middlewares/rbac.middleware";
+import { storeIdParamGuard, requireStoreIdsInScope } from "../../utils/access";
 
 const router = express.Router();
 
@@ -43,15 +44,19 @@ const upload = multer({
 
 router.use(protect);
 
+// Sub Admin: every /:id route and every bulk storeIds body is limited to
+// stores of the clients mapped to them.
+router.param("id", storeIdParamGuard as any);
+
 // Static routes MUST come before dynamic /:id routes
 router.get("/cities", getCities); // Remove permission check temporarily to test
 router.get("/template", downloadStoreTemplate);
 router.get("/export/recce", exportRecceTasks);
 router.get("/export/installation", exportInstallationTasks);
 router.get("/export", exportStores);
-router.post("/export/selected", exportSelectedStores);
+router.post("/export/selected", requireStoreIdsInScope, exportSelectedStores);
 
-router.post("/recce/export-approval", protect, checkPermission("stores", "view"), exportRecceForApproval);
+router.post("/recce/export-approval", protect, checkPermission("stores", "view"), requireStoreIdsInScope, exportRecceForApproval);
 router.post("/recce/import-approval", protect, checkPermission("stores", "edit"), upload.single("file"), importRecceApproval);
 
 router.post(
@@ -62,16 +67,16 @@ router.post(
 );
 
 // BULK ROUTES - MUST BE BEFORE /:id ROUTES
-router.post("/ppt/bulk", generateBulkPPT);
-router.post("/pdf/bulk", generateBulkPDF);
+router.post("/ppt/bulk", requireStoreIdsInScope, generateBulkPPT);
+router.post("/pdf/bulk", requireStoreIdsInScope, generateBulkPDF);
 
 router
   .route("/")
   .post(upload.any(), checkPermission("stores", "create"), createStore)
   .get(checkPermission("stores", "view"), getAllStores);
 
-router.post("/assign", checkPermission("stores", "edit"), assignStoresBulk);
-router.post("/unassign", checkPermission("stores", "edit"), unassignStoresBulk);
+router.post("/assign", checkPermission("stores", "edit"), requireStoreIdsInScope, assignStoresBulk);
+router.post("/unassign", checkPermission("stores", "edit"), requireStoreIdsInScope, unassignStoresBulk);
 
 router.post(
   "/:id/recce",

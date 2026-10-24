@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import Store, { StoreStatus } from "../store/store.model";
 import User from "../user/user.model";
+import { getClientScope, storeScopeFilter, isSubAdminUser } from "../../utils/access";
 
 // @desc    Get analytics dashboard data
 // @route   GET /api/v1/analytics/dashboard
@@ -14,23 +15,26 @@ export const getDashboardAnalytics = async (req: Request | any, res: Response) =
     const isInstallationUser = userRoles.some((r: any) => r?.code === "INSTALLATION" || r?.name === "INSTALLATION");
 
     let analytics: any = {};
+    // Sub Admin gets the admin analytics, limited to their mapped clients' stores
+    const isSubAdmin = isSubAdminUser(req.user);
+    const S = storeScopeFilter(await getClientScope(req));
 
-    if (isSuperAdmin || isAdmin) {
+    if (isSuperAdmin || isAdmin || isSubAdmin) {
       // SUPER ADMIN / ADMIN ANALYTICS
-      const totalStores = await Store.countDocuments();
-      const uploadedStores = await Store.countDocuments({ currentStatus: StoreStatus.UPLOADED });
-      const manuallyAdded = await Store.countDocuments({ currentStatus: StoreStatus.MANUALLY_ADDED });
+      const totalStores = await Store.countDocuments({ ...S });
+      const uploadedStores = await Store.countDocuments({ ...S, currentStatus: StoreStatus.UPLOADED });
+      const manuallyAdded = await Store.countDocuments({ ...S, currentStatus: StoreStatus.MANUALLY_ADDED });
       
       // Recce Analytics
-      const recceAssigned = await Store.countDocuments({ currentStatus: StoreStatus.RECCE_ASSIGNED });
-      const recceSubmitted = await Store.countDocuments({ currentStatus: StoreStatus.RECCE_SUBMITTED });
-      const recceApproved = await Store.countDocuments({ currentStatus: StoreStatus.RECCE_APPROVED });
-      const recceRejected = await Store.countDocuments({ currentStatus: StoreStatus.RECCE_REJECTED });
+      const recceAssigned = await Store.countDocuments({ ...S, currentStatus: StoreStatus.RECCE_ASSIGNED });
+      const recceSubmitted = await Store.countDocuments({ ...S, currentStatus: StoreStatus.RECCE_SUBMITTED });
+      const recceApproved = await Store.countDocuments({ ...S, currentStatus: StoreStatus.RECCE_APPROVED });
+      const recceRejected = await Store.countDocuments({ ...S, currentStatus: StoreStatus.RECCE_REJECTED });
       
       // Installation Analytics
-      const installationAssigned = await Store.countDocuments({ currentStatus: StoreStatus.INSTALLATION_ASSIGNED });
-      const installationSubmitted = await Store.countDocuments({ currentStatus: StoreStatus.INSTALLATION_SUBMITTED });
-      const completed = await Store.countDocuments({ currentStatus: StoreStatus.COMPLETED });
+      const installationAssigned = await Store.countDocuments({ ...S, currentStatus: StoreStatus.INSTALLATION_ASSIGNED });
+      const installationSubmitted = await Store.countDocuments({ ...S, currentStatus: StoreStatus.INSTALLATION_SUBMITTED });
+      const completed = await Store.countDocuments({ ...S, currentStatus: StoreStatus.COMPLETED });
       
       // User Analytics
       const totalUsers = await User.countDocuments();
@@ -39,17 +43,17 @@ export const getDashboardAnalytics = async (req: Request | any, res: Response) =
       // Recent Activity (last 7 days)
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      const recentStores = await Store.countDocuments({ createdAt: { $gte: sevenDaysAgo } });
-      const recentRecceSubmissions = await Store.countDocuments({ 
+      const recentStores = await Store.countDocuments({ ...S, createdAt: { $gte: sevenDaysAgo } });
+      const recentRecceSubmissions = await Store.countDocuments({ ...S,
         "recce.submittedDate": { $gte: sevenDaysAgo } 
       });
-      const recentInstallations = await Store.countDocuments({ 
+      const recentInstallations = await Store.countDocuments({ ...S,
         "installation.submittedDate": { $gte: sevenDaysAgo } 
       });
       
       // Top Performers
       const topRecceUsers = await Store.aggregate([
-        { $match: { "workflow.recceAssignedTo": { $exists: true } } },
+        { $match: { ...S, "workflow.recceAssignedTo": { $exists: true } } },
         { $group: { _id: "$workflow.recceAssignedTo", count: { $sum: 1 } } },
         { $sort: { count: -1 } },
         { $limit: 5 },
@@ -59,7 +63,7 @@ export const getDashboardAnalytics = async (req: Request | any, res: Response) =
       ]);
       
       const topInstallationUsers = await Store.aggregate([
-        { $match: { "workflow.installationAssignedTo": { $exists: true } } },
+        { $match: { ...S, "workflow.installationAssignedTo": { $exists: true } } },
         { $group: { _id: "$workflow.installationAssignedTo", count: { $sum: 1 } } },
         { $sort: { count: -1 } },
         { $limit: 5 },
@@ -70,6 +74,7 @@ export const getDashboardAnalytics = async (req: Request | any, res: Response) =
       
       // City-wise Distribution
       const cityDistribution = await Store.aggregate([
+        { $match: S },
         { $group: { _id: "$location.city", count: { $sum: 1 } } },
         { $sort: { count: -1 } },
         { $limit: 10 }
@@ -77,6 +82,7 @@ export const getDashboardAnalytics = async (req: Request | any, res: Response) =
       
       // Status Distribution
       const statusDistribution = await Store.aggregate([
+        { $match: S },
         { $group: { _id: "$currentStatus", count: { $sum: 1 } } },
         { $sort: { count: -1 } }
       ]);
@@ -85,6 +91,7 @@ export const getDashboardAnalytics = async (req: Request | any, res: Response) =
       const assignments = await Store.aggregate([
         {
           $match: {
+            ...S,
             $or: [
               { "workflow.recceAssignedTo": { $exists: true, $ne: null } },
               { "workflow.installationAssignedTo": { $exists: true, $ne: null } }

@@ -2,6 +2,7 @@ import { INSTALL_PHOTO_TYPES, InstallPhotoType, installPhotosByType, pickInstall
 import { Request, Response } from "express";
 import Store, { StoreStatus } from "./store.model";
 import Client from "../client/client.model";
+import { getClientScope, applyStoreScope, isStoreInScope, isClientInScope, isSubAdminUser, isSuperAdminUser as isSuperAdminUserX } from "../../utils/access";
 import User from "../user/user.model";
 import * as XLSX from "xlsx";
 import fs from "fs";
@@ -103,7 +104,7 @@ export const uploadStoresBulk = async (req: Request | any, res: Response) => {
       return storesPermission?.create === true;
     });
 
-    if (!hasStoresCreatePermission) {
+    if (!hasStoresCreatePermission && !isSuperAdminUserX(req.user) && !isSubAdminUser(req.user)) {
       return res.status(403).json({ 
         message: "Access denied. You don't have permission to create stores." 
       });
@@ -120,6 +121,7 @@ export const uploadStoresBulk = async (req: Request | any, res: Response) => {
     const existingCodes = new Set((await Store.find().select("dealerCode")).map((s) => s.dealerCode));
     const clientCodes = await Client.find().select("clientCode _id");
     const clientCodeMap = new Map(clientCodes.map((c) => [c.clientCode, c._id]));
+    const uploadScope = await getClientScope(req);
     const toInsert: any[] = [];
     const dealerCodesInFile = new Set<string>();
 
@@ -175,7 +177,11 @@ export const uploadStoresBulk = async (req: Request | any, res: Response) => {
                 clientId = clientCodeMap.get(clientCode);
                 if (!clientId) {
                   error = `Client Code ${clientCode} not found in system`;
+                } else if (!isClientInScope(uploadScope, clientId)) {
+                  error = `Client Code ${clientCode} is not assigned to you`;
                 }
+              } else if (uploadScope) {
+                error = "Client Code is required";
               }
             }
 
@@ -333,7 +339,7 @@ export const createStore = async (req: Request | any, res: Response) => {
       return storesPermission?.create === true;
     });
 
-    if (!hasStoresCreatePermission) {
+    if (!hasStoresCreatePermission && !isSuperAdminUserX(req.user) && !isSubAdminUser(req.user)) {
       return res.status(403).json({ 
         message: "Access denied. You don't have permission to create stores." 
       });
@@ -378,6 +384,12 @@ export const createStore = async (req: Request | any, res: Response) => {
 
     if (!dealerCode) {
       return res.status(400).json({ message: "Dealer Code is required" });
+    }
+
+    // Sub Admin can only create stores for the clients mapped to them
+    const createScope = await getClientScope(req);
+    if (createScope && !isClientInScope(createScope, clientCode)) {
+      return res.status(403).json({ message: clientCode ? `Client ${clientCode} is not assigned to you` : "Please select a client" });
     }
 
     // Validate required fields for storeId generation
@@ -567,7 +579,8 @@ export const createStore = async (req: Request | any, res: Response) => {
 
 export const getCities = async (req: Request, res: Response) => {
   try {
-    const cities = await Store.distinct("location.city");
+    const cityScope = applyStoreScope({}, await getClientScope(req));
+    const cities = await Store.distinct("location.city", cityScope);
     const filteredCities = cities.filter(city => city && city.trim() !== "").sort();
     res.status(200).json({ cities: filteredCities });
   } catch (error: any) {
@@ -593,7 +606,7 @@ export const getAllStores = async (req: Request | any, res: Response) => {
     const isSuperAdmin = userRoles.some((role: any) => role.code === "SUPER_ADMIN");
     
     // Check if user is Sub Admin (role code check)
-    const isSubAdmin = userRoles.some((role: any) => role.code === "SUB_ADMIN");
+    const isSubAdmin = isSubAdminUser(req.user);
     
     // Check if user has 'stores' view permission
     const hasStoresViewPermission = userRoles.some((role: any) => {
@@ -634,8 +647,8 @@ export const getAllStores = async (req: Request | any, res: Response) => {
     if (isSuperAdmin) {
       // Super Admin: No filter - can see all stores
     } else if (isSubAdmin) {
-      // Sub Admin: Can only see stores they created/uploaded
-      query.createdBy = req.user._id;
+      // Sub Admin: only stores of the clients mapped to them
+      applyStoreScope(query, await getClientScope(req));
     } else if (isFieldRole || !hasStoresViewPermission) {
       // Field roles (RECCE/INSTALLATION) or roles without view permission: Only see assigned stores
       query.$or = [
@@ -846,10 +859,20 @@ export const updateStore = async (req: Request | any, res: Response) => {
       return storesPermission?.edit === true;
     });
 
-    if (!hasStoresEditPermission) {
+    if (!hasStoresEditPermission && !isSuperAdminUserX(req.user) && !isSubAdminUser(req.user)) {
       return res.status(403).json({ 
         message: "Access denied. You don't have permission to edit stores." 
       });
+    }
+
+    // Sub Admin cannot move a store to a client that is not mapped to them
+    const updateScope = await getClientScope(req);
+    if (updateScope) {
+      for (const key of ["clientId", "clientCode"]) {
+        if (req.body?.[key] !== undefined && !isClientInScope(updateScope, req.body[key])) {
+          return res.status(403).json({ message: "That client is not assigned to you" });
+        }
+      }
     }
 
     const store = await Store.findByIdAndUpdate(req.params.id, req.body, {
@@ -2736,7 +2759,7 @@ export const exportRecceTasks = async (req: Request | any, res: Response) => {
     // 3-Tier Permission-based Access Control
     const userRoles = req.user.roles || [];
     const isSuperAdmin = userRoles.some((role: any) => role.code === "SUPER_ADMIN");
-    const isSubAdmin = userRoles.some((role: any) => role.code === "SUB_ADMIN");
+    const isSubAdmin = isSubAdminUser(req.user);
     const hasStoresViewPermission = userRoles.some((role: any) => {
       const storesPermission = role.permissions?.get('stores');
       return storesPermission?.view === true;
@@ -2745,8 +2768,8 @@ export const exportRecceTasks = async (req: Request | any, res: Response) => {
     if (isSuperAdmin) {
       // Super Admin: No filter
     } else if (isSubAdmin) {
-      // Sub Admin: Only their uploaded stores
-      query.createdBy = req.user._id;
+      // Sub Admin: only stores of the clients mapped to them
+      applyStoreScope(query, await getClientScope(req));
     } else if (!hasStoresViewPermission) {
       // Other roles: Only assigned stores
       query["workflow.recceAssignedTo"] = req.user._id;
@@ -2931,7 +2954,7 @@ export const exportInstallationTasks = async (
     // 3-Tier Permission-based Access Control
     const userRoles = req.user.roles || [];
     const isSuperAdmin = userRoles.some((role: any) => role.code === "SUPER_ADMIN");
-    const isSubAdmin = userRoles.some((role: any) => role.code === "SUB_ADMIN");
+    const isSubAdmin = isSubAdminUser(req.user);
     const hasStoresViewPermission = userRoles.some((role: any) => {
       const storesPermission = role.permissions?.get('stores');
       return storesPermission?.view === true;
@@ -2940,8 +2963,8 @@ export const exportInstallationTasks = async (
     if (isSuperAdmin) {
       // Super Admin: No filter
     } else if (isSubAdmin) {
-      // Sub Admin: Only their uploaded stores
-      query.createdBy = req.user._id;
+      // Sub Admin: only stores of the clients mapped to them
+      applyStoreScope(query, await getClientScope(req));
     } else if (!hasStoresViewPermission) {
       // Other roles: Only assigned stores
       query["workflow.installationAssignedTo"] = req.user._id;
@@ -3131,7 +3154,7 @@ export const exportSelectedStores = async (req: Request | any, res: Response) =>
     // 3-Tier Permission-based Access Control
     const userRoles = req.user.roles || [];
     const isSuperAdmin = userRoles.some((role: any) => role.code === "SUPER_ADMIN");
-    const isSubAdmin = userRoles.some((role: any) => role.code === "SUB_ADMIN");
+    const isSubAdmin = isSubAdminUser(req.user);
     const hasStoresViewPermission = userRoles.some((role: any) => {
       const storesPermission = role.permissions?.get('stores');
       return storesPermission?.view === true;
@@ -3140,8 +3163,8 @@ export const exportSelectedStores = async (req: Request | any, res: Response) =>
     if (isSuperAdmin) {
       // Super Admin: No additional filter
     } else if (isSubAdmin) {
-      // Sub Admin: Only their uploaded stores
-      query.createdBy = req.user._id;
+      // Sub Admin: only stores of the clients mapped to them
+      applyStoreScope(query, await getClientScope(req));
     } else if (!hasStoresViewPermission) {
       // Other roles: Only assigned stores
       query.$or = [
@@ -3369,7 +3392,7 @@ export const exportStores = async (req: Request | any, res: Response) => {
     // 3-Tier Permission-based Access Control
     const userRoles = req.user.roles || [];
     const isSuperAdmin = userRoles.some((role: any) => role.code === "SUPER_ADMIN");
-    const isSubAdmin = userRoles.some((role: any) => role.code === "SUB_ADMIN");
+    const isSubAdmin = isSubAdminUser(req.user);
     const hasStoresViewPermission = userRoles.some((role: any) => {
       const storesPermission = role.permissions?.get('stores');
       return storesPermission?.view === true;
@@ -3378,8 +3401,8 @@ export const exportStores = async (req: Request | any, res: Response) => {
     if (isSuperAdmin) {
       // Super Admin: No filter
     } else if (isSubAdmin) {
-      // Sub Admin: Only their uploaded stores
-      query.createdBy = req.user._id;
+      // Sub Admin: only stores of the clients mapped to them
+      applyStoreScope(query, await getClientScope(req));
     } else if (!hasStoresViewPermission) {
       // Other roles: Only assigned stores
       query.$or = [
@@ -3691,6 +3714,14 @@ export const bulkAssignStoresToUser = async (
             allErrors.push({
               row: rowNum,
               error: `Store not found: ${storeId}`,
+            });
+            continue;
+          }
+
+          if (!isStoreInScope(await getClientScope(req), store)) {
+            allErrors.push({
+              row: rowNum,
+              error: `Store ${storeId} belongs to a client not assigned to you`,
             });
             continue;
           }
@@ -4261,6 +4292,10 @@ export const importRecceApproval = async (req: Request | any, res: Response) => 
       try {
         const store = await Store.findOne({ $or: [{ storeId: update.storeId }, { dealerCode: update.storeId }] });
         if (!store || !store.recce?.reccePhotos) continue;
+        if (!isStoreInScope(await getClientScope(req), store)) {
+          errors.push({ storeId: update.storeId, photoIndex: update.photoIndex, error: "Store belongs to a client not assigned to you" });
+          continue;
+        }
 
         const photoIdx = parseInt(update.photoIndex);
         if (photoIdx < 0 || photoIdx >= store.recce.reccePhotos.length) continue;
