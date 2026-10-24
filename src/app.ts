@@ -12,6 +12,7 @@ import enquiryRoutes from "./modules/enquiry/enquiry.routes";
 import elementRoutes from "./modules/element/element.routes";
 import clientRoutes from "./modules/client/client.routes";
 import rfqRoutes from "./modules/rfq/rfq.routes";
+import directInstallationRoutes from "./modules/direct-installation/directInstallation.routes";
 // @ts-ignore
 import uploadRoutes from "./routes/uploadRoutes.js";
 import { setupSwagger } from "./config/swagger";
@@ -38,7 +39,7 @@ app.use(
     exposedHeaders: ['Content-Disposition', 'x-skipped-stores'],
   }),
 );
-app.use(express.json());
+app.use(express.json({ limit: "4mb" })); // direct-installation uploads send up to a few thousand rows
 app.use(cookieParser());
 
 // Landing page
@@ -334,6 +335,7 @@ app.use("/api/v1/enquiries", enquiryRoutes);
 app.use("/api/v1/elements", elementRoutes);
 app.use("/api/v1/clients", clientRoutes);
 app.use("/api/v1/rfq", rfqRoutes);
+app.use("/api/v1/direct-installations", directInstallationRoutes);
 app.use("/api/v1/files", uploadRoutes);
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 

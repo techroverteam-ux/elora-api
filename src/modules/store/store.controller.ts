@@ -265,6 +265,7 @@ export const uploadStoresBulk = async (req: Request | any, res: Response) => {
                 if (directInstallation) {
                   const lastStore = toInsert[toInsert.length - 1];
                   lastStore.currentStatus = StoreStatus.RECCE_APPROVED;
+                  lastStore.isDirectInstallation = true;
                   const elementName = row["Element Name (Direct Inst.)"] || "";
                   lastStore.recce = {
                     reccePhotos: [{
@@ -470,6 +471,7 @@ export const createStore = async (req: Request | any, res: Response) => {
       costDetails,
       specs,
       createdBy: req.user._id, // Track who created this store
+      isDirectInstallation: !!directInstallation,
       currentStatus: directInstallation ? StoreStatus.RECCE_APPROVED : StoreStatus.MANUALLY_ADDED,
     });
 

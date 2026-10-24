@@ -23,6 +23,10 @@ export interface StoreDocument extends Document {
   storeName?: string;
   vendorCode?: string; // NEW: Added Vendor Code
   createdBy?: mongoose.Types.ObjectId; // NEW: Track who created/uploaded the store
+  // Direct installation: recce done outside the app (e.g. photos on WhatsApp),
+  // boards come pre-approved and the store goes straight to an installer.
+  isDirectInstallation?: boolean;
+  importBatchId?: string; // set when created by the direct-installation Excel upload
 
   location: {
     zone?: string; // NEW
@@ -98,6 +102,8 @@ export interface StoreDocument extends Document {
       approvedAt?: Date;
       rejectionReason?: string;
       holdReason?: string;
+      boardNo?: string; // board number from the direct-installation Excel
+      remark?: string; // board remark from the direct-installation Excel
     }>;
     notes?: string;
     submittedBy?: string; // User name who submitted
@@ -136,6 +142,8 @@ const StoreSchema = new Schema<StoreDocument>(
     storeName: { type: String },
     vendorCode: { type: String }, // NEW
     createdBy: { type: Schema.Types.ObjectId, ref: "User" }, // NEW: Track who created/uploaded the store
+    isDirectInstallation: { type: Boolean, default: false, index: true },
+    importBatchId: { type: String, index: true, sparse: true },
 
     location: {
       zone: { type: String }, // NEW
@@ -233,6 +241,8 @@ const StoreSchema = new Schema<StoreDocument>(
           approvedAt: Date,
           rejectionReason: String,
           holdReason: String,
+          boardNo: String,
+          remark: String,
         },
       ],
       notes: String,
