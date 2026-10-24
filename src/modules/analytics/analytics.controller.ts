@@ -37,8 +37,21 @@ export const getDashboardAnalytics = async (req: Request | any, res: Response) =
       const completed = await Store.countDocuments({ ...S, currentStatus: StoreStatus.COMPLETED });
       
       // User Analytics
-      const totalUsers = await User.countDocuments();
-      const activeUsers = await User.countDocuments({ isActive: true });
+      let totalUsers: number;
+      let activeUsers: number;
+      if (isSubAdmin) {
+        // Sub Admin: count only people assigned to their clients' stores
+        const [recceIds, installIds] = await Promise.all([
+          Store.distinct("workflow.recceAssignedTo", S),
+          Store.distinct("workflow.installationAssignedTo", S),
+        ]);
+        const ids = Array.from(new Set([...recceIds, ...installIds].filter(Boolean).map(String)));
+        totalUsers = ids.length;
+        activeUsers = await User.countDocuments({ _id: { $in: ids }, isActive: true });
+      } else {
+        totalUsers = await User.countDocuments();
+        activeUsers = await User.countDocuments({ isActive: true });
+      }
       
       // Recent Activity (last 7 days)
       const sevenDaysAgo = new Date();

@@ -171,6 +171,8 @@ export const getDashboardStats = async (req: Request | any, res: Response) => {
             completedCount: completedStores.length
           };
         }));
+        // Sub Admin: only people who have work on their clients' stores
+        if (isSubAdmin) personnelStats = personnelStats.filter((p) => p.assignedCount > 0);
       } catch (err) {
         console.error('Personnel stats error:', err);
       }
