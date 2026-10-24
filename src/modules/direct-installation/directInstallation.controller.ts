@@ -43,6 +43,14 @@ const LEGACY_DIRECT = {
 };
 const DIRECT_FILTER = { $or: [{ isDirectInstallation: true }, LEGACY_DIRECT] };
 
+/** Same test as DIRECT_FILTER, for a store already loaded. */
+const isDirectStore = (st: any) =>
+  st?.isDirectInstallation === true ||
+  (!st?.workflow?.recceAssignedTo &&
+    !st?.recce?.submittedDate &&
+    (st?.recce?.reccePhotos?.length || 0) > 0 &&
+    (LEGACY_DIRECT.currentStatus.$in as string[]).includes(st?.currentStatus));
+
 // ---------------------------------------------------------------------------
 // Excel columns. Headers are matched loosely (case, spaces and symbols are
 // ignored), so "Dealer Code", "dealer_code" and "DEALER CODE" all work.
@@ -114,6 +122,10 @@ export interface ResolvedBoard {
   cost: number;
   remark: string;
   photoKeys: string[];
+  /** Board already on the store (update): its index in recce.reccePhotos. */
+  existingIndex?: number;
+  /** A recce photo is already saved for this board. */
+  hasPhoto: boolean;
 }
 export interface ResolvedStore {
   key: string;
@@ -141,6 +153,9 @@ export interface ResolvedStore {
   totalSqft: number;
   totalCost: number;
   errors: string[];
+  /** create = new store; update = existing direct installation store in the sheet */
+  mode: "create" | "update";
+  storeDbId?: string;
 }
 
 /**
@@ -184,9 +199,12 @@ export const resolveRows = async (req: any, rawRows: any[], firstRowNumber = 2) 
 
   const dealerCodes = Array.from(new Set(rows.map((r: any) => text(r.dealerCode)).filter(Boolean)));
   const existing: any[] = dealerCodes.length
-    ? await Store.find({ dealerCode: { $in: dealerCodes } }).select("dealerCode").lean()
+    ? await Store.find({ dealerCode: { $in: dealerCodes } })
+        .select("dealerCode storeName clientId clientCode location contact vendorCode commercials remark workflow currentStatus isDirectInstallation recce.submittedDate recce.reccePhotos")
+        .populate("workflow.installationAssignedTo", "name isActive")
+        .lean()
     : [];
-  const existingDealer = new Set(existing.map((s) => String(s.dealerCode).toLowerCase()));
+  const existingByDealer = new Map(existing.map((s) => [String(s.dealerCode).toLowerCase(), s]));
 
   // Group rows into stores by dealer code
   const groups = new Map<string, any[]>();
@@ -209,8 +227,34 @@ export const resolveRows = async (req: any, rawRows: any[], firstRowNumber = 2) 
       rowErrors.push({ row, message });
     };
 
-    // ---- store level (taken from the first row; other rows may leave it blank)
-    const pick = (field: string) => text(group.find((g) => text(g[field]))?.[field]);
+    // ---- existing store? Only direct installations can be updated from this sheet
+    const ex = existingByDealer.get(key);
+    const exIsDirect = !!ex && isDirectStore(ex);
+    const update = !!ex && exIsDirect;
+    const exInstaller: any = ex?.workflow?.installationAssignedTo;
+    const exFallback: Record<string, string> = ex
+      ? {
+          clientCode: text(ex.clientCode),
+          storeName: text(ex.storeName),
+          city: text(ex.location?.city),
+          district: text(ex.location?.district),
+          state: text(ex.location?.state),
+          zone: text(ex.location?.zone),
+          address: text(ex.location?.address),
+          pincode: text(ex.location?.pincode),
+          contactPerson: text(ex.contact?.personName),
+          mobile: text(ex.contact?.mobile),
+          vendorCode: text(ex.vendorCode),
+          poNumber: text(ex.commercials?.poNumber),
+          priority: text(ex.workflow?.priority),
+          remark: text(ex.remark),
+          installer: text(exInstaller?.name),
+        }
+      : {};
+
+    // ---- store level (taken from any row; other rows may leave it blank).
+    // When updating, a blank cell keeps what the store already has.
+    const pick = (field: string) => text(group.find((g) => text(g[field]))?.[field]) || (update ? exFallback[field] || "" : "");
     const clientCode = pick("clientCode");
     const storeName = pick("storeName");
     const city = pick("city");
@@ -231,14 +275,25 @@ export const resolveRows = async (req: any, rawRows: any[], firstRowNumber = 2) 
         err(g.rowNumber, `Installer differs from other rows of Dealer Code ${first.dealerCode}`);
     }
 
-    if (existingDealer.has(key)) err(first.rowNumber, `A store with Dealer Code ${first.dealerCode} already exists`);
+    if (ex && !exIsDirect) {
+      err(first.rowNumber, `Dealer Code ${first.dealerCode} already exists as a normal store (not a direct installation)`);
+    } else if (update) {
+      if (!isStoreInScope(scope, ex)) err(first.rowNumber, `Store ${first.dealerCode} belongs to a client that is not assigned to you`);
+      if (clientCode && text(ex.clientCode) && clientCode.toLowerCase() !== text(ex.clientCode).toLowerCase())
+        err(first.rowNumber, `Client of an existing store can't be changed (store is ${ex.clientCode})`);
+    }
 
     const client = clientCode ? clientByCode.get(clientCode.toLowerCase()) : null;
     if (clientCode && !client) err(first.rowNumber, `Client Code ${clientCode} not found`);
     else if (client && !isClientInScope(scope, client._id)) err(first.rowNumber, `Client ${clientCode} is not assigned to you`);
 
     let installerUser: any = null;
-    if (installer) {
+    const sameInstaller = update && exInstaller?._id && installer.toLowerCase() === text(exInstaller.name).toLowerCase();
+    if (sameInstaller) {
+      installerUser = exInstaller;
+    } else if (update && installer && !["RECCE_APPROVED", "INSTALLATION_ASSIGNED", "INSTALLATION_REJECTED"].includes(ex.currentStatus)) {
+      err(first.rowNumber, `Installer can't be changed: store ${first.dealerCode} is already ${String(ex.currentStatus).replace(/_/g, " ").toLowerCase()}`);
+    } else if (installer) {
       const matches = installersByName.get(installer.toLowerCase()) || [];
       if (matches.length === 0) err(first.rowNumber, `No active Installation user named "${installer}"`);
       else if (matches.length > 1)
@@ -253,10 +308,24 @@ export const resolveRows = async (req: any, rawRows: any[], firstRowNumber = 2) 
     // ---- boards
     const boards: ResolvedBoard[] = [];
     const usedBoardNos = new Set<string>();
+    const exBoards: any[] = update ? ex.recce?.reccePhotos || [] : [];
+    const exBoardNo = (p: any, i: number) => text(p.boardNo) || String(i + 1);
     group.forEach((g, i) => {
-      const boardNo = text(g.boardNo) || String(i + 1);
+      const boardNo = text(g.boardNo) || String(update ? exBoards.length + i + 1 : i + 1);
       if (usedBoardNos.has(boardNo.toLowerCase())) err(g.rowNumber, `Board No ${boardNo} is used twice for Dealer Code ${first.dealerCode}`);
       usedBoardNos.add(boardNo.toLowerCase());
+
+      // Existing board with the same Board No: blank cells keep its values
+      const existingIndex = exBoards.findIndex((p, idx) => exBoardNo(p, idx).toLowerCase() === boardNo.toLowerCase());
+      const eb = existingIndex >= 0 ? exBoards[existingIndex] : null;
+      if (eb) {
+        if (!text(g.width)) g.width = String(eb.measurements?.width ?? "");
+        if (!text(g.height)) g.height = String(eb.measurements?.height ?? "");
+        if (!text(g.unit)) g.unit = text(eb.measurements?.unit);
+        if (!text(g.quantity)) g.quantity = String(eb.elements?.[0]?.quantity ?? "");
+        if (!text(g.element)) g.element = text(eb.elements?.[0]?.elementName);
+        if (!text(g.boardRemark)) g.boardRemark = text(eb.remark);
+      }
 
       const width = num(g.width);
       const height = num(g.height);
@@ -305,6 +374,8 @@ export const resolveRows = async (req: any, rawRows: any[], firstRowNumber = 2) 
         cost: Math.round(sqft * rate * (quantity >= 1 ? quantity : 1) * 100) / 100,
         remark: text(g.boardRemark),
         photoKeys: Array.from(new Set(keys)),
+        ...(eb && { existingIndex }),
+        hasPhoto: !!eb?.photo,
       });
     });
 
@@ -334,6 +405,8 @@ export const resolveRows = async (req: any, rawRows: any[], firstRowNumber = 2) 
       totalSqft: Math.round(boards.reduce((a, b) => a + b.sqft * b.quantity, 0) * 100) / 100,
       totalCost: Math.round(boards.reduce((a, b) => a + b.cost, 0) * 100) / 100,
       errors,
+      mode: update ? "update" : "create",
+      ...(update && { storeDbId: String(ex._id) }),
     });
   }
 
@@ -353,7 +426,7 @@ export const validateUpload = async (req: Request | any, res: Response) => {
   try {
     const rows = Array.isArray(req.body?.rows) ? req.body.rows : null;
     if (!rows) return res.status(400).json({ message: "rows must be an array" });
-    if (rows.length > 3000) return res.status(400).json({ message: "Up to 3000 rows per upload. Split the file." });
+    if (rows.length > 5000) return res.status(400).json({ message: "Up to 5000 rows per upload. Split the file." });
     const result = await resolveRows(req, rows);
     const showMoney = isAdminLike(req.user);
     res.json({ ...result, stores: showMoney ? result.stores : result.stores.map(stripMoney) });
@@ -382,6 +455,7 @@ export const createDirectInstallation = async (req: Request | any, res: Response
     if (stores.length !== 1) return res.status(400).json({ message: "Send the rows of exactly one Dealer Code per request" });
     const s = stores[0];
     if (errors.length || s.errors.length) return res.status(400).json({ message: s.errors[0] || errors[0]?.message, errors: s.errors });
+    if (s.mode === "update") return updateExistingStore(req, res, s);
 
     const now = new Date();
     const uploader = req.user;
@@ -445,13 +519,110 @@ export const createDirectInstallation = async (req: Request | any, res: Response
     res.status(201).json({
       message: "Store created",
       store: { _id: store._id, storeId: store.storeId, dealerCode: store.dealerCode },
-      boards: s.boards.map((b, index) => ({ index, boardNo: b.boardNo, photoKeys: b.photoKeys })),
+      mode: "create",
+      boards: s.boards.map((b, index) => ({ index, boardNo: b.boardNo, photoKeys: b.photoKeys, hasPhoto: false })),
     });
   } catch (error: any) {
     if (error?.code === 11000) return res.status(400).json({ message: "A store with this Dealer Code already exists" });
     console.error("Direct installation create error:", error);
     res.status(500).json({ message: "Failed to create store", error: error.message });
   }
+};
+
+/**
+ * Re-upload of an existing direct installation (from the pre-filled template):
+ * update store details, update boards matched by Board No, add new boards.
+ * Boards missing from the sheet are kept; photos are kept unless a new one is sent.
+ */
+const updateExistingStore = async (req: any, res: Response, s: ResolvedStore) => {
+  const store: any = await Store.findById(s.storeDbId);
+  if (!store) return res.status(404).json({ message: "Store not found" });
+  const now = new Date();
+  const uploader = req.user;
+
+  store.storeName = s.storeName;
+  store.vendorCode = s.vendorCode;
+  store.remark = s.remark;
+  store.isDirectInstallation = true;
+  store.set("location.zone", s.zone);
+  store.set("location.state", s.state);
+  store.set("location.district", s.district);
+  store.set("location.city", s.city);
+  store.set("location.address", s.address);
+  store.set("location.pincode", s.pincode);
+  store.set("contact.personName", s.contactPerson);
+  store.set("contact.mobile", s.mobile);
+  store.set("commercials.poNumber", s.poNumber);
+  store.set("workflow.priority", s.priority);
+
+  // Installer (only changeable before installation was submitted — checked in resolveRows)
+  if (s.installerId && String(store.workflow?.installationAssignedTo || "") !== s.installerId) {
+    store.set("workflow.installationAssignedTo", s.installerId);
+    store.set("workflow.installationAssignedBy", uploader._id);
+    store.set("installation.assignedDate", now);
+  }
+  if (store.currentStatus === StoreStatus.RECCE_APPROVED && store.workflow?.installationAssignedTo) {
+    store.currentStatus = StoreStatus.INSTALLATION_ASSIGNED;
+  }
+
+  // Older direct installs never had their recce dated
+  if (!store.recce?.submittedDate) {
+    store.set("recce.assignedDate", now);
+    store.set("recce.submittedDate", now);
+    store.set("recce.submittedBy", `${uploader.name} (Excel upload)`);
+  }
+
+  const boardsOut: Array<{ index: number; boardNo: string; photoKeys: string[]; hasPhoto: boolean }> = [];
+  const photos: any[] = store.recce?.reccePhotos || [];
+  for (const b of s.boards) {
+    const element = { elementId: b.elementId, elementName: b.elementName, quantity: b.quantity, customRate: b.rate };
+    if (b.existingIndex !== undefined && photos[b.existingIndex]) {
+      const p = photos[b.existingIndex];
+      p.measurements = { width: b.width, height: b.height, unit: b.unit };
+      p.elements = [element];
+      p.boardNo = b.boardNo;
+      p.remark = b.remark;
+      boardsOut.push({ index: b.existingIndex, boardNo: b.boardNo, photoKeys: b.photoKeys, hasPhoto: !!p.photo });
+    } else {
+      photos.push({
+        photo: "",
+        measurements: { width: b.width, height: b.height, unit: b.unit },
+        elements: [element],
+        approvalStatus: "APPROVED",
+        approvedBy: uploader._id,
+        approvedAt: now,
+        boardNo: b.boardNo,
+        remark: b.remark,
+      });
+      boardsOut.push({ index: photos.length - 1, boardNo: b.boardNo, photoKeys: b.photoKeys, hasPhoto: false });
+    }
+  }
+  store.set("recce.reccePhotos", photos);
+
+  // Totals over every board on the store, not only the ones in the sheet
+  const total =
+    Math.round(
+      photos.reduce((a: number, p: any) => {
+        const f = p.measurements?.unit === "in" ? 1 / 12 : 1;
+        const sq = (Number(p.measurements?.width) || 0) * f * ((Number(p.measurements?.height) || 0) * f);
+        const el = p.elements?.[0] || {};
+        return a + sq * (Number(el.customRate) || 0) * (Number(el.quantity) || 1);
+      }, 0) * 100
+    ) / 100;
+  store.set("recce.costDetails.totalBoardCost", total);
+  store.set("recce.commercials.totalCost", total);
+  store.set("costDetails.totalBoardCost", total);
+  store.set("commercials.totalCost", total);
+  store.set("recce.approvedPhotosCount", photos.filter((p: any) => p.approvalStatus === "APPROVED").length);
+  if (text(req.body?.batchId)) store.importBatchId = text(req.body.batchId);
+
+  await store.save();
+  res.json({
+    message: "Store updated",
+    mode: "update",
+    store: { _id: store._id, storeId: store.storeId, dealerCode: store.dealerCode },
+    boards: boardsOut,
+  });
 };
 
 // POST /direct-installations/:id/boards/:index/photo   (multipart: photo)
@@ -752,6 +923,8 @@ export const exportDirectInstallations = async (req: Request | any, res: Respons
 };
 
 // GET /direct-installations/template  — upload sheet + instructions + lists (scoped to the user's clients)
+// ?prefill=1 (plus the list filters) fills the sheet with existing direct
+// installations, one row per board; blank required cells are highlighted.
 export const downloadTemplate = async (req: Request | any, res: Response) => {
   try {
     const scope = await getClientScope(req);
@@ -765,9 +938,19 @@ export const downloadTemplate = async (req: Request | any, res: Response) => {
 
     const wb = new ExcelJS.Workbook();
 
-    // 1. Upload sheet
+    const prefill = String(req.query.prefill || "") === "1";
+
+    // 1. Upload sheet (two info-only columns at the end when pre-filled; ignored on upload)
     const ws = wb.addWorksheet("Direct Installation");
-    ws.columns = TEMPLATE_COLUMNS.map((c) => ({ header: c.header, key: c.key, width: Math.max(12, c.header.length + 4) }));
+    ws.columns = [
+      ...TEMPLATE_COLUMNS.map((c) => ({ header: c.header, key: c.key, width: Math.max(12, c.header.length + 4) })),
+      ...(prefill
+        ? [
+            { header: "Recce Photo On File (info)", key: "_photo", width: 16 },
+            { header: "Current Status (info)", key: "_status", width: 22 },
+          ]
+        : []),
+    ];
     TEMPLATE_COLUMNS.forEach((c, i) => {
       const cell = ws.getRow(1).getCell(i + 1);
       cell.font = { bold: true, color: { argb: c.required ? "FFFFFFFF" : "FF1F2937" } };
@@ -779,7 +962,64 @@ export const downloadTemplate = async (req: Request | any, res: Response) => {
     const exClient = clients[0];
     const exElements = (exClient?.elements || []).slice(0, 2);
     const exInstaller = installers[0]?.name || "Installer Name";
-    if (exClient && exElements.length) {
+    if (prefill) {
+      const query = await buildListQuery(req);
+      const stores: any[] = await Store.find(query)
+        .populate("workflow.installationAssignedTo", "name")
+        .sort({ clientCode: 1, dealerCode: 1 })
+        .limit(5000)
+        .lean();
+      for (const st of stores) {
+        const boards: any[] = st.recce?.reccePhotos || [];
+        boards.forEach((p: any, i: number) => {
+          const el = p.elements?.[0] || {};
+          const row = ws.addRow({
+            clientCode: st.clientCode,
+            dealerCode: st.dealerCode,
+            storeName: st.storeName,
+            city: st.location?.city,
+            district: st.location?.district,
+            state: st.location?.state,
+            zone: st.location?.zone,
+            address: st.location?.address,
+            pincode: st.location?.pincode,
+            contactPerson: st.contact?.personName,
+            mobile: st.contact?.mobile,
+            vendorCode: st.vendorCode,
+            poNumber: st.commercials?.poNumber,
+            installer: st.workflow?.installationAssignedTo?.name || "",
+            priority: st.workflow?.priority || "MEDIUM",
+            remark: st.remark,
+            boardNo: p.boardNo || String(i + 1),
+            element: el.elementName || "",
+            width: p.measurements?.width || "",
+            height: p.measurements?.height || "",
+            unit: p.measurements?.unit || "ft",
+            quantity: el.quantity || 1,
+            boardRemark: p.remark || "",
+            photoFile: "",
+            _photo: p.photo ? "Yes" : "No - add photo",
+            _status: String(st.currentStatus || "").replace(/_/g, " "),
+          });
+          // Highlight what the user still has to fill
+          TEMPLATE_COLUMNS.forEach((c, ci) => {
+            if (!c.required) return;
+            const cell = row.getCell(ci + 1);
+            if (cell.value === null || cell.value === undefined || String(cell.value).trim() === "") {
+              cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFECACA" } };
+            }
+          });
+          if (!p.photo) row.getCell(TEMPLATE_COLUMNS.length + 1).font = { bold: true, color: { argb: "FFB45309" } };
+        });
+      }
+      [TEMPLATE_COLUMNS.length + 1, TEMPLATE_COLUMNS.length + 2].forEach((ci) => {
+        const h = ws.getRow(1).getCell(ci);
+        h.font = { bold: true, color: { argb: "FF6B7280" } };
+        h.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } };
+        h.note = "Information only. Ignored when you upload.";
+      });
+      ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: TEMPLATE_COLUMNS.length + 2 } };
+    } else if (exClient && exElements.length) {
       const base = {
         clientCode: exClient.clientCode, dealerCode: "DEMO001", storeName: "Example Store (delete this row)",
         city: "Jodhpur", district: "Jodhpur", state: "Rajasthan", zone: "North", address: "Main Road",
@@ -801,6 +1041,9 @@ export const downloadTemplate = async (req: Request | any, res: Response) => {
       "or put the file name in the Photo File Name column. Then select the Excel and all photos together on the upload page.",
       "On upload, the recce is marked assigned, submitted and approved, and the store goes to the installer.",
       "Rates come from the client's element mapping. Delete the grey example rows before uploading.",
+      "Pre-filled sheet: rows of stores that already exist update those stores. Red cells are required and still empty.",
+      "Boards are matched by Board No. Change a value to correct it, add a row with a new Board No to add a board.",
+      "Boards you delete from the sheet are NOT removed from the store. Existing photos are kept unless you send a new one.",
     ].forEach((l) => help.addRow([l]));
     help.addRow([]);
     help.addRow(["Column", "Required", "Notes"]).font = { bold: true };
@@ -820,7 +1063,10 @@ export const downloadTemplate = async (req: Request | any, res: Response) => {
     }
 
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", "attachment; filename=Direct_Installation_Template.xlsx");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=${prefill ? `Direct_Installation_Data_${new Date().toISOString().slice(0, 10)}` : "Direct_Installation_Template"}.xlsx`
+    );
     await wb.xlsx.write(res);
     res.end();
   } catch (error: any) {
