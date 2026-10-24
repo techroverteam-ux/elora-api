@@ -2728,6 +2728,225 @@ export const generateBulkPPT = async (req: Request, res: Response) => {
   }
 };
 
+// --- Helper: Generate Rich Recce Excel Sheet (Excluding Costing, PO, Invoice, and Image URLs) ---
+const populateRecceWorksheet = (worksheet: any, stores: any[]) => {
+  const headers = [
+    // 1. Store & Client Identifiers
+    "Store ID",
+    "Store Code",
+    "Store Name",
+    "Dealer Code",
+    "Client Code",
+    "Client Name",
+    "Vendor Code",
+    "Project ID",
+
+    // 2. Location Details
+    "Zone",
+    "State",
+    "District",
+    "City",
+    "Area",
+    "Address",
+    "Pincode",
+    "GPS Coordinates",
+
+    // 3. Contact Information
+    "Contact Person",
+    "Mobile Number",
+
+    // 4. Recce Board & Measurement Details
+    "Element Name",
+    "Quantity",
+    "Width (Inch)",
+    "Height (Inch)",
+    "Width (Ft.)",
+    "Height (Ft.)",
+    "Board Size (Sq.Ft.)",
+    "Board Size (Sq.Inch)",
+    "Board Status",
+    "Rejection Reason",
+
+    // 5. Workflow, Assignments & Dates
+    "Priority",
+    "Recce Assigned To",
+    "Recce Assigned Date",
+    "Recce Submitted Date",
+    "Recce Submitted By",
+    "Installation Assigned To",
+    "Store Overall Status",
+
+    // 6. Notes & Remarks
+    "Recce Notes",
+    "Store Remark"
+  ];
+
+  const headerRow = worksheet.getRow(1);
+  headers.forEach((header, index) => {
+    const cell = headerRow.getCell(index + 1);
+    cell.value = header;
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEAB308" } };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+  });
+  headerRow.height = 28;
+
+  worksheet.columns = [
+    { width: 16 }, { width: 14 }, { width: 28 }, { width: 14 }, { width: 14 }, { width: 22 }, { width: 14 }, { width: 16 },
+    { width: 12 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 35 }, { width: 12 }, { width: 22 },
+    { width: 18 }, { width: 16 },
+    { width: 22 }, { width: 10 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 18 }, { width: 18 }, { width: 16 }, { width: 25 },
+    { width: 12 }, { width: 20 }, { width: 18 }, { width: 18 }, { width: 20 }, { width: 20 }, { width: 20 },
+    { width: 25 }, { width: 25 }
+  ];
+
+  const formatRecceDate = (date?: any) => {
+    if (!date) return "-";
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return "-";
+    const day = String(d.getDate()).padStart(2, "0");
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return `${day}-${months[d.getMonth()]}-${d.getFullYear()}`;
+  };
+
+  stores.forEach((store: any) => {
+    const clientName = (store.clientId as any)?.clientName || "-";
+    const reccePerson = (store.workflow?.recceAssignedTo as any)?.name || "-";
+    const installPerson = (store.workflow?.installationAssignedTo as any)?.name || "-";
+    const coords = store.location?.coordinates && (store.location.coordinates.lat != null || store.location.coordinates.lng != null)
+      ? `${store.location.coordinates.lat}, ${store.location.coordinates.lng}`
+      : "-";
+
+    const baseStoreData = [
+      store.storeId || store.dealerCode || "-",
+      store.storeCode || "-",
+      store.storeName || "-",
+      store.dealerCode || "-",
+      store.clientCode || "-",
+      clientName,
+      store.vendorCode || "-",
+      store.projectID || "-",
+
+      store.location?.zone || "-",
+      store.location?.state || "-",
+      store.location?.district || "-",
+      store.location?.city || "-",
+      store.location?.area || "-",
+      store.location?.address || "-",
+      store.location?.pincode || "-",
+      coords,
+
+      store.contact?.personName || "-",
+      store.contact?.mobile || "-",
+    ];
+
+    const workflowAndNotes = [
+      store.workflow?.priority || "-",
+      reccePerson,
+      formatRecceDate(store.recce?.assignedDate),
+      formatRecceDate(store.recce?.submittedDate),
+      store.recce?.submittedBy || "-",
+      installPerson,
+      store.currentStatus || "-",
+
+      store.recce?.notes || "-",
+      store.remark || "-"
+    ];
+
+    const reccePhotos = store.recce?.reccePhotos || [];
+    if (reccePhotos.length > 0) {
+      reccePhotos.forEach((photo: any) => {
+        const w = Number(photo.measurements?.width) || 0;
+        const h = Number(photo.measurements?.height) || 0;
+        const unit = (photo.measurements?.unit || "in").toLowerCase();
+
+        const widthInch = unit === "in" ? w : Number((w * 12).toFixed(2));
+        const heightInch = unit === "in" ? h : Number((h * 12).toFixed(2));
+        const widthFt = unit === "in" ? Number((w / 12).toFixed(2)) : w;
+        const heightFt = unit === "in" ? Number((h / 12).toFixed(2)) : h;
+        const boardSizeSqFt = Number((widthFt * heightFt).toFixed(2));
+        const boardSizeSqInch = Number((widthInch * heightInch).toFixed(2));
+
+        const status = (photo.approvalStatus || "PENDING").toUpperCase();
+        const rejectionReason = photo.rejectionReason || "-";
+
+        const elements = photo.elements || [];
+        if (elements.length > 0) {
+          elements.forEach((el: any) => {
+            const boardData = [
+              el.elementName || "-",
+              el.quantity || 1,
+              widthInch,
+              heightInch,
+              widthFt,
+              heightFt,
+              boardSizeSqFt,
+              boardSizeSqInch,
+              status,
+              rejectionReason
+            ];
+            const row = worksheet.addRow([...baseStoreData, ...boardData, ...workflowAndNotes]);
+            row.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+            row.height = 25;
+          });
+        } else {
+          const boardData = [
+            "-",
+            1,
+            widthInch,
+            heightInch,
+            widthFt,
+            heightFt,
+            boardSizeSqFt,
+            boardSizeSqInch,
+            status,
+            rejectionReason
+          ];
+          const row = worksheet.addRow([...baseStoreData, ...boardData, ...workflowAndNotes]);
+          row.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+          row.height = 25;
+        }
+      });
+    } else {
+      const w = Number(store.specs?.width) || 0;
+      const h = Number(store.specs?.height) || 0;
+      const widthFt = w || "-";
+      const heightFt = h || "-";
+      const widthInch = w ? Number((w * 12).toFixed(2)) : "-";
+      const heightInch = h ? Number((h * 12).toFixed(2)) : "-";
+      const boardSizeSqFt = store.specs?.boardSize || (w && h ? Number((w * h).toFixed(2)) : "-");
+      const boardSizeSqInch = w && h ? Number((w * 12 * h * 12).toFixed(2)) : "-";
+
+      const boardData = [
+        store.specs?.type || "-",
+        store.specs?.qty || "-",
+        widthInch,
+        heightInch,
+        widthFt,
+        heightFt,
+        boardSizeSqFt,
+        boardSizeSqInch,
+        "PENDING",
+        "-"
+      ];
+      const row = worksheet.addRow([...baseStoreData, ...boardData, ...workflowAndNotes]);
+      row.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+      row.height = 25;
+    }
+  });
+
+  worksheet.eachRow((row: any) => {
+    row.eachCell((cell: any) => {
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFD1D5DB" } },
+        left: { style: "thin", color: { argb: "FFD1D5DB" } },
+        bottom: { style: "thin", color: { argb: "FFD1D5DB" } },
+        right: { style: "thin", color: { argb: "FFD1D5DB" } },
+      };
+    });
+  });
+};
+
 export const exportRecceTasks = async (req: Request | any, res: Response) => {
   try {
     const ExcelJS = require("exceljs");
@@ -2752,166 +2971,22 @@ export const exportRecceTasks = async (req: Request | any, res: Response) => {
       query["workflow.recceAssignedTo"] = req.user._id;
     }
     const stores = await Store.find(query)
-      .populate("workflow.recceAssignedTo", "name")
+      .populate("clientId", "clientName")
+      .populate("workflow.recceAssignedTo workflow.installationAssignedTo", "name")
       .sort({ updatedAt: -1 });
+
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet("Recce Tasks");
-    worksheet.mergeCells("A1:G3");
-    const titleCell = worksheet.getCell("A1");
-    titleCell.value = "Recce Inspection Report";
-    titleCell.font = { size: 18, bold: true, color: { argb: "FF1F2937" } };
-    titleCell.alignment = { vertical: "middle", horizontal: "center" };
-    const headers = [
-      "Store Name",
-      "Dealer Code",
-      "City",
-      "Address",
-      "Board Type",
-      "Width (Ft.)",
-      "Height (Ft.)",
-      "Qty",
-      "Board Size (Sq.Ft.)",
-      "Board Rate/Sq.Ft.",
-      "Total Board Cost",
-      "Status",
-      "Recce Assigned To",
-      "Recce Date",
-    ];
-    const headerRow = worksheet.getRow(5);
-    headers.forEach((header, index) => {
-      const cell = headerRow.getCell(index + 1);
-      cell.value = header;
-      cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 12 };
-      cell.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FFEAB308" },
-      };
-      cell.alignment = { vertical: "middle", horizontal: "center" };
-    });
-    headerRow.height = 25;
-    const formatDate = (date: Date) => {
-      const months = [
-        "Jan",
-        "Feb",
-        "Mar",
-        "Apr",
-        "May",
-        "Jun",
-        "Jul",
-        "Aug",
-        "Sep",
-        "Oct",
-        "Nov",
-        "Dec",
-      ];
-      const d = new Date(date);
-      return `${d.getDate()}-${months[d.getMonth()]}-${d.getFullYear()}`;
-    };
-    stores.forEach((store: any, index) => {
-      const row = worksheet.getRow(6 + index);
-      
-      // Calculate board specifications from recce data or specs
-      let boardType = "-";
-      let width = "-";
-      let height = "-";
-      let qty = "-";
-      let boardSize = "-";
-      let boardRate = "-";
-      let totalBoardCost = "-";
-      
-      if (store.recce?.reccePhotos && store.recce.reccePhotos.length > 0) {
-        const photo = store.recce.reccePhotos[0];
-        boardType = photo.elements?.[0]?.elementName || "-";
-        const w = photo.measurements?.width || 0;
-        const h = photo.measurements?.height || 0;
-        const unit = photo.measurements?.unit || "in";
-        width = unit === "in" ? (w / 12).toFixed(2) : w.toString();
-        height = unit === "in" ? (h / 12).toFixed(2) : h.toString();
-        qty = photo.elements?.[0]?.quantity || 1;
-        const widthFt = unit === "in" ? w / 12 : w;
-        const heightFt = unit === "in" ? h / 12 : h;
-        boardSize = (widthFt * heightFt).toFixed(2);
-        boardRate = photo.elements?.[0]?.customRate || store.costDetails?.boardRate || 0;
-        totalBoardCost = store.costDetails?.totalBoardCost || 0;
-      } else if (store.specs) {
-        boardType = store.specs.type || "-";
-        width = store.specs.width || "-";
-        height = store.specs.height || "-";
-        qty = store.specs.qty || "-";
-        boardSize = store.specs.boardSize || "-";
-        boardRate = store.costDetails?.boardRate || "-";
-        totalBoardCost = store.costDetails?.totalBoardCost || "-";
-      }
-      
-      row.values = [
-        store.storeName,
-        store.dealerCode,
-        store.location.city,
-        store.location.address,
-        boardType,
-        width,
-        height,
-        qty,
-        boardSize,
-        boardRate,
-        totalBoardCost,
-        store.currentStatus,
-        store.workflow.recceAssignedTo?.name || "N/A",
-        store.recce?.submittedDate
-          ? formatDate(store.recce.submittedDate)
-          : "-",
-      ];
-      row.alignment = {
-        vertical: "middle",
-        horizontal: "center",
-        wrapText: true,
-      };
-      row.height = 40;
-      if (index % 2 === 0) {
-        row.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: "FFF9FAFB" },
-        };
-      }
-    });
-    worksheet.columns = [
-      { width: 35 },
-      { width: 18 },
-      { width: 18 },
-      { width: 45 },
-      { width: 20 },
-      { width: 12 },
-      { width: 12 },
-      { width: 8 },
-      { width: 15 },
-      { width: 15 },
-      { width: 18 },
-      { width: 25 },
-      { width: 25 },
-      { width: 18 },
-    ];
-    worksheet.eachRow((row: Row, rowNumber: number) => {
-      if (rowNumber >= 5) {
-        row.eachCell((cell: Cell) => {
-          cell.border = {
-            top: { style: "thin", color: { argb: "FFD1D5DB" } },
-            left: { style: "thin", color: { argb: "FFD1D5DB" } },
-            bottom: { style: "thin", color: { argb: "FFD1D5DB" } },
-            right: { style: "thin", color: { argb: "FFD1D5DB" } },
-          };
-        });
-      }
-    });
+    const worksheet = workbook.addWorksheet("Recce Details");
+    populateRecceWorksheet(worksheet, stores);
+
     const buffer = await workbook.xlsx.writeBuffer();
     res.setHeader(
       "Content-Type",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     );
     res.setHeader(
       "Content-Disposition",
-      "attachment; filename=Recce_Tasks.xlsx",
+      `attachment; filename=Recce_Tasks_${new Date().toISOString().split("T")[0]}.xlsx`
     );
     res.send(buffer);
   } catch (error: any) {
@@ -3969,7 +4044,9 @@ export const generateStoreExcel = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const type = req.url.includes('/installation') ? 'installation' : 'recce';
-    const store = await Store.findById(id).populate("workflow.recceAssignedTo workflow.installationAssignedTo", "name");
+    const store = await Store.findById(id)
+      .populate("clientId", "clientName")
+      .populate("workflow.recceAssignedTo workflow.installationAssignedTo", "name");
 
     if (!store) {
       return res.status(404).json({ message: "Store not found" });
@@ -3977,11 +4054,25 @@ export const generateStoreExcel = async (req: Request, res: Response) => {
 
     const ExcelJS = require("exceljs");
     const workbook = new ExcelJS.Workbook();
+
+    if (type === 'recce') {
+      const worksheet = workbook.addWorksheet("Recce Details");
+      populateRecceWorksheet(worksheet, [store]);
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const safeStoreName = (store.storeName || "Store").replace(/[/\\?%*:|"<>]/g, "_");
+      const safeStoreId = (store.storeId || store.dealerCode || "ID").replace(/[/\\?%*:|"<>]/g, "_");
+      const filename = `RECCE_${safeStoreName}_${safeStoreId}.xlsx`;
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.send(buffer);
+    }
+
     const worksheet = workbook.addWorksheet("Store Details");
 
     const headers = [
       "Store ID", "Dealer Code", "Client Code", "Store Name", "City", "Address", "Mobile No",
-      "Element", "Width (Inch)", "Height (Inch)", "RECCE Person", "Installation Person"
+      "Element", "Width (Inch)", "Height (Inch)", "Status", "RECCE Person", "Installation Person"
     ];
 
     const headerRow = worksheet.getRow(1);
@@ -3996,7 +4087,7 @@ export const generateStoreExcel = async (req: Request, res: Response) => {
 
     worksheet.columns = [
       { width: 15 }, { width: 15 }, { width: 15 }, { width: 30 }, { width: 15 }, { width: 40 },
-      { width: 15 }, { width: 30 }, { width: 15 }, { width: 15 }, { width: 20 }, { width: 20 }
+      { width: 15 }, { width: 30 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 20 }, { width: 20 }
     ];
 
     const reccePhotos = store.recce?.reccePhotos || [];
@@ -4006,6 +4097,7 @@ export const generateStoreExcel = async (req: Request, res: Response) => {
     if (reccePhotos.length > 0) {
       reccePhotos.forEach((photo: any, index: number) => {
         const elements = photo.elements || [];
+        const status = (photo.approvalStatus || "PENDING").toUpperCase();
         if (elements.length > 0) {
           elements.forEach((el: any) => {
             const row = worksheet.addRow([
@@ -4019,6 +4111,7 @@ export const generateStoreExcel = async (req: Request, res: Response) => {
               el.elementName,
               photo.measurements.unit === "in" ? photo.measurements.width : (photo.measurements.width * 12).toFixed(2),
               photo.measurements.unit === "in" ? photo.measurements.height : (photo.measurements.height * 12).toFixed(2),
+              status,
               reccePerson,
               installPerson
             ]);
@@ -4037,6 +4130,7 @@ export const generateStoreExcel = async (req: Request, res: Response) => {
             "-",
             photo.measurements.unit === "in" ? photo.measurements.width : (photo.measurements.width * 12).toFixed(2),
             photo.measurements.unit === "in" ? photo.measurements.height : (photo.measurements.height * 12).toFixed(2),
+            status,
             reccePerson,
             installPerson
           ]);
@@ -4054,6 +4148,7 @@ export const generateStoreExcel = async (req: Request, res: Response) => {
         store.location.address || "-",
         store.contact?.mobile || "-",
         "-", "-", "-",
+        "PENDING",
         reccePerson,
         installPerson
       ]);
@@ -4073,7 +4168,7 @@ export const generateStoreExcel = async (req: Request, res: Response) => {
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
-    const filename = type === 'installation' ? `INSTALLATION_${store.storeName}_${store.storeId}.xlsx` : `RECCE_${store.storeName}_${store.storeId}.xlsx`;
+    const filename = `INSTALLATION_${store.storeName}_${store.storeId}.xlsx`;
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.send(buffer);
@@ -4092,7 +4187,10 @@ export const exportRecceForApproval = async (req: Request | any, res: Response) 
       return res.status(400).json({ message: "No stores selected" });
     }
 
-    const stores = await Store.find({ _id: { $in: storeIds } }).populate("clientId", "clientName");
+    const stores = await Store.find({ _id: { $in: storeIds } })
+      .populate("clientId", "clientName")
+      .populate("workflow.recceAssignedTo workflow.installationAssignedTo", "name")
+      .sort({ updatedAt: -1 });
 
     if (stores.length === 0) {
       return res.status(404).json({ message: "No stores found" });
@@ -4100,107 +4198,12 @@ export const exportRecceForApproval = async (req: Request | any, res: Response) 
 
     const ExcelJS = require("exceljs");
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet("Recce Approval");
+    const worksheet = workbook.addWorksheet("Recce Details");
 
-    const headers = [
-      "Store ID", "Store Name", "Store Code", "Client Code", "Client Name",
-      "City", "District", "State", "Address", "Contact", "Mobile",
-      "Photo Index", "Photo URL", "Width (in)", "Height (in)", "Unit",
-      "Element", "Board Rate", "Total Board Cost", "Angle Charges", "Scaffolding",
-      "Transportation", "Total Cost", "Current Status", "STATUS", "REJECTION_REASON"
-    ];
-
-    const headerRow = worksheet.getRow(1);
-    headers.forEach((header, index) => {
-      const cell = headerRow.getCell(index + 1);
-      cell.value = header;
-      cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4472C4" } };
-      cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-    });
-    headerRow.height = 30;
-
-    worksheet.columns = [
-      { width: 15 }, { width: 25 }, { width: 15 }, { width: 12 }, { width: 20 },
-      { width: 12 }, { width: 12 }, { width: 12 }, { width: 35 }, { width: 15 }, { width: 12 },
-      { width: 10 }, { width: 50 }, { width: 10 }, { width: 10 }, { width: 8 },
-      { width: 20 }, { width: 12 }, { width: 15 }, { width: 12 }, { width: 12 },
-      { width: 12 }, { width: 12 }, { width: 15 }, { width: 15 }, { width: 30 }
-    ];
-
-    let rowIndex = 2;
-    stores.forEach((store: any) => {
-      const reccePhotos = store.recce?.reccePhotos || [];
-      if (reccePhotos.length === 0) return;
-
-      reccePhotos.forEach((photo: any, photoIndex: number) => {
-        const row = worksheet.getRow(rowIndex);
-        row.values = [
-          store.storeId || store.dealerCode,
-          store.storeName,
-          store.dealerCode,
-          store.clientCode || "-",
-          (store.clientId as any)?.clientName || "-",
-          store.location.city || "-",
-          store.location.district || "-",
-          store.location.state || "-",
-          store.location.address || "-",
-          store.contact?.personName || "-",
-          store.contact?.mobile || "-",
-          photoIndex,
-          photo.photo || "-",
-          photo.measurements.width,
-          photo.measurements.height,
-          photo.measurements.unit,
-          photo.elements?.[0]?.elementName || "-",
-          store.costDetails?.boardRate || 0,
-          store.costDetails?.totalBoardCost || 0,
-          store.costDetails?.angleCharges || 0,
-          store.costDetails?.scaffoldingCharges || 0,
-          store.costDetails?.transportation || 0,
-          store.commercials?.totalCost || 0,
-          photo.approvalStatus || "PENDING",
-          photo.approvalStatus || "PENDING",
-          photo.rejectionReason || ""
-        ];
-
-        // Make photo URL clickable
-        if (photo.photo) {
-          const urlCell = row.getCell(13);
-          urlCell.value = { text: "View Photo", hyperlink: photo.photo };
-          urlCell.font = { color: { argb: "FF0000FF" }, underline: true };
-        }
-
-        // Add dropdown validation for STATUS column (column 25)
-        const statusCell = row.getCell(25);
-        statusCell.dataValidation = {
-          type: "list",
-          allowBlank: false,
-          formulae: ['"PENDING,APPROVED,REJECTED"'],
-          showErrorMessage: true,
-          errorTitle: "Invalid Status",
-          error: "Please select PENDING, APPROVED, or REJECTED"
-        };
-
-        row.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-        row.height = 25;
-        rowIndex++;
-      });
-    });
-
-    worksheet.eachRow((row: Row, rowNumber: number) => {
-      row.eachCell((cell: Cell) => {
-        cell.border = {
-          top: { style: "thin", color: { argb: "FFD1D5DB" } },
-          left: { style: "thin", color: { argb: "FFD1D5DB" } },
-          bottom: { style: "thin", color: { argb: "FFD1D5DB" } },
-          right: { style: "thin", color: { argb: "FFD1D5DB" } },
-        };
-      });
-    });
+    populateRecceWorksheet(worksheet, stores);
 
     const buffer = await workbook.xlsx.writeBuffer();
-    const filename = `Recce_Approval_${stores.length}_Stores_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const filename = `Recce_Export_${stores.length}_Stores_${new Date().toISOString().split('T')[0]}.xlsx`;
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.send(buffer);
@@ -4221,11 +4224,23 @@ export const importRecceApproval = async (req: Request | any, res: Response) => 
     const ExcelJS = require("exceljs");
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(file.buffer);
-    const worksheet = workbook.getWorksheet("Recce Approval");
+    const worksheet = workbook.getWorksheet("Recce Details") || workbook.getWorksheet("Recce Approval") || workbook.worksheets[0];
 
     if (!worksheet) {
-      return res.status(400).json({ message: "Invalid Excel format. Sheet 'Recce Approval' not found." });
+      return res.status(400).json({ message: "Invalid Excel format. Sheet not found." });
     }
+
+    const colMap: Record<string, number> = {};
+    const headerRow = worksheet.getRow(1);
+    headerRow.eachCell((cell: any, colNum: number) => {
+      const val = String(cell.value || "").trim().toUpperCase();
+      colMap[val] = colNum;
+    });
+
+    const storeIdCol = colMap["STORE ID"] || 1;
+    const photoIndexCol = colMap["PHOTO INDEX"] || colMap["PHOTO #"] || 12;
+    const statusCol = colMap["BOARD STATUS"] || colMap["STATUS"] || 25;
+    const reasonCol = colMap["REJECTION REASON"] || colMap["REJECTION_REASON"] || 26;
 
     const updates: any[] = [];
     const errors: any[] = [];
@@ -4233,10 +4248,10 @@ export const importRecceApproval = async (req: Request | any, res: Response) => 
     worksheet.eachRow((row: any, rowNumber: number) => {
       if (rowNumber === 1) return; // Skip header
 
-      const storeId = row.getCell(1).value;
-      const photoIndex = row.getCell(12).value;
-      const status = row.getCell(25).value;
-      const rejectionReason = row.getCell(26).value || "";
+      const storeId = row.getCell(storeIdCol).value;
+      const photoIndex = row.getCell(photoIndexCol).value;
+      const status = row.getCell(statusCol).value;
+      const rejectionReason = row.getCell(reasonCol).value || "";
 
       if (!storeId || photoIndex === null || photoIndex === undefined) {
         errors.push({ row: rowNumber, error: "Missing Store ID or Photo Index" });
