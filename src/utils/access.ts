@@ -11,13 +11,15 @@ import Store from "../modules/store/store.model";
 // are visible to Super Admin only.
 // ---------------------------------------------------------------------------
 
+// Compare letters/digits only, so "SUB_ADMIN", "Sub Admin", "sub-admin" and
+// "SubAdmin" all match.
+const squash = (v: any) => String(v ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
 export const roleKeys = (role: any): string[] =>
-  [role?.code, role?.name]
-    .filter(Boolean)
-    .map((v: any) => String(v).trim().toUpperCase().replace(/[\s-]+/g, "_"));
+  [role?.code, role?.name].filter(Boolean).map(squash);
 
 export const userHasRole = (user: any, ...wanted: string[]) =>
-  (user?.roles || []).some((r: any) => roleKeys(r).some((k) => wanted.includes(k)));
+  (user?.roles || []).some((r: any) => roleKeys(r).some((k) => wanted.map(squash).includes(k)));
 
 export const isSuperAdminUser = (user: any) => userHasRole(user, "SUPER_ADMIN");
 
@@ -121,3 +123,19 @@ export const requireStoreIdsInScope = async (req: any, res: Response, next: Next
 
 /** Only Super Admin can map clients to users or hand out admin roles. */
 export const SUPER_ADMIN_ONLY_ROLE_CODES = ["SUPER_ADMIN", "SUB_ADMIN"];
+
+/**
+ * Modules a Sub Admin never gets, whatever their role grid says. Element
+ * *reads* stay open (client and store forms need the element list); only
+ * element create/edit/delete is blocked.
+ */
+export const SUB_ADMIN_BLOCKED_MODULES = ["users", "roles", "elements"];
+
+/** Route guard: refuse Sub Admins (used on element create/edit/delete). */
+export const denySubAdmin = (req: any, res: Response, next: NextFunction) => {
+  if (isSubAdminUser(req.user)) {
+    res.status(403).json({ message: "Sub Admins don't have access to this module." });
+    return;
+  }
+  next();
+};

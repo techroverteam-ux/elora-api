@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { isSuperAdminUser, isSubAdminUser } from "../utils/access";
+import { isSuperAdminUser, isSubAdminUser, SUB_ADMIN_BLOCKED_MODULES } from "../utils/access";
 
 /**
  * Checks if the user has at least ONE role that grants the required permission.
@@ -23,9 +23,20 @@ export const checkPermission = (
         return;
       }
 
-      // Super Admin and Sub Admin have every permission. A Sub Admin's data is
-      // limited to their mapped clients by the controllers, not here.
-      if (isSuperAdminUser(req.user) || isSubAdminUser(req.user)) {
+      // Super Admin has every permission.
+      if (isSuperAdminUser(req.user)) {
+        next();
+        return;
+      }
+
+      // Sub Admin has every permission except User Management, Role Management
+      // and Element Mapping. Their data is limited to their mapped clients by
+      // the controllers, not here.
+      if (isSubAdminUser(req.user)) {
+        if (SUB_ADMIN_BLOCKED_MODULES.includes(resource)) {
+          res.status(403).json({ message: "Sub Admins don't have access to this module." });
+          return;
+        }
         next();
         return;
       }
