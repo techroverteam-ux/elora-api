@@ -85,6 +85,19 @@ export interface StoreDocument extends Document {
     installationAssignedTo?: mongoose.Types.ObjectId;
     installationAssignedBy?: mongoose.Types.ObjectId;
     priority: "HIGH" | "MEDIUM" | "LOW";
+    // Every transfer / unassign of a recce or installation job, newest last
+    transferHistory?: Array<{
+      stage: "RECCE" | "INSTALLATION";
+      action: "TRANSFER" | "UNASSIGN";
+      from?: mongoose.Types.ObjectId;
+      fromName?: string;
+      to?: mongoose.Types.ObjectId;
+      toName?: string;
+      by?: mongoose.Types.ObjectId;
+      byName?: string;
+      at: Date;
+      reason?: string;
+    }>;
   };
 
   recce?: {
@@ -209,6 +222,21 @@ const StoreSchema = new Schema<StoreDocument>(
       recceAssignedBy: { type: Schema.Types.ObjectId, ref: "User" },
       installationAssignedTo: { type: Schema.Types.ObjectId, ref: "User" },
       installationAssignedBy: { type: Schema.Types.ObjectId, ref: "User" },
+      transferHistory: [
+        {
+          stage: { type: String, enum: ["RECCE", "INSTALLATION"] },
+          action: { type: String, enum: ["TRANSFER", "UNASSIGN"], default: "TRANSFER" },
+          from: { type: Schema.Types.ObjectId, ref: "User" },
+          fromName: String,
+          to: { type: Schema.Types.ObjectId, ref: "User" },
+          toName: String,
+          by: { type: Schema.Types.ObjectId, ref: "User" },
+          byName: String,
+          at: { type: Date, default: Date.now },
+          reason: String,
+          _id: false,
+        },
+      ],
       priority: {
         type: String,
         enum: ["HIGH", "MEDIUM", "LOW"],

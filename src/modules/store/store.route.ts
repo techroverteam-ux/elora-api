@@ -24,6 +24,10 @@ import {
   generateStoreExcel,
   exportRecceForApproval,
   importRecceApproval,
+  transferStores,
+  getPendingWork,
+  transferUserWork,
+  directInstallStores,
   getCities,
 } from "./store.controller";
 import { generateReccePDF, generateInstallationPDF, generateBulkPDF } from "./pdf.controller";
@@ -77,6 +81,12 @@ router
 
 router.post("/assign", checkPermission("stores", "edit"), requireStoreIdsInScope, assignStoresBulk);
 router.post("/unassign", checkPermission("stores", "edit"), requireStoreIdsInScope, unassignStoresBulk);
+// Move a job (or all of a person's pending jobs) to someone else
+router.post("/transfer", checkPermission("stores", "edit"), requireStoreIdsInScope, transferStores);
+router.get("/pending-work/:userId", checkPermission("stores", "edit"), getPendingWork);
+router.post("/transfer-user-work", checkPermission("stores", "edit"), transferUserWork);
+// New store straight to an installer (no recce)
+router.post("/direct-install", checkPermission("stores", "edit"), directInstallStores);
 
 router.post(
   "/:id/recce",

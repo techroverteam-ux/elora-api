@@ -3,6 +3,7 @@ import { Request, Response } from "express";
 import Store, { StoreStatus } from "./store.model";
 import Client from "../client/client.model";
 import { getClientScope, applyStoreScope, isStoreInScope, isClientInScope, isSubAdminUser, isSuperAdminUser as isSuperAdminUserX } from "../../utils/access";
+import mongoose from "mongoose";
 import User from "../user/user.model";
 import * as XLSX from "xlsx";
 import fs from "fs";
@@ -80,6 +81,13 @@ const userHasRole = (user: any, ...wanted: string[]) =>
 const isAdminUser = (user: any) => userHasRole(user, "SUPER_ADMIN", "ADMIN", "SUB_ADMIN");
 const isRecceUser = (user: any) => userHasRole(user, "RECCE");
 const isInstallationUser = (user: any) => userHasRole(user, "INSTALLATION");
+
+/** A field user submitting work for a job that has since been transferred to someone else. */
+const movedAwayFrom = (user: any, store: any, field: "recceAssignedTo" | "installationAssignedTo") => {
+  if (isAdminUser(user)) return false;
+  const assignee = store?.workflow?.[field];
+  return !!assignee && String(assignee) !== String(user?._id);
+};
 
 
 // Helper: fuzzy search for column headers
@@ -942,6 +950,11 @@ export const assignStoresBulk = async (req: Request | any, res: Response) => {
     }
 
     const assignedBy = req.user._id; // Track who assigned the task
+
+    // The person must be active and have the role for this stage
+    const roleCheck = await checkAssignee(userId, stage);
+    if (roleCheck.error) return res.status(400).json({ message: roleCheck.error });
+
     let updateData = {};
     let validationQuery = {};
 
@@ -1013,47 +1026,359 @@ export const assignStoresBulk = async (req: Request | any, res: Response) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// Transfer / unassign
+//
+// A job can move to another person only while nobody has submitted work:
+//   recce:        RECCE_ASSIGNED, RECCE_REJECTED (redo)
+//   installation: INSTALLATION_ASSIGNED, INSTALLATION_REJECTED (redo),
+//                 or RECCE_APPROVED with an installer already named
+// The status and any work already saved stay as they are; every move is
+// written to workflow.transferHistory.
+// ---------------------------------------------------------------------------
+type Stage = "RECCE" | "INSTALLATION";
+const TRANSFERABLE: Record<Stage, string[]> = {
+  RECCE: [StoreStatus.RECCE_ASSIGNED, StoreStatus.RECCE_REJECTED],
+  INSTALLATION: [StoreStatus.INSTALLATION_ASSIGNED, StoreStatus.INSTALLATION_REJECTED, StoreStatus.RECCE_APPROVED],
+};
+const assigneeField = (stage: Stage) => (stage === "RECCE" ? "recceAssignedTo" : "installationAssignedTo");
+const stageLabel = (stage: Stage) => (stage === "RECCE" ? "recce" : "installation");
+
+/** The person must exist, be active and hold the stage's role. */
+const checkAssignee = async (userId: any, stage: any): Promise<{ user?: any; error?: string }> => {
+  if (stage !== "RECCE" && stage !== "INSTALLATION") return { error: "Invalid stage" };
+  if (!userId || !mongoose.isValidObjectId(String(userId))) return { error: "No user selected" };
+  const user: any = await User.findById(userId).populate("roles", "name code").select("name email isActive roles").lean();
+  if (!user) return { error: "Selected user not found" };
+  if (!user.isActive) return { error: `${user.name} is inactive` };
+  if (!userHasRole(user, stage)) return { error: `${user.name} doesn't have the ${stage === "RECCE" ? "Recce" : "Installation"} role` };
+  return { user };
+};
+
+/** Why a store can't be transferred for this stage, or "" when it can. */
+const transferBlocker = (store: any, stage: Stage): string => {
+  const assignee = store.workflow?.[assigneeField(stage)];
+  if (!assignee) return `no ${stageLabel(stage)} person assigned yet (use Assign)`;
+  if (!TRANSFERABLE[stage].includes(store.currentStatus)) {
+    return `${stageLabel(stage)} already ${String(store.currentStatus).replace(/_/g, " ").toLowerCase()}`;
+  }
+  return "";
+};
+
+const transferCore = async (req: any, storeIds: string[], stage: Stage, toUser: any, reason: string) => {
+  const stores: any[] = await Store.find({ _id: { $in: storeIds } }).populate(`workflow.${assigneeField(stage)}`, "name");
+  const scope = await getClientScope(req);
+  const transferred: string[] = [];
+  const skipped: Array<{ storeId: string; dealerCode: string; reason: string }> = [];
+  const now = new Date();
+
+  for (const store of stores) {
+    const label = store.dealerCode || store.storeId || String(store._id);
+    if (!isStoreInScope(scope, store)) {
+      skipped.push({ storeId: String(store._id), dealerCode: label, reason: "client not assigned to you" });
+      continue;
+    }
+    const blocker = transferBlocker(store, stage);
+    if (blocker) {
+      skipped.push({ storeId: String(store._id), dealerCode: label, reason: blocker });
+      continue;
+    }
+    const from: any = store.workflow?.[assigneeField(stage)];
+    if (from && String(from._id || from) === String(toUser._id)) {
+      skipped.push({ storeId: String(store._id), dealerCode: label, reason: `already with ${toUser.name}` });
+      continue;
+    }
+
+    store.set(`workflow.${assigneeField(stage)}`, toUser._id);
+    store.set(`workflow.${stage === "RECCE" ? "recceAssignedBy" : "installationAssignedBy"}`, req.user._id);
+    store.set(`${stage === "RECCE" ? "recce" : "installation"}.assignedDate`, now);
+    // A direct installation waiting at RECCE_APPROVED with a named installer moves on
+    if (stage === "INSTALLATION" && store.currentStatus === StoreStatus.RECCE_APPROVED) {
+      store.currentStatus = StoreStatus.INSTALLATION_ASSIGNED;
+    }
+    store.set("workflow.transferHistory", [
+      ...(store.workflow?.transferHistory || []),
+      {
+        stage,
+        action: "TRANSFER",
+        from: from?._id || from,
+        fromName: from?.name || "",
+        to: toUser._id,
+        toName: toUser.name,
+        by: req.user._id,
+        byName: req.user.name,
+        at: now,
+        reason,
+      },
+    ]);
+    await store.save();
+    transferred.push(String(store._id));
+  }
+  return { transferred, skipped };
+};
+
+// POST /stores/transfer   { storeIds, userId, stage: "RECCE"|"INSTALLATION", reason? }
+export const transferStores = async (req: Request | any, res: Response) => {
+  try {
+    const { storeIds, userId, stage } = req.body;
+    const reason = String(req.body?.reason || "").trim().slice(0, 300);
+    if (!Array.isArray(storeIds) || storeIds.length === 0) return res.status(400).json({ message: "No stores selected" });
+    const check = await checkAssignee(userId, stage);
+    if (check.error) return res.status(400).json({ message: check.error });
+
+    const result = await transferCore(req, storeIds, stage, check.user, reason);
+    const n = result.transferred.length;
+    res.status(n ? 200 : 400).json({
+      message: n
+        ? `${n} ${stageLabel(stage)} job${n === 1 ? "" : "s"} moved to ${check.user.name}${result.skipped.length ? `, ${result.skipped.length} skipped` : ""}`
+        : `Nothing transferred: ${result.skipped.map((x) => `${x.dealerCode} (${x.reason})`).join(", ")}`,
+      ...result,
+    });
+  } catch (error: any) {
+    console.error("Transfer error:", error);
+    res.status(500).json({ message: "Transfer failed", error: error.message });
+  }
+};
+
+// POST /stores/unassign   { storeIds, stage, reason? }
+// Only before any work was submitted; the store goes back one step.
 export const unassignStoresBulk = async (req: Request | any, res: Response) => {
   try {
     const { storeIds, stage } = req.body;
-
-    if (!storeIds || !Array.isArray(storeIds) || storeIds.length === 0) {
+    const reason = String(req.body?.reason || "").trim().slice(0, 300);
+    if (!Array.isArray(storeIds) || storeIds.length === 0) {
       return res.status(400).json({ message: "No stores selected" });
     }
+    if (stage !== "RECCE" && stage !== "INSTALLATION") return res.status(400).json({ message: "Invalid stage" });
 
-    let updateData = {};
+    const allowed: string[] = stage === "RECCE" ? [StoreStatus.RECCE_ASSIGNED] : [StoreStatus.INSTALLATION_ASSIGNED, StoreStatus.RECCE_APPROVED];
+    const stores: any[] = await Store.find({ _id: { $in: storeIds } }).populate(`workflow.${assigneeField(stage)}`, "name");
+    const done: string[] = [];
+    const skipped: Array<{ dealerCode: string; reason: string }> = [];
+    const now = new Date();
 
-    if (stage === "RECCE") {
-      updateData = {
-        "workflow.recceAssignedTo": null,
-        "workflow.recceAssignedBy": null,
-        "workflow.recceAssignedDate": null,
-        currentStatus: StoreStatus.UPLOADED,
-      };
-    } else if (stage === "INSTALLATION") {
-      updateData = {
-        "workflow.installationAssignedTo": null,
-        "workflow.installationAssignedBy": null,
-        "workflow.installationAssignedDate": null,
-        currentStatus: StoreStatus.RECCE_APPROVED,
-      };
-    } else {
-      return res.status(400).json({ message: "Invalid stage" });
+    for (const store of stores) {
+      const from: any = store.workflow?.[assigneeField(stage)];
+      if (!from) {
+        skipped.push({ dealerCode: store.dealerCode, reason: `no ${stageLabel(stage)} person assigned` });
+        continue;
+      }
+      if (!allowed.includes(store.currentStatus)) {
+        skipped.push({ dealerCode: store.dealerCode, reason: `already ${String(store.currentStatus).replace(/_/g, " ").toLowerCase()}, use Transfer instead` });
+        continue;
+      }
+      store.set(`workflow.${assigneeField(stage)}`, null);
+      store.set(`workflow.${stage === "RECCE" ? "recceAssignedBy" : "installationAssignedBy"}`, null);
+      store.set(`${stage === "RECCE" ? "recce" : "installation"}.assignedDate`, null);
+      store.currentStatus = stage === "RECCE" ? StoreStatus.UPLOADED : StoreStatus.RECCE_APPROVED;
+      store.set("workflow.transferHistory", [
+        ...(store.workflow?.transferHistory || []),
+        { stage, action: "UNASSIGN", from: from._id, fromName: from.name, by: req.user._id, byName: req.user.name, at: now, reason },
+      ]);
+      await store.save();
+      done.push(String(store._id));
     }
 
-    const result = await Store.updateMany(
-      { _id: { $in: storeIds } },
-      { $set: updateData },
-    );
-
-    res.status(200).json({
-      message: `Successfully unassigned ${result.modifiedCount} stores.`,
-      result,
+    res.status(done.length ? 200 : 400).json({
+      message: done.length
+        ? `Unassigned ${done.length} store${done.length === 1 ? "" : "s"}${skipped.length ? `, ${skipped.length} skipped` : ""}`
+        : `Nothing unassigned: ${skipped.map((x) => `${x.dealerCode} (${x.reason})`).join(", ")}`,
+      unassigned: done,
+      skipped,
     });
   } catch (error: any) {
-    res
-      .status(500)
-      .json({ message: "Unassignment failed", error: error.message });
+    res.status(500).json({ message: "Unassignment failed", error: error.message });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Direct installation from the Stores page: a new store skips the recce and
+// goes straight to an installer. Boards come from the request (single store,
+// picked in the dialog) or from the store's own size/type (bulk).
+// ---------------------------------------------------------------------------
+const DIRECT_ASSIGNABLE: string[] = [StoreStatus.UPLOADED, StoreStatus.MANUALLY_ADDED, StoreStatus.RECCE_ASSIGNED];
+
+// POST /stores/direct-install   { userId, items: [{ storeId, boards?: [{ elementId, width, height, unit, quantity, remark }] }], reason? }
+export const directInstallStores = async (req: Request | any, res: Response) => {
+  try {
+    const { userId } = req.body;
+    const items: any[] = Array.isArray(req.body?.items) ? req.body.items : [];
+    const reason = String(req.body?.reason || "").trim().slice(0, 300);
+    if (items.length === 0) return res.status(400).json({ message: "No stores selected" });
+    const check = await checkAssignee(userId, "INSTALLATION");
+    if (check.error) return res.status(400).json({ message: check.error });
+    const installer = check.user;
+
+    const scope = await getClientScope(req);
+    const done: string[] = [];
+    const skipped: Array<{ storeId: string; dealerCode: string; reason: string }> = [];
+    const now = new Date();
+    const clientCache = new Map<string, any>();
+    const loadClient = async (store: any) => {
+      const key = String(store.clientId || store.clientCode || "");
+      if (!key) return null;
+      if (!clientCache.has(key)) {
+        clientCache.set(key, store.clientId ? await Client.findById(store.clientId).lean() : await Client.findOne({ clientCode: store.clientCode }).lean());
+      }
+      return clientCache.get(key);
+    };
+
+    for (const item of items) {
+      if (!mongoose.isValidObjectId(String(item?.storeId))) continue;
+      const store: any = await Store.findById(item.storeId).populate("workflow.recceAssignedTo", "name");
+      if (!store) continue;
+      const label = store.dealerCode || store.storeId || String(store._id);
+      const skip = (why: string) => skipped.push({ storeId: String(store._id), dealerCode: label, reason: why });
+
+      if (!isStoreInScope(scope, store)) { skip("client not assigned to you"); continue; }
+      if (!DIRECT_ASSIGNABLE.includes(store.currentStatus) || store.recce?.submittedDate) {
+        skip(`already ${String(store.currentStatus).replace(/_/g, " ").toLowerCase()}`);
+        continue;
+      }
+      const client = await loadClient(store);
+      if (!client) { skip("store has no client, so element rates are unknown"); continue; }
+      const clientElements: any[] = client.elements || [];
+
+      // Boards: from the dialog, or from the store's own size and board type
+      let boards: any[] = [];
+      if (Array.isArray(item.boards) && item.boards.length) {
+        let bad = "";
+        boards = item.boards.map((b: any, i: number) => {
+          const el = clientElements.find((e: any) => String(e.elementId) === String(b.elementId));
+          const width = Number(b.width);
+          const height = Number(b.height);
+          if (!el) bad = bad || `board ${i + 1}: element is not mapped to client ${client.clientCode}`;
+          if (!(width > 0) || !(height > 0)) bad = bad || `board ${i + 1}: width and height are required`;
+          return {
+            el,
+            width,
+            height,
+            unit: b.unit === "in" ? "in" : "ft",
+            quantity: Math.max(1, Math.round(Number(b.quantity) || 1)),
+            remark: String(b.remark || "").slice(0, 300),
+          };
+        });
+        if (bad) { skip(bad); continue; }
+      } else {
+        const width = Number(store.specs?.width);
+        const height = Number(store.specs?.height);
+        const type = String(store.specs?.type || "").trim().toLowerCase();
+        const el = clientElements.find((e: any) => String(e.elementName || "").trim().toLowerCase() === type);
+        if (!(width > 0) || !(height > 0)) { skip("no board size on the store; open it on its own to add boards"); continue; }
+        if (!el) { skip(`board type "${store.specs?.type || "—"}" isn't one of the client's elements; open it on its own to pick one`); continue; }
+        boards = [{ el, width, height, unit: "ft", quantity: Math.max(1, Number(store.specs?.qty) || 1), remark: "" }];
+      }
+
+      let total = 0;
+      const reccePhotos = boards.map((b: any, i: number) => {
+        const f = b.unit === "in" ? 1 / 12 : 1;
+        const sq = b.width * f * (b.height * f);
+        const rate = Number(b.el.customRate) || 0;
+        total += sq * rate * b.quantity;
+        return {
+          photo: "",
+          measurements: { width: b.width, height: b.height, unit: b.unit },
+          elements: [{ elementId: String(b.el.elementId), elementName: b.el.elementName, quantity: b.quantity, customRate: rate }],
+          approvalStatus: "APPROVED",
+          approvedBy: req.user._id,
+          approvedAt: now,
+          boardNo: String(i + 1),
+          remark: b.remark,
+        };
+      });
+      total = Math.round(total * 100) / 100;
+
+      // A recce person who never started is taken off (kept in the history)
+      const recceUser: any = store.workflow?.recceAssignedTo;
+      const history = [...(store.workflow?.transferHistory || [])];
+      if (recceUser) {
+        history.push({ stage: "RECCE", action: "UNASSIGN", from: recceUser._id, fromName: recceUser.name, by: req.user._id, byName: req.user.name, at: now, reason: reason || "Switched to direct installation" });
+        store.set("workflow.recceAssignedTo", null);
+        store.set("workflow.recceAssignedBy", null);
+      }
+      store.set("workflow.transferHistory", history);
+
+      store.isDirectInstallation = true;
+      store.set("recce.assignedDate", now);
+      store.set("recce.submittedDate", now);
+      store.set("recce.submittedBy", `${req.user.name} (direct installation)`);
+      store.set("recce.reccePhotos", reccePhotos);
+      store.set("recce.approvedPhotosCount", reccePhotos.length);
+      store.set("recce.pendingPhotosCount", 0);
+      store.set("recce.rejectedPhotosCount", 0);
+      store.set("recce.costDetails.totalBoardCost", total);
+      store.set("recce.commercials.totalCost", total);
+      store.set("costDetails.totalBoardCost", total);
+      if (!store.commercials?.totalCost) store.set("commercials.totalCost", total);
+      store.set("workflow.installationAssignedTo", installer._id);
+      store.set("workflow.installationAssignedBy", req.user._id);
+      store.set("installation.assignedDate", now);
+      store.currentStatus = StoreStatus.INSTALLATION_ASSIGNED;
+      await store.save();
+      done.push(String(store._id));
+    }
+
+    res.status(done.length ? 200 : 400).json({
+      message: done.length
+        ? `${done.length} store${done.length === 1 ? "" : "s"} sent to ${installer.name} for direct installation${skipped.length ? `, ${skipped.length} skipped` : ""}`
+        : `Nothing assigned: ${skipped.map((x) => `${x.dealerCode} (${x.reason})`).join(", ")}`,
+      assigned: done,
+      skipped,
+    });
+  } catch (error: any) {
+    console.error("Direct install error:", error);
+    res.status(500).json({ message: "Direct installation failed", error: error.message });
+  }
+};
+
+/** A user's unfinished jobs that can still be transferred (scoped for Sub Admins). */
+const pendingWorkQuery = async (req: any, userId: string, stage: Stage) =>
+  applyStoreScope(
+    { [`workflow.${assigneeField(stage)}`]: userId, currentStatus: { $in: TRANSFERABLE[stage] } },
+    await getClientScope(req)
+  );
+
+// GET /stores/pending-work/:userId
+export const getPendingWork = async (req: Request | any, res: Response) => {
+  try {
+    const { userId } = req.params;
+    if (!mongoose.isValidObjectId(userId)) return res.status(400).json({ message: "Invalid user" });
+    const [recce, installation] = await Promise.all([
+      Store.find(await pendingWorkQuery(req, userId, "RECCE")).select("storeName dealerCode currentStatus location.city").lean(),
+      Store.find(await pendingWorkQuery(req, userId, "INSTALLATION")).select("storeName dealerCode currentStatus location.city").lean(),
+    ]);
+    res.json({ recce, installation, counts: { recce: recce.length, installation: installation.length } });
+  } catch (error: any) {
+    res.status(500).json({ message: "Failed to load pending work", error: error.message });
+  }
+};
+
+// POST /stores/transfer-user-work   { fromUserId, recceToUserId?, installationToUserId?, reason? }
+// Moves all of a person's unfinished recce and/or installation jobs.
+export const transferUserWork = async (req: Request | any, res: Response) => {
+  try {
+    const { fromUserId, recceToUserId, installationToUserId } = req.body;
+    const reason = String(req.body?.reason || "").trim().slice(0, 300);
+    if (!mongoose.isValidObjectId(String(fromUserId))) return res.status(400).json({ message: "Invalid user" });
+    if (!recceToUserId && !installationToUserId) return res.status(400).json({ message: "Pick who takes over" });
+
+    const out: any = {};
+    const pairs: Array<[Stage, string]> = [
+      ["RECCE", recceToUserId],
+      ["INSTALLATION", installationToUserId],
+    ];
+    for (const [stage, toId] of pairs) {
+      if (!toId) continue;
+      const check = await checkAssignee(toId, stage);
+      if (check.error) return res.status(400).json({ message: check.error });
+      const ids = (await Store.find(await pendingWorkQuery(req, fromUserId, stage)).select("_id").lean()).map((x: any) => String(x._id));
+      out[stage.toLowerCase()] = ids.length ? await transferCore(req, ids, stage, check.user, reason) : { transferred: [], skipped: [] };
+    }
+    const moved = (out.recce?.transferred.length || 0) + (out.installation?.transferred.length || 0);
+    res.json({ message: moved ? `Moved ${moved} job${moved === 1 ? "" : "s"}` : "No pending jobs to move", ...out });
+  } catch (error: any) {
+    console.error("Transfer user work error:", error);
+    res.status(500).json({ message: "Transfer failed", error: error.message });
   }
 };
 
@@ -1068,6 +1393,9 @@ export const submitRecce = async (req: Request | any, res: Response) => {
 
     const store = await Store.findById(id);
     if (!store) return res.status(404).json({ message: "Store not found" });
+    if (movedAwayFrom(req.user, store, "recceAssignedTo")) {
+      return res.status(403).json({ message: "This recce was moved to someone else. Pull down to refresh your list." });
+    }
 
     console.log(`[DEBUG] Store found - clientCode: ${store.clientCode}, dealerCode: ${store.dealerCode}, storeId: ${store.storeId}`);
     console.log(`[DEBUG] Store location:`, store.location);
@@ -1841,6 +2169,9 @@ export const submitInstallation = async (req: Request | any, res: Response) => {
 
     const store = await Store.findById(id);
     if (!store) return res.status(404).json({ message: "Store not found" });
+    if (movedAwayFrom(req.user, store, "installationAssignedTo")) {
+      return res.status(403).json({ message: "This installation was moved to someone else. Pull down to refresh your list." });
+    }
 
     if (!store.storeId) {
       if (store.location?.city && store.location?.district && store.dealerCode) {
