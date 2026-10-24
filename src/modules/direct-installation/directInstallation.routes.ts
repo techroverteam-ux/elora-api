@@ -5,6 +5,7 @@ import { checkPermission } from "../../middlewares/rbac.middleware";
 import { storeIdParamGuard } from "../../utils/access";
 import {
   validateUpload,
+  parseUploadFile,
   createDirectInstallation,
   uploadBoardPhoto,
   listDirectInstallations,
@@ -25,6 +26,7 @@ router.get("/", checkPermission("stores", "view"), listDirectInstallations);
 router.get("/filters", checkPermission("stores", "view"), getFilterOptions);
 router.get("/export", checkPermission("stores", "view"), exportDirectInstallations);
 router.get("/template", checkPermission("stores", "create"), downloadTemplate);
+router.post("/parse", checkPermission("stores", "create"), upload.single("file"), parseUploadFile);
 router.post("/validate", checkPermission("stores", "create"), validateUpload);
 router.post("/", checkPermission("stores", "create"), createDirectInstallation);
 router.post("/:id/boards/:index/photo", checkPermission("stores", "edit"), upload.single("photo"), uploadBoardPhoto);

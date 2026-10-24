@@ -421,6 +421,31 @@ const stripMoney = (s: any) => ({
   boards: (s.boards || []).map((b: any) => ({ ...b, rate: undefined, cost: undefined })),
 });
 
+// POST /direct-installations/parse   (multipart: file)
+// Reads the Excel on the server and returns its rows, so the mobile app
+// doesn't need to parse spreadsheets itself. Same rules as the web page:
+// header row 1, Excel row numbers kept, grey example rows (DEMO001) skipped.
+export const parseUploadFile = async (req: Request | any, res: Response) => {
+  try {
+    const file = req.file as Express.Multer.File;
+    if (!file) return res.status(400).json({ message: "No file uploaded" });
+    const XLSX = require("xlsx");
+    const wb = XLSX.read(file.buffer, { type: "buffer" });
+    const sheet = wb.Sheets["Direct Installation"] || wb.Sheets[wb.SheetNames[0]];
+    const raw: any[] = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false, blankrows: true });
+    const dealerOf = (r: any) => {
+      const k = Object.keys(r).find((h) => squash(h) === "dealercode");
+      return k ? text(r[k]) : "";
+    };
+    const rows = raw
+      .map((r, i) => ({ ...r, __rowNumber: i + 2 }))
+      .filter((r) => squash(dealerOf(r)) !== "demo001" && Object.entries(r).some(([k, v]) => k !== "__rowNumber" && text(v)));
+    res.json({ rows, fileName: file.originalname });
+  } catch (error: any) {
+    res.status(400).json({ message: "Could not read this Excel file", error: error.message });
+  }
+};
+
 // POST /direct-installations/validate   { rows: [...] }
 export const validateUpload = async (req: Request | any, res: Response) => {
   try {
