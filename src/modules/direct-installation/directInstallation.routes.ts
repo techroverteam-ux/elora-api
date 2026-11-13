@@ -17,6 +17,15 @@ import {
 const router = express.Router();
 // One photo per request keeps every call under Vercel's ~4.5 MB body limit.
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024 } });
+const uploadPhoto: express.RequestHandler = (req, res, next) => {
+  upload.single("photo")(req, res, (error: any) => {
+    if (error instanceof multer.MulterError) {
+      res.status(400).json({ message: error.code === "LIMIT_FILE_SIZE" ? "Image exceeds 4 MB. Choose a smaller image or convert it to JPEG." : error.message });
+      return;
+    }
+    next(error);
+  });
+};
 
 router.use(protect);
 // Sub Admin: a store id outside their clients is "not found"
@@ -29,6 +38,6 @@ router.get("/template", checkPermission("stores", "create"), downloadTemplate);
 router.post("/parse", checkPermission("stores", "create"), upload.single("file"), parseUploadFile);
 router.post("/validate", checkPermission("stores", "create"), validateUpload);
 router.post("/", checkPermission("stores", "create"), createDirectInstallation);
-router.post("/:id/boards/:index/photo", checkPermission("stores", "edit"), upload.single("photo"), uploadBoardPhoto);
+router.post("/:id/boards/:index/photo", checkPermission("stores", "edit"), uploadPhoto, uploadBoardPhoto);
 
 export default router;

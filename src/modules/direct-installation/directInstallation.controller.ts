@@ -17,7 +17,7 @@ import {
 // Direct installation
 //
 // The recce happens outside the app (photos arrive on WhatsApp), so an admin
-// uploads an Excel sheet — one row per board — plus one photo per board. Each
+// uploads an Excel sheet — one row per board — with optional board photos. Each
 // store is created with its recce assigned, submitted and approved in one go,
 // and handed straight to the named installer (status INSTALLATION_ASSIGNED).
 // ===========================================================================
@@ -677,8 +677,13 @@ export const uploadBoardPhoto = async (req: Request | any, res: Response) => {
       String(req.user?.name || "admin").replace(/\s+/g, "_"),
     );
 
-    store.set(`recce.reccePhotos.${i}.photo`, link);
-    await store.save();
+    // Each board uploads independently. Update only this field so concurrent
+    // uploads do not save stale copies of the store or conflict on its version.
+    const saved = await Store.updateOne(
+      { _id: store._id, [`recce.reccePhotos.${i}._id`]: boards[i]._id },
+      { $set: { [`recce.reccePhotos.${i}.photo`]: link } },
+    );
+    if (!saved.matchedCount) return res.status(409).json({ message: "The board changed during upload. Reload the Excel file and try again." });
     res.json({ message: "Photo saved", photo: link, index: i });
   } catch (error: any) {
     console.error("Direct installation photo error:", error);
@@ -1023,7 +1028,7 @@ export const downloadTemplate = async (req: Request | any, res: Response) => {
             quantity: el.quantity || 1,
             boardRemark: p.remark || "",
             photoFile: "",
-            _photo: p.photo ? "Yes" : "No - add photo",
+            _photo: p.photo ? "Yes" : "No (optional)",
             _status: String(st.currentStatus || "").replace(/_/g, " "),
           });
           // Highlight what the user still has to fill
@@ -1062,8 +1067,8 @@ export const downloadTemplate = async (req: Request | any, res: Response) => {
     [
       "One row per BOARD. Rows with the same Dealer Code become one store with several boards.",
       "Store details (client, name, city, installer…) only need to be filled on the first row of each Dealer Code.",
-      "Every board needs a recce photo. Name each photo DEALERCODE_BOARDNO (e.g. DEMO001_1.jpg, DEMO001_2.jpg),",
-      "or put the file name in the Photo File Name column. Then select the Excel and all photos together on the upload page.",
+      "Recce photos are optional. If adding photos, name each photo DEALERCODE_BOARDNO (e.g. DEMO001_1.jpg, DEMO001_2.jpg),",
+      "or put the file name in the Photo File Name column, or choose a photo for each board on the upload page. You can import without photos.",
       "On upload, the recce is marked assigned, submitted and approved, and the store goes to the installer.",
       "Rates come from the client's element mapping. Delete the grey example rows before uploading.",
       "Pre-filled sheet: rows of stores that already exist update those stores. Red cells are required and still empty.",
