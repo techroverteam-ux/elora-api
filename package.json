@@ -7,6 +7,7 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "test:personnel": "node --test tests/assigned-personnel.test.cjs",
     "migrate:client-location": "ts-node src/scripts/migrateClientLocationConfig.ts"
   },
   "keywords": [],

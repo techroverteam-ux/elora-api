@@ -1,4 +1,5 @@
 import { INSTALL_PHOTO_TYPES, InstallPhotoType, installPhotosByType, pickInstalledPhoto } from "../../utils/installPhotos";
+import { applyAssignedPersonnelFilters } from "./assignedPersonnel";
 import { Request, Response } from "express";
 import Store, { StoreStatus } from "./store.model";
 import Client from "../client/client.model";
@@ -783,6 +784,9 @@ export const getAllStores = async (req: Request | any, res: Response) => {
         },
       ];
     }
+
+    const personnelError = applyAssignedPersonnelFilters(query, req.query);
+    if (personnelError) return res.status(400).json({ message: personnelError });
 
     const returnAllIds = req.query.returnAllIds === 'true';
     
@@ -3326,6 +3330,8 @@ export const exportRecceTasks = async (req: Request | any, res: Response) => {
       // Other roles: Only assigned stores
       query["workflow.recceAssignedTo"] = req.user._id;
     }
+    const personnelError = applyAssignedPersonnelFilters(query, req.query);
+    if (personnelError) return res.status(400).json({ message: personnelError });
     const stores = await Store.find(query)
       .populate("clientId", "clientName")
       .populate("workflow.recceAssignedTo workflow.installationAssignedTo", "name")
@@ -3377,6 +3383,8 @@ export const exportInstallationTasks = async (
       // Other roles: Only assigned stores
       query["workflow.installationAssignedTo"] = req.user._id;
     }
+    const personnelError = applyAssignedPersonnelFilters(query, req.query);
+    if (personnelError) return res.status(400).json({ message: personnelError });
     const stores = await Store.find(query)
       .populate("workflow.installationAssignedTo", "name")
       .sort({ updatedAt: -1 });
